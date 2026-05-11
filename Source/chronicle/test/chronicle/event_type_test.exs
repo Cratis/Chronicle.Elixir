@@ -19,7 +19,7 @@ defmodule Chronicle.EventTypeTest do
     defstruct [:email]
 
     @unique :email
-    @remove_constraint "email"
+    @remove_constraint :email
   end
 
   describe "use Chronicle.EventType" do
@@ -43,7 +43,7 @@ defmodule Chronicle.EventTypeTest do
       assert TestEventWithConstraints.__chronicle_event_type__(:constraints) == %{
                unique: [:email],
                unique_event_type: [],
-               remove_constraint: ["email"]
+               remove_constraint: [:email]
              }
     end
   end

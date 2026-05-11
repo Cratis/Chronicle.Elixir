@@ -167,20 +167,20 @@ defmodule Chronicle.Constraints do
 
   defp normalize_unique_declaration({fields, opts}, event_type) when is_list(opts) do
     normalized_fields = normalize_fields(fields)
-    constraint_name = Keyword.get(opts, :name, default_constraint_name(event_type, normalized_fields))
+    constraint_name = Keyword.get(opts, :name, default_constraint_name_for_fields(event_type, normalized_fields))
     build_normalized_unique(constraint_name, event_type, normalized_fields)
   end
 
   defp normalize_unique_declaration(opts, event_type) when is_list(opts) do
     fields = Keyword.get(opts, :on, Keyword.get(opts, :field, []))
     normalized_fields = normalize_fields(fields)
-    constraint_name = Keyword.get(opts, :name, default_constraint_name(event_type, normalized_fields))
+    constraint_name = Keyword.get(opts, :name, default_constraint_name_for_fields(event_type, normalized_fields))
     build_normalized_unique(constraint_name, event_type, normalized_fields)
   end
 
   defp normalize_unique_declaration(fields, event_type) do
     normalized_fields = normalize_fields(fields)
-    build_normalized_unique(default_constraint_name(event_type, normalized_fields), event_type, normalized_fields)
+    build_normalized_unique(default_constraint_name_for_fields(event_type, normalized_fields), event_type, normalized_fields)
   end
 
   defp normalize_fields(fields) when is_list(fields), do: Enum.map(fields, &to_string/1)
@@ -190,9 +190,9 @@ defmodule Chronicle.Constraints do
   defp normalize_constraint_name(name) when is_atom(name), do: Atom.to_string(name)
   defp normalize_constraint_name(name), do: to_string(name)
 
-  defp default_constraint_name(_event_type, [field | _]), do: field
+  defp default_constraint_name_for_fields(_event_type, [field | _]), do: field
 
-  defp default_constraint_name(event_type, []) do
+  defp default_constraint_name_for_fields(event_type, []) do
     if function_exported?(event_type, :__chronicle_event_type__, 1) do
       "#{event_type.__chronicle_event_type__(:id)}-constraint"
     else
