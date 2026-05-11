@@ -16,7 +16,7 @@ A runnable example demonstrating the Chronicle Elixir client.
 
 > **Tip:** The easiest way to run Chronicle locally is via Docker:
 > ```shell
-> docker run -p 35000:35000 -p 8080:8080 cratis/chronicle:latest
+> docker run -p 35000:35000 -p 8080:8080 cratis/chronicle:latest-development
 > ```
 
 ## Running
