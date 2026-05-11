@@ -167,18 +167,18 @@ defmodule Chronicle.Constraints do
 
   defp normalize_unique_declaration({fields, opts}, event_type) when is_list(opts) do
     normalized_fields = normalize_fields(fields)
-    %{name: normalize_constraint_name(Keyword.get(opts, :name, List.first(normalized_fields))), event_type: event_type, on: normalized_fields}
+    %{name: normalize_constraint_name(Keyword.get(opts, :name, default_constraint_name(event_type, normalized_fields))), event_type: event_type, on: normalized_fields}
   end
 
   defp normalize_unique_declaration(opts, event_type) when is_list(opts) do
     fields = Keyword.get(opts, :on, Keyword.get(opts, :field, []))
     normalized_fields = normalize_fields(fields)
-    %{name: normalize_constraint_name(Keyword.get(opts, :name, List.first(normalized_fields))), event_type: event_type, on: normalized_fields}
+    %{name: normalize_constraint_name(Keyword.get(opts, :name, default_constraint_name(event_type, normalized_fields))), event_type: event_type, on: normalized_fields}
   end
 
   defp normalize_unique_declaration(fields, event_type) do
     normalized_fields = normalize_fields(fields)
-    %{name: normalize_constraint_name(List.first(normalized_fields)), event_type: event_type, on: normalized_fields}
+    %{name: normalize_constraint_name(default_constraint_name(event_type, normalized_fields)), event_type: event_type, on: normalized_fields}
   end
 
   defp normalize_fields(fields) when is_list(fields), do: Enum.map(fields, &to_string/1)
@@ -186,7 +186,17 @@ defmodule Chronicle.Constraints do
 
   defp normalize_constraint_name(name) when is_binary(name), do: name
   defp normalize_constraint_name(name) when is_atom(name), do: Atom.to_string(name)
-  defp normalize_constraint_name(_), do: "constraint"
+  defp normalize_constraint_name(name), do: to_string(name)
+
+  defp default_constraint_name(_event_type, [field | _]), do: field
+
+  defp default_constraint_name(event_type, []) do
+    if function_exported?(event_type, :__chronicle_event_type__, 1) do
+      "#{event_type.__chronicle_event_type__(:id)}-constraint"
+    else
+      "#{event_type}-constraint"
+    end
+  end
 
   defp with_removed_with_event_type(definition, nil), do: definition
 
