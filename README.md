@@ -17,20 +17,14 @@ Key features:
 
 ## Installation
 
-Add the dependency to your `mix.exs`. This package is published under the `cratis` organization on Hex:
+Add the dependency to your `mix.exs`:
 
 ```elixir
 def deps do
   [
-    {:chronicle, "~> 0.1", organization: "cratis"}
+    {:cratis_chronicle, "~> 0.1"}
   ]
 end
-```
-
-Then authenticate with the organization (one-time setup):
-
-```shell
-mix hex.organization auth cratis --key YOUR_HEX_KEY
 ```
 
 ## Quick Start

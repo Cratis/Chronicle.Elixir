@@ -40,8 +40,7 @@ defmodule Chronicle.MixProject do
 
   defp package do
     [
-      name: "chronicle",
-      organization: "cratis",
+      name: "cratis_chronicle",
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url},
       maintainers: ["Cratis"],

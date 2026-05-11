@@ -66,10 +66,6 @@ jobs:
           mix local.hex --force
           mix local.rebar --force
 
-      - name: Authenticate with Hex organization
-        working-directory: ./Source/chronicle
-        run: mix hex.organization auth cratis --key ${{ secrets.HEX_API_KEY }}
-
       - name: Install dependencies
         working-directory: ./Source/chronicle
         run: mix deps.get
@@ -113,10 +109,6 @@ jobs:
           mix local.hex --force
           mix local.rebar --force
 
-      - name: Authenticate with Hex organization
-        working-directory: ./Source/chronicle
-        run: mix hex.organization auth cratis --key ${{ secrets.HEX_API_KEY }}
-
       - name: Install dependencies
         working-directory: ./Source/chronicle
         run: mix deps.get
@@ -130,9 +122,12 @@ jobs:
             echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Copy README for Hex package
+        run: cp README.md Source/chronicle/README.md
+
       - name: Publish to Hex
         working-directory: ./Source/chronicle
-        run: mix hex.publish --organization cratis --yes
+        run: mix hex.publish --yes
         env:
           CHRONICLE_VERSION: ${{ steps.version.outputs.version }}
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
