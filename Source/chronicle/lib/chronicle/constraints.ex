@@ -66,22 +66,69 @@ defmodule Chronicle.Constraints do
     end
   end
 
+  @doc """
+  Builds constraint definitions from model-bound event type attributes.
+
+  Event types can declare:
+
+    * `@unique` / `unique(...)`
+    * `@remove_constraint` / `remove_constraint(...)`
+  """
+  @spec from_event_types([module()]) :: [map()]
+  def from_event_types(event_types) when is_list(event_types) do
+    removal_event_types =
+      event_types
+      |> Enum.flat_map(fn event_type ->
+        event_type
+        |> event_type_constraints()
+        |> Map.get(:remove_constraint, [])
+        |> Enum.map(&{normalize_constraint_name(&1), event_type})
+      end)
+      |> Map.new()
+
+    event_types
+    |> Enum.flat_map(fn event_type ->
+      event_type
+      |> event_type_constraints()
+      |> Map.get(:unique, [])
+      |> Enum.map(&normalize_unique_declaration(&1, event_type))
+    end)
+    |> Enum.group_by(& &1.name)
+    |> Enum.map(fn {name, definitions} ->
+      %{
+        type: :unique,
+        name: name,
+        event_definitions:
+          Enum.map(definitions, fn definition ->
+            %{event_type: definition.event_type, on: definition.on}
+          end)
+      }
+      |> with_removed_with_event_type(Map.get(removal_event_types, name))
+    end)
+    |> Enum.sort_by(& &1.name)
+  end
+
   defp build_constraint(%{type: :unique, name: name, event_type_id: event_type_id, on: properties}) do
-    %Constraint{
+    build_constraint(%{
+      type: :unique,
+      name: name,
+      event_definitions: [%{event_type_id: event_type_id, on: properties}]
+    })
+  end
+
+  defp build_constraint(%{type: :unique, name: name, event_definitions: event_definitions} = constraint) do
+    built_constraint = %Constraint{
       Name: name,
       Type: :Unique,
       Definition: %OneOf_UniqueConstraintDefinition_UniqueEventTypeConstraintDefinition{
         Value0: %UniqueConstraintDefinition{
-          EventDefinitions: [
-            %UniqueConstraintEventDefinition{
-              EventTypeId: event_type_id,
-              Properties: List.wrap(properties)
-            }
-          ],
+          EventDefinitions: Enum.map(event_definitions, &build_unique_event_definition/1),
           IgnoreCasing: false
         }
       }
     }
+
+    maybe_put_removed_with(built_constraint, removed_with_event_type_id(constraint))
   end
 
   defp build_constraint(%{type: :unique, name: name, event_type: event_module} = constraint) do
@@ -89,5 +136,77 @@ defmodule Chronicle.Constraints do
     event_type_id = event_module.__chronicle_event_type__(:id)
 
     build_constraint(%{constraint | type: :unique, event_type_id: event_type_id, on: properties, name: name})
+  end
+
+  defp build_unique_event_definition(%{event_type_id: event_type_id, on: properties}) do
+    %UniqueConstraintEventDefinition{
+      EventTypeId: event_type_id,
+      Properties: List.wrap(properties)
+    }
+  end
+
+  defp build_unique_event_definition(%{event_type: event_type, on: properties}) do
+    %UniqueConstraintEventDefinition{
+      EventTypeId: event_type.__chronicle_event_type__(:id),
+      Properties: List.wrap(properties)
+    }
+  end
+
+  defp event_type_constraints(event_type) do
+    if function_exported?(event_type, :__chronicle_event_type__, 1) do
+      case event_type.__chronicle_event_type__(:constraints) do
+        constraints when is_map(constraints) -> constraints
+        _ -> %{}
+      end
+    else
+      %{}
+    end
+  rescue
+    _ -> %{}
+  end
+
+  defp normalize_unique_declaration({fields, opts}, event_type) when is_list(opts) do
+    normalized_fields = normalize_fields(fields)
+    %{name: normalize_constraint_name(Keyword.get(opts, :name, List.first(normalized_fields))), event_type: event_type, on: normalized_fields}
+  end
+
+  defp normalize_unique_declaration(opts, event_type) when is_list(opts) do
+    fields = Keyword.get(opts, :on, Keyword.get(opts, :field, []))
+    normalized_fields = normalize_fields(fields)
+    %{name: normalize_constraint_name(Keyword.get(opts, :name, List.first(normalized_fields))), event_type: event_type, on: normalized_fields}
+  end
+
+  defp normalize_unique_declaration(fields, event_type) do
+    normalized_fields = normalize_fields(fields)
+    %{name: normalize_constraint_name(List.first(normalized_fields)), event_type: event_type, on: normalized_fields}
+  end
+
+  defp normalize_fields(fields) when is_list(fields), do: Enum.map(fields, &to_string/1)
+  defp normalize_fields(field), do: [to_string(field)]
+
+  defp normalize_constraint_name(name) when is_binary(name), do: name
+  defp normalize_constraint_name(name) when is_atom(name), do: Atom.to_string(name)
+  defp normalize_constraint_name(_), do: "constraint"
+
+  defp with_removed_with_event_type(definition, nil), do: definition
+
+  defp with_removed_with_event_type(definition, event_type) do
+    Map.put(definition, :removed_with_event_type, event_type)
+  end
+
+  defp removed_with_event_type_id(%{removed_with_event_type: event_type}) when not is_nil(event_type) do
+    event_type.__chronicle_event_type__(:id)
+  end
+
+  defp removed_with_event_type_id(_), do: ""
+
+  defp maybe_put_removed_with(constraint, ""), do: constraint
+
+  defp maybe_put_removed_with(constraint, removed_with) do
+    if Map.has_key?(constraint, :RemovedWith) do
+      Map.put(constraint, :RemovedWith, removed_with)
+    else
+      constraint
+    end
   end
 end

@@ -12,6 +12,7 @@ Key features:
 - **`use Chronicle.Reactor`** — react to events with side effects
 - **`use Chronicle.Reducer`** — build read models by folding events into state
 - **`use Chronicle.Projection`** — declare server-side read model projections
+- **Model-bound constraints** — declare unique constraints on event types with attributes
 - **Resilient connection** — automatic reconnection with exponential backoff
 - **OTP-native** — fits naturally in your supervision tree
 
@@ -51,6 +52,21 @@ defmodule MyApp.ReadModels.Account do
   defstruct account_id: nil, owner_name: nil, balance: 0
 end
 ```
+
+### Constraints (model-bound)
+
+Declare unique constraints directly on event types:
+
+```elixir
+defmodule MyApp.Events.UserRegistered do
+  use Chronicle.EventType, id: "user-registered-v1"
+  defstruct [:email]
+
+  @unique :email
+end
+```
+
+Constraints declared this way are discovered and registered automatically during `Chronicle.Client` startup.
 
 ### 3. Define a reducer
 
