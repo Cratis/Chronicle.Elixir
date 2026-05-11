@@ -167,18 +167,20 @@ defmodule Chronicle.Constraints do
 
   defp normalize_unique_declaration({fields, opts}, event_type) when is_list(opts) do
     normalized_fields = normalize_fields(fields)
-    %{name: normalize_constraint_name(Keyword.get(opts, :name, default_constraint_name(event_type, normalized_fields))), event_type: event_type, on: normalized_fields}
+    constraint_name = Keyword.get(opts, :name, default_constraint_name(event_type, normalized_fields))
+    build_normalized_unique(constraint_name, event_type, normalized_fields)
   end
 
   defp normalize_unique_declaration(opts, event_type) when is_list(opts) do
     fields = Keyword.get(opts, :on, Keyword.get(opts, :field, []))
     normalized_fields = normalize_fields(fields)
-    %{name: normalize_constraint_name(Keyword.get(opts, :name, default_constraint_name(event_type, normalized_fields))), event_type: event_type, on: normalized_fields}
+    constraint_name = Keyword.get(opts, :name, default_constraint_name(event_type, normalized_fields))
+    build_normalized_unique(constraint_name, event_type, normalized_fields)
   end
 
   defp normalize_unique_declaration(fields, event_type) do
     normalized_fields = normalize_fields(fields)
-    %{name: normalize_constraint_name(default_constraint_name(event_type, normalized_fields)), event_type: event_type, on: normalized_fields}
+    build_normalized_unique(default_constraint_name(event_type, normalized_fields), event_type, normalized_fields)
   end
 
   defp normalize_fields(fields) when is_list(fields), do: Enum.map(fields, &to_string/1)
@@ -196,6 +198,10 @@ defmodule Chronicle.Constraints do
     else
       "#{event_type}-constraint"
     end
+  end
+
+  defp build_normalized_unique(name, event_type, normalized_fields) do
+    %{name: normalize_constraint_name(name), event_type: event_type, on: normalized_fields}
   end
 
   defp with_removed_with_event_type(definition, nil), do: definition

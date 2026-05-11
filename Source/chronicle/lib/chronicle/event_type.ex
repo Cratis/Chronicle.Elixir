@@ -74,7 +74,8 @@ defmodule Chronicle.EventType do
       Module.register_attribute(__MODULE__, :remove_constraint, accumulate: true)
       Module.register_attribute(__MODULE__, :unique_event_type, accumulate: true)
 
-      import Chronicle.EventType, only: [unique: 1, unique: 2, unique_event_type: 0, unique_event_type: 1, remove_constraint: 1]
+      import Chronicle.EventType,
+        only: [unique: 1, unique: 2, unique_event_type: 0, unique_event_type: 1, remove_constraint: 1]
 
       @chronicle_event_type_id unquote(event_type_id)
       @chronicle_event_type_generation unquote(generation)

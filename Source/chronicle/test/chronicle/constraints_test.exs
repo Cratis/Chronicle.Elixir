@@ -26,6 +26,14 @@ defmodule Chronicle.ConstraintsTest do
   end
 
   describe "from_event_types/1" do
+    test "captures options from unique/2 macro" do
+      assert AccountCreated.__chronicle_event_type__(:constraints) == %{
+               unique: [{[:email, :tenant_id], [name: "email_per_tenant"]}],
+               unique_event_type: [],
+               remove_constraint: []
+             }
+    end
+
     test "builds unique constraints from event type attributes" do
       constraints = Chronicle.Constraints.from_event_types([UserRegistered])
 
