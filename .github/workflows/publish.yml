@@ -1,0 +1,138 @@
+# Copyright (c) Cratis. All rights reserved.
+# Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
+name: Publish Elixir Chronicle Client
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release'
+        required: true
+        default: '0.0.0'
+        type: string
+      release-notes:
+        description: 'Release notes'
+        required: true
+        default: 'No release notes'
+        type: string
+      logLevel:
+        description: 'Log level'
+        required: true
+        default: 'warning'
+        type: choice
+        options:
+        - info
+        - warning
+        - debug
+  pull_request:
+    types: [closed]
+    branches:
+      - "**"
+    paths:
+      - "Source/**"
+
+env:
+  ELIXIR_VERSION: "1.17.3"
+  OTP_VERSION: "27.1"
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Elixir and Erlang
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Cache Mix dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            Source/chronicle/deps
+            Source/chronicle/_build
+          key: ${{ runner.os }}-mix-${{ hashFiles('Source/chronicle/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Install Hex and Rebar
+        working-directory: ./Source/chronicle
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+
+      - name: Authenticate with Hex organization
+        working-directory: ./Source/chronicle
+        run: mix hex.organization auth cratis --key ${{ secrets.HEX_API_KEY }}
+
+      - name: Install dependencies
+        working-directory: ./Source/chronicle
+        run: mix deps.get
+
+      - name: Compile
+        working-directory: ./Source/chronicle
+        run: mix compile --warnings-as-errors
+
+      - name: Run tests
+        working-directory: ./Source/chronicle
+        run: mix test
+
+  publish:
+    name: Publish to Hex
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Elixir and Erlang
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Cache Mix dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            Source/chronicle/deps
+            Source/chronicle/_build
+          key: ${{ runner.os }}-mix-${{ hashFiles('Source/chronicle/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Install Hex and Rebar
+        working-directory: ./Source/chronicle
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+
+      - name: Authenticate with Hex organization
+        working-directory: ./Source/chronicle
+        run: mix hex.organization auth cratis --key ${{ secrets.HEX_API_KEY }}
+
+      - name: Install dependencies
+        working-directory: ./Source/chronicle
+        run: mix deps.get
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish to Hex
+        working-directory: ./Source/chronicle
+        run: mix hex.publish --organization cratis --yes
+        env:
+          CHRONICLE_VERSION: ${{ steps.version.outputs.version }}
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}

@@ -1,0 +1,31 @@
+# Build artifacts
+_build
+cover
+deps
+doc
+.fetch
+
+# Mix
+erl_crash.dump
+*.ez
+*.beam
+*.plt
+
+# Dialyzer
+/priv/plts/
+
+# Environment
+.env
+.env.*
+*.env
+
+# Editor
+.elixir_ls/
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
