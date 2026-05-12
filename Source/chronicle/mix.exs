@@ -9,7 +9,7 @@ defmodule Chronicle.MixProject do
 
   def project do
     [
-      app: :chronicle,
+      app: :cratis_chronicle,
       version: @version,
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
