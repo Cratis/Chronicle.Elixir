@@ -23,7 +23,7 @@ defmodule ConsoleSample.MixProject do
 
   defp deps do
     [
-      {:cratis_chronicle, "~> 0.0.1"}
+      {:chronicle, "~> 0.1.0", hex: :cratis_chronicle}
     ]
   end
 end
