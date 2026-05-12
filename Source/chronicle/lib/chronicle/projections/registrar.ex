@@ -44,7 +44,7 @@ defmodule Chronicle.Projections.Registrar do
 
   # MongoDB sink type ID: "22202c41-2be1-4547-9c00-f0b1f797fd75"
   # Computed from .NET Guid.ToByteArray() split into lo/hi fixed64 little-endian
-  @mongodb_sink_type_id %BclGuid{lo: 0x45472BE122202C41, hi: 0x75FD97F7B1F0009C}
+  defp mongodb_sink_type_id, do: struct(BclGuid, lo: 0x45472BE122202C41, hi: 0x75FD97F7B1F0009C)
 
   @retry_delay 5_000
 
@@ -116,14 +116,14 @@ defmodule Chronicle.Projections.Registrar do
   end
 
   defp ensure_event_store(channel, event_store) do
-    case EventStores.Stub.ensure(channel, %EnsureEventStore{Name: event_store}) do
+    case EventStores.Stub.ensure(channel, struct(EnsureEventStore, Name: event_store)) do
       {:ok, _} -> :ok
       {:error, reason} -> {:error, {:ensure_event_store, reason}}
     end
   end
 
   defp ensure_namespace(channel, event_store, namespace) do
-    case Namespaces.Stub.ensure(channel, %EnsureNamespace{EventStore: event_store, Name: namespace}) do
+    case Namespaces.Stub.ensure(channel, struct(EnsureNamespace, EventStore: event_store, Name: namespace)) do
       {:ok, _} -> :ok
       {:error, reason} -> {:error, {:ensure_namespace, reason}}
     end
@@ -136,17 +136,17 @@ defmodule Chronicle.Projections.Registrar do
       |> Enum.map(fn rm ->
         model_id = rm.__chronicle_read_model__(:id)
 
-        %ReadModelDefinition{
-          Type: %ReadModelType{Identifier: model_id, Generation: 1},
+        struct(ReadModelDefinition,
+          Type: struct(ReadModelType, Identifier: model_id, Generation: 1),
           ContainerName: model_id,
           DisplayName: model_id,
-          Sink: %SinkDefinition{ConfigurationId: %BclGuid{}, TypeId: @mongodb_sink_type_id},
+          Sink: struct(SinkDefinition, ConfigurationId: struct(BclGuid), TypeId: mongodb_sink_type_id()),
           Schema: generate_read_model_schema(rm),
           ObserverType: 2,
           ObserverIdentifier: model_id,
           Owner: 2,
           Source: 1
-        }
+        )
       end)
 
     reducer_definitions =
@@ -156,17 +156,17 @@ defmodule Chronicle.Projections.Registrar do
         model_id = model_module.__chronicle_read_model__(:id)
         reducer_id = reducer_module.__chronicle_reducer__(:id)
 
-        %ReadModelDefinition{
-          Type: %ReadModelType{Identifier: model_id, Generation: 1},
+        struct(ReadModelDefinition,
+          Type: struct(ReadModelType, Identifier: model_id, Generation: 1),
           ContainerName: model_id,
           DisplayName: model_id,
-          Sink: %SinkDefinition{ConfigurationId: %BclGuid{}, TypeId: @mongodb_sink_type_id},
+          Sink: struct(SinkDefinition, ConfigurationId: struct(BclGuid), TypeId: mongodb_sink_type_id()),
           Schema: generate_read_model_schema(model_module),
           ObserverType: 1,
           ObserverIdentifier: reducer_id,
           Owner: 2,
           Source: 1
-        }
+        )
       end)
 
     all_definitions = projection_definitions ++ reducer_definitions
@@ -174,12 +174,12 @@ defmodule Chronicle.Projections.Registrar do
     if Enum.empty?(all_definitions) do
       :ok
     else
-      request = %RegisterManyRequest{
+      request = struct(RegisterManyRequest,
         EventStore: state.event_store,
         Owner: 2,
         ReadModels: all_definitions,
         Source: 1
-      }
+      )
 
       case ReadModels.Stub.register_many(channel, request) do
         {:ok, _} -> :ok
@@ -238,11 +238,11 @@ defmodule Chronicle.Projections.Registrar do
     else
       definitions = Enum.map(projection_read_models, &build_projection_definition(&1))
 
-      request = %RegisterRequest{
+      request = struct(RegisterRequest,
         EventStore: state.event_store,
         Owner: 1,
         Projections: definitions
-      }
+      )
 
       case Projections.Stub.register(channel, request) do
         {:ok, _} ->
@@ -266,14 +266,14 @@ defmodule Chronicle.Projections.Registrar do
         key = Keyword.get(opts, :key, "$eventSourceId")
         parent_key = Keyword.get(opts, :parent_key, "")
 
-        %KeyValuePair_EventType_FromDefinition{
+        struct(KeyValuePair_EventType_FromDefinition,
           Key: proto_event_type(event_module),
-          Value: %FromDefinition{
+          Value: struct(FromDefinition,
             Key: key,
             Properties: properties,
             ParentKey: parent_key
-          }
-        }
+          )
+        )
       end)
 
     join_entries =
@@ -283,14 +283,14 @@ defmodule Chronicle.Projections.Registrar do
         key = Keyword.get(opts, :key, "$eventSourceId")
         on = Keyword.fetch!(opts, :on)
 
-        %KeyValuePair_EventType_JoinDefinition{
+        struct(KeyValuePair_EventType_JoinDefinition,
           Key: proto_event_type(event_module),
-          Value: %JoinDefinition{
+          Value: struct(JoinDefinition,
             On: on,
             Key: key,
             Properties: properties
-          }
-        }
+          )
+        )
       end)
 
     removed_with_entries =
@@ -299,10 +299,10 @@ defmodule Chronicle.Projections.Registrar do
         key = Keyword.get(opts, :key, "$eventSourceId")
         parent_key = Keyword.get(opts, :parent_key, "")
 
-        %KeyValuePair_EventType_RemovedWithDefinition{
+        struct(KeyValuePair_EventType_RemovedWithDefinition,
           Key: proto_event_type(event_module),
-          Value: %RemovedWithDefinition{Key: key, ParentKey: parent_key}
-        }
+          Value: struct(RemovedWithDefinition, Key: key, ParentKey: parent_key)
+        )
       end)
 
     from_every =
@@ -311,13 +311,13 @@ defmodule Chronicle.Projections.Registrar do
           nil
 
         [opts | _] ->
-          %FromEveryDefinition{
+          struct(FromEveryDefinition,
             Properties: build_properties(opts),
             IncludeChildren: Keyword.get(opts, :include_children, false)
-          }
+          )
       end
 
-    %ProjectionDefinition{
+    struct(ProjectionDefinition,
       Identifier: identifier,
       ReadModel: model_name,
       EventSequenceId: "event-log",
@@ -328,7 +328,7 @@ defmodule Chronicle.Projections.Registrar do
       RemovedWith: removed_with_entries,
       All: from_every,
       InitialModelState: initial_model_state(read_model_module)
-    }
+    )
   end
 
   # Converts set/add/subtract/count opts into a Chronicle properties map.
@@ -378,9 +378,9 @@ defmodule Chronicle.Projections.Registrar do
   defp resolve_expression(str) when is_binary(str), do: str
 
   defp proto_event_type(event_module) do
-    %ProtoEventType{
+    struct(ProtoEventType,
       Id: event_module.__chronicle_event_type__(:id),
       Generation: event_module.__chronicle_event_type__(:generation)
-    }
+    )
   end
 end

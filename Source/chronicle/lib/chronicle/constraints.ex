@@ -55,10 +55,10 @@ defmodule Chronicle.Constraints do
     definitions =
       Enum.map(constraints, &build_constraint/1)
 
-    request = %RegisterConstraintsRequest{
+    request = struct(RegisterConstraintsRequest,
       EventStore: event_store,
       Constraints: definitions
-    }
+    )
 
     case Constraints.Stub.register(channel, request) do
       {:ok, _} -> :ok
@@ -67,21 +67,21 @@ defmodule Chronicle.Constraints do
   end
 
   defp build_constraint(%{type: :unique, name: name, event_type_id: event_type_id, on: properties}) do
-    %Constraint{
+    struct(Constraint,
       Name: name,
       Type: :Unique,
-      Definition: %OneOf_UniqueConstraintDefinition_UniqueEventTypeConstraintDefinition{
-        Value0: %UniqueConstraintDefinition{
+      Definition: struct(OneOf_UniqueConstraintDefinition_UniqueEventTypeConstraintDefinition,
+        Value0: struct(UniqueConstraintDefinition,
           EventDefinitions: [
-            %UniqueConstraintEventDefinition{
+            struct(UniqueConstraintEventDefinition,
               EventTypeId: event_type_id,
               Properties: List.wrap(properties)
-            }
+            )
           ],
           IgnoreCasing: false
-        }
-      }
-    }
+        )
+      )
+    )
   end
 
   defp build_constraint(%{type: :unique, name: name, event_type: event_module} = constraint) do
