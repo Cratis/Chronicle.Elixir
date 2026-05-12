@@ -142,6 +142,9 @@ jobs:
       - name: Copy README for Hex package
         run: cp README.md Source/chronicle/README.md
 
+      - name: Write package VERSION file
+        run: echo "${{ needs.release.outputs.version }}" > Source/chronicle/VERSION
+
       - name: Compile
         working-directory: ./Source/chronicle
         run: mix compile
@@ -150,5 +153,4 @@ jobs:
         working-directory: ./Source/chronicle
         run: mix hex.publish --yes
         env:
-          CHRONICLE_VERSION: ${{ needs.release.outputs.version }}
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
