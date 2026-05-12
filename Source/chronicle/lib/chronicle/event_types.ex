@@ -35,21 +35,21 @@ defmodule Chronicle.EventTypes do
   def register(channel, event_store, event_type_modules) when is_list(event_type_modules) do
     registrations =
       Enum.map(event_type_modules, fn module ->
-        %EventTypeRegistration{
-          Type: %EventType{
+        struct(EventTypeRegistration,
+          Type: struct(EventType,
             Id: module.__chronicle_event_type__(:id),
             Generation: module.__chronicle_event_type__(:generation)
-          },
+          ),
           Schema: generate_schema(module),
           EventStore: event_store
-        }
+        )
       end)
 
-    request = %RegisterEventTypesRequest{
+    request = struct(RegisterEventTypesRequest,
       EventStore: event_store,
       Types: registrations,
       DisableValidation: false
-    }
+    )
 
     case EventTypes.Stub.register(channel, request) do
       {:ok, _} -> :ok

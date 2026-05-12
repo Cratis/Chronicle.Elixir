@@ -127,11 +127,11 @@ defmodule Chronicle.Session do
 
   defp start_session(channel, state) do
     try do
-      request = %ConnectRequest{
+      request = struct(ConnectRequest,
         ConnectionId: state.connection_id,
         ClientVersion: "1.0.0",
         IsRunningWithDebugger: false
-      }
+      )
 
       case ConnectionService.Stub.connect(channel, request) do
         {:ok, reply_stream} ->
