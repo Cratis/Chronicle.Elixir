@@ -51,14 +51,15 @@ defmodule Chronicle.ReadModels do
       model_id = model_module.__chronicle_read_model__(:id)
       event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
 
-      request = struct(GetInstanceByKeyRequest,
-        EventStore: config.event_store,
-        Namespace: namespace,
-        ReadModelIdentifier: model_id,
-        EventSequenceId: event_sequence_id,
-        ReadModelKey: key,
-        SessionId: ""
-      )
+      request =
+        struct(GetInstanceByKeyRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          ReadModelIdentifier: model_id,
+          EventSequenceId: event_sequence_id,
+          ReadModelKey: key,
+          SessionId: ""
+        )
 
       case ReadModels.Stub.get_instance_by_key(channel, request) do
         {:ok, response} ->
@@ -92,12 +93,13 @@ defmodule Chronicle.ReadModels do
       model_id = model_module.__chronicle_read_model__(:id)
       event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
 
-      request = struct(GetAllInstancesRequest,
-        EventStore: config.event_store,
-        Namespace: namespace,
-        ReadModelIdentifier: model_id,
-        EventSequenceId: event_sequence_id
-      )
+      request =
+        struct(GetAllInstancesRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          ReadModelIdentifier: model_id,
+          EventSequenceId: event_sequence_id
+        )
 
       case ReadModels.Stub.get_all_instances(channel, request) do
         {:ok, response} ->

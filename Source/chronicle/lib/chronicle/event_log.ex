@@ -70,27 +70,34 @@ defmodule Chronicle.EventLog do
       namespace = Keyword.get(opts, :namespace, config.namespace)
       event_module = event.__struct__
 
-      request = struct(AppendRequest,
-        CorrelationId: struct(BclGuid),
-        EventStore: config.event_store,
-        Namespace: namespace,
-        EventSequenceId: @event_log_id,
-        EventSourceType: Keyword.get(opts, :event_source_type, "Default"),
-        EventSourceId: event_source_id,
-        EventStreamType: Keyword.get(opts, :event_stream_type, "All"),
-        EventStreamId: Keyword.get(opts, :event_stream_id, "Default"),
-        EventType: struct(EventType,
-          Id: event_module.__chronicle_event_type__(:id),
-          Generation: event_module.__chronicle_event_type__(:generation)
-        ),
-        Content: encode_event(event),
-        Causation: [client_causation()],
-        CausedBy: struct(Identity, Subject: "elixir-client", Name: "Chronicle Elixir Client", UserName: "chronicle"),
-        ConcurrencyScope: struct(ConcurrencyScope, SequenceNumber: 18_446_744_073_709_551_615),
-        Occurred: current_datetime_offset(),
-        Tags: Keyword.get(opts, :tags, []),
-        Subject: Keyword.get(opts, :subject, "")
-      )
+      request =
+        struct(AppendRequest,
+          CorrelationId: struct(BclGuid),
+          EventStore: config.event_store,
+          Namespace: namespace,
+          EventSequenceId: @event_log_id,
+          EventSourceType: Keyword.get(opts, :event_source_type, "Default"),
+          EventSourceId: event_source_id,
+          EventStreamType: Keyword.get(opts, :event_stream_type, "All"),
+          EventStreamId: Keyword.get(opts, :event_stream_id, "Default"),
+          EventType:
+            struct(EventType,
+              Id: event_module.__chronicle_event_type__(:id),
+              Generation: event_module.__chronicle_event_type__(:generation)
+            ),
+          Content: encode_event(event),
+          Causation: [client_causation()],
+          CausedBy:
+            struct(Identity,
+              Subject: "elixir-client",
+              Name: "Chronicle Elixir Client",
+              UserName: "chronicle"
+            ),
+          ConcurrencyScope: struct(ConcurrencyScope, SequenceNumber: 18_446_744_073_709_551_615),
+          Occurred: current_datetime_offset(),
+          Tags: Keyword.get(opts, :tags, []),
+          Subject: Keyword.get(opts, :subject, "")
+        )
 
       case EventSequences.Stub.append(channel, request) do
         {:ok, response} ->
@@ -133,21 +140,23 @@ defmodule Chronicle.EventLog do
             EventSourceId: event_source_id,
             EventStreamType: Keyword.get(opts, :event_stream_type, "All"),
             EventStreamId: Keyword.get(opts, :event_stream_id, "Default"),
-            EventType: struct(EventType,
-              Id: module.__chronicle_event_type__(:id),
-              Generation: module.__chronicle_event_type__(:generation)
-            ),
+            EventType:
+              struct(EventType,
+                Id: module.__chronicle_event_type__(:id),
+                Generation: module.__chronicle_event_type__(:generation)
+              ),
             Content: encode_event(event),
             Tags: Keyword.get(opts, :tags, [])
           )
         end)
 
-      request = struct(AppendManyRequest,
-        EventStore: config.event_store,
-        Namespace: namespace,
-        EventSequenceId: @event_log_id,
-        Events: event_entries
-      )
+      request =
+        struct(AppendManyRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          EventSequenceId: @event_log_id,
+          Events: event_entries
+        )
 
       case EventSequences.Stub.append_many(channel, request) do
         {:ok, response} ->
@@ -191,13 +200,14 @@ defmodule Chronicle.EventLog do
           )
         end)
 
-      request = struct(GetForEventSourceIdAndEventTypesRequest,
-        EventStore: config.event_store,
-        Namespace: namespace,
-        EventSequenceId: @event_log_id,
-        EventSourceId: event_source_id,
-        EventTypes: event_types
-      )
+      request =
+        struct(GetForEventSourceIdAndEventTypesRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          EventSequenceId: @event_log_id,
+          EventSourceId: event_source_id,
+          EventTypes: event_types
+        )
 
       case EventSequences.Stub.get_for_event_source_id_and_event_types(channel, request) do
         {:ok, response} -> {:ok, Map.get(response, :Events, [])}

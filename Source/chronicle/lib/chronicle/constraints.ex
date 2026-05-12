@@ -55,10 +55,11 @@ defmodule Chronicle.Constraints do
     definitions =
       Enum.map(constraints, &build_constraint/1)
 
-    request = struct(RegisterConstraintsRequest,
-      EventStore: event_store,
-      Constraints: definitions
-    )
+    request =
+      struct(RegisterConstraintsRequest,
+        EventStore: event_store,
+        Constraints: definitions
+      )
 
     case Constraints.Stub.register(channel, request) do
       {:ok, _} -> :ok
@@ -66,21 +67,28 @@ defmodule Chronicle.Constraints do
     end
   end
 
-  defp build_constraint(%{type: :unique, name: name, event_type_id: event_type_id, on: properties}) do
+  defp build_constraint(%{
+         type: :unique,
+         name: name,
+         event_type_id: event_type_id,
+         on: properties
+       }) do
     struct(Constraint,
       Name: name,
       Type: :Unique,
-      Definition: struct(OneOf_UniqueConstraintDefinition_UniqueEventTypeConstraintDefinition,
-        Value0: struct(UniqueConstraintDefinition,
-          EventDefinitions: [
-            struct(UniqueConstraintEventDefinition,
-              EventTypeId: event_type_id,
-              Properties: List.wrap(properties)
+      Definition:
+        struct(OneOf_UniqueConstraintDefinition_UniqueEventTypeConstraintDefinition,
+          Value0:
+            struct(UniqueConstraintDefinition,
+              EventDefinitions: [
+                struct(UniqueConstraintEventDefinition,
+                  EventTypeId: event_type_id,
+                  Properties: List.wrap(properties)
+                )
+              ],
+              IgnoreCasing: false
             )
-          ],
-          IgnoreCasing: false
         )
-      )
     )
   end
 
@@ -88,6 +96,12 @@ defmodule Chronicle.Constraints do
     properties = Map.get(constraint, :on, [])
     event_type_id = event_module.__chronicle_event_type__(:id)
 
-    build_constraint(%{constraint | type: :unique, event_type_id: event_type_id, on: properties, name: name})
+    build_constraint(%{
+      constraint
+      | type: :unique,
+        event_type_id: event_type_id,
+        on: properties,
+        name: name
+    })
   end
 end

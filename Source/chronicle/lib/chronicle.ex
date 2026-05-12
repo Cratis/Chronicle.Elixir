@@ -34,6 +34,13 @@ defmodule Chronicle do
         end
       end
 
+  Or rely on artifact auto-discovery:
+
+      {Chronicle.Client,
+        connection_string: "chronicle://localhost:35000?disableTls=true",
+        event_store: "my-app",
+        otp_app: :my_app}
+
   ## Defining Event Types
 
       defmodule MyApp.Events.AccountOpened do

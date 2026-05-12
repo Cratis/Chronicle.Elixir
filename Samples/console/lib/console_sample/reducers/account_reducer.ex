@@ -33,24 +33,32 @@ defmodule ConsoleSample.Reducers.AccountReducer do
       balance: event.initial_balance,
       transaction_count: 0
     }
-    Logger.info("[Reducer] AccountOpened → balance=#{summary.balance}, owner=#{summary.owner_name}")
+
+    Logger.info(
+      "[Reducer] AccountOpened → balance=#{summary.balance}, owner=#{summary.owner_name}"
+    )
+
     summary
   end
 
   def reduce(%FundsDeposited{} = event, model, _context) do
-    summary = %{model |
-      balance: model.balance + event.amount,
-      transaction_count: model.transaction_count + 1
+    summary = %{
+      model
+      | balance: model.balance + event.amount,
+        transaction_count: model.transaction_count + 1
     }
+
     Logger.info("[Reducer] FundsDeposited +#{event.amount} → balance=#{summary.balance}")
     summary
   end
 
   def reduce(%FundsWithdrawn{} = event, model, _context) do
-    summary = %{model |
-      balance: model.balance - event.amount,
-      transaction_count: model.transaction_count + 1
+    summary = %{
+      model
+      | balance: model.balance - event.amount,
+        transaction_count: model.transaction_count + 1
     }
+
     Logger.info("[Reducer] FundsWithdrawn -#{event.amount} → balance=#{summary.balance}")
     summary
   end

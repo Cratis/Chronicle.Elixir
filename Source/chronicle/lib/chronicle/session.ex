@@ -118,7 +118,10 @@ defmodule Chronicle.Session do
     {:noreply, schedule_reconnect(%{state | keepalive_task: nil, ready?: false})}
   end
 
-  def handle_info({:DOWN, _ref, :process, pid, reason}, %{keepalive_task: %Task{pid: pid}} = state) do
+  def handle_info(
+        {:DOWN, _ref, :process, pid, reason},
+        %{keepalive_task: %Task{pid: pid}} = state
+      ) do
     Logger.warning("Chronicle session task exited: #{inspect(reason)}")
     {:noreply, schedule_reconnect(%{state | keepalive_task: nil, ready?: false})}
   end
@@ -127,11 +130,12 @@ defmodule Chronicle.Session do
 
   defp start_session(channel, state) do
     try do
-      request = struct(ConnectRequest,
-        ConnectionId: state.connection_id,
-        ClientVersion: "1.0.0",
-        IsRunningWithDebugger: false
-      )
+      request =
+        struct(ConnectRequest,
+          ConnectionId: state.connection_id,
+          ClientVersion: "1.0.0",
+          IsRunningWithDebugger: false
+        )
 
       case ConnectionService.Stub.connect(channel, request) do
         {:ok, reply_stream} ->
