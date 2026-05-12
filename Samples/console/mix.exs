@@ -23,7 +23,7 @@ defmodule ConsoleSample.MixProject do
 
   defp deps do
     [
-      {:chronicle, path: "../../Source/chronicle"}
+      {:cratis_chronicle, "~> 0.0.1"}
     ]
   end
 end
