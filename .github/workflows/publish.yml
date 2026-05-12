@@ -81,7 +81,7 @@ jobs:
   verify_sample:
     name: Verify Console Sample (Hex)
     runs-on: ubuntu-latest
-    needs: test
+    needs: publish
 
     steps:
       - name: Checkout code
