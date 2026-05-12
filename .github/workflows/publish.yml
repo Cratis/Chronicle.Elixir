@@ -3,6 +3,17 @@
 
 name: Publish Elixir Chronicle Client
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ELIXIR_VERSION: "1.19.5"
+  OTP_VERSION: "28.5"
+
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
     inputs:
@@ -32,14 +43,28 @@ on:
     paths:
       - "Source/**"
 
-env:
-  ELIXIR_VERSION: "1.17.3"
-  OTP_VERSION: "27.1"
-
 jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      publish: ${{ steps.release.outputs.should-publish }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Release
+        id: release
+        uses: cratis/release-action@v1
+        with:
+          version: ${{ github.event.inputs.version }}
+          release-notes: ${{ github.event.inputs.release-notes }}
+
   test:
     name: Test
     runs-on: ubuntu-latest
+    needs: [release]
 
     steps:
       - name: Checkout code
@@ -81,8 +106,8 @@ jobs:
   publish:
     name: Publish to Hex
     runs-on: ubuntu-latest
-    needs: test
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    needs: [release, test]
+    if: needs.release.outputs.publish == 'true'
 
     steps:
       - name: Checkout code
@@ -113,15 +138,6 @@ jobs:
         working-directory: ./Source/chronicle
         run: mix deps.get
 
-      - name: Determine version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-          fi
-
       - name: Copy README for Hex package
         run: cp README.md Source/chronicle/README.md
 
@@ -129,5 +145,5 @@ jobs:
         working-directory: ./Source/chronicle
         run: mix hex.publish --yes
         env:
-          CHRONICLE_VERSION: ${{ steps.version.outputs.version }}
+          CHRONICLE_VERSION: ${{ needs.release.outputs.version }}
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
