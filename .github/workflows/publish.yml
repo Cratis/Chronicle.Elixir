@@ -10,6 +10,7 @@ concurrency:
 env:
   ELIXIR_VERSION: "1.19.5"
   OTP_VERSION: "28.5"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 permissions:
   contents: write
@@ -140,6 +141,10 @@ jobs:
 
       - name: Copy README for Hex package
         run: cp README.md Source/chronicle/README.md
+
+      - name: Compile
+        working-directory: ./Source/chronicle
+        run: mix compile
 
       - name: Publish to Hex
         working-directory: ./Source/chronicle
