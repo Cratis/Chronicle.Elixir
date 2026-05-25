@@ -102,6 +102,7 @@ defmodule Chronicle do
     * `Chronicle.Reducer` — behaviour for read model reducers
     * `Chronicle.ReadModel` — macro for read model structs with embedded projection DSL
     * `Chronicle.EventLog` — append and query events
+    * `Chronicle.EventStores` — list event stores and namespaces
     * `Chronicle.ReadModels` — query read model instances
     * `Chronicle.Connections.ConnectionString` — parse and format connection strings
     * `Chronicle.Connections.Connection` — resilient gRPC channel management
@@ -116,6 +117,7 @@ defmodule Chronicle do
 
     * `:client` — the client name (default: `Chronicle.Client`)
     * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence id (default: `"event-log"`)
     * `:tags` — list of tag strings
     * `:subject` — the identity subject string
     * `:correlation_id` — `Chronicle.CorrelationId` (or id string) override
@@ -150,6 +152,33 @@ defmodule Chronicle do
   """
   @spec all(module(), keyword()) :: {:ok, [struct()]} | {:error, term()}
   defdelegate all(model_module, opts \\ []), to: Chronicle.ReadModels
+
+  @doc """
+  Returns all event store names.
+  """
+  @spec get_event_stores(keyword()) :: {:ok, [String.t()]} | {:error, term()}
+  defdelegate get_event_stores(opts \\ []), to: Chronicle.EventStores, as: :get_all
+
+  @doc """
+  Returns all namespaces for an event store.
+
+  Uses the configured client event store by default.
+  """
+  @spec get_namespaces(keyword()) :: {:ok, [String.t()]} | {:error, term()}
+  defdelegate get_namespaces(opts \\ []), to: Chronicle.EventStores
+
+  @doc """
+  Gets the tail sequence number for an event sequence.
+  """
+  @spec get_tail_sequence_number(String.t() | nil, keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  defdelegate get_tail_sequence_number(event_source_id \\ nil, opts \\ []), to: Chronicle.EventLog
+
+  @doc """
+  Checks whether there are events for an event source id in an event sequence.
+  """
+  @spec has_events_for?(String.t(), keyword()) :: {:ok, boolean()} | {:error, term()}
+  defdelegate has_events_for?(event_source_id, opts \\ []), to: Chronicle.EventLog
 
   @doc """
   Gets the current process correlation id.

@@ -65,6 +65,7 @@ defmodule Chronicle.EventLog do
 
     * `:client` — the client name (default: `Chronicle.Client`)
     * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence id (default: `"event-log"`)
     * `:event_source_type` — the event source type (default: `""`)
     * `:event_stream_type` — the event stream type (default: `""`)
     * `:event_stream_id` — the event stream ID (default: `""`)
@@ -80,6 +81,7 @@ defmodule Chronicle.EventLog do
   def append(event_source_id, event, opts \\ []) do
     with {:ok, channel, config} <- resolve_channel(opts) do
       namespace = Keyword.get(opts, :namespace, config.namespace)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
       event_module = event.__struct__
 
       request =
@@ -87,7 +89,7 @@ defmodule Chronicle.EventLog do
           CorrelationId: build_correlation_id(opts),
           EventStore: config.event_store,
           Namespace: namespace,
-          EventSequenceId: @event_log_id,
+          EventSequenceId: event_sequence_id,
           EventSourceType: Keyword.get(opts, :event_source_type, "Default"),
           EventSourceId: event_source_id,
           EventStreamType: Keyword.get(opts, :event_stream_type, "All"),
@@ -131,12 +133,13 @@ defmodule Chronicle.EventLog do
 
   ## Options
 
-  Same as `append/3`.
+  Same as `append/3`, including `:event_sequence_id`.
   """
   @spec append_many(String.t(), [struct()], keyword()) :: :ok | {:error, term()}
   def append_many(event_source_id, events, opts \\ []) when is_list(events) do
     with {:ok, channel, config} <- resolve_channel(opts) do
       namespace = Keyword.get(opts, :namespace, config.namespace)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
 
       event_entries =
         Enum.map(events, fn event ->
@@ -161,7 +164,7 @@ defmodule Chronicle.EventLog do
         struct(AppendManyRequest,
           EventStore: config.event_store,
           Namespace: namespace,
-          EventSequenceId: @event_log_id,
+          EventSequenceId: event_sequence_id,
           Events: event_entries
         )
 
@@ -189,6 +192,7 @@ defmodule Chronicle.EventLog do
 
     * `:client` — the client name (default: `Chronicle.Client`)
     * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence id (default: `"event-log"`)
     * `:event_types` — list of event type modules to filter by (default: all)
 
   Returns `{:ok, [appended_event]}` or `{:error, reason}`.
@@ -197,6 +201,7 @@ defmodule Chronicle.EventLog do
   def get_for_event_source(event_source_id, opts \\ []) do
     with {:ok, channel, config} <- resolve_channel(opts) do
       namespace = Keyword.get(opts, :namespace, config.namespace)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
       event_type_modules = Keyword.get(opts, :event_types, [])
 
       event_types =
@@ -211,7 +216,7 @@ defmodule Chronicle.EventLog do
         struct(GetForEventSourceIdAndEventTypesRequest,
           EventStore: config.event_store,
           Namespace: namespace,
-          EventSequenceId: @event_log_id,
+          EventSequenceId: event_sequence_id,
           EventSourceId: event_source_id,
           EventTypes: event_types
         )
@@ -219,6 +224,76 @@ defmodule Chronicle.EventLog do
       case EventSequences.Stub.get_for_event_source_id_and_event_types(channel, request) do
         {:ok, response} -> {:ok, Map.get(response, :Events, [])}
         {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Returns the tail sequence number for an event sequence.
+
+  ## Options
+
+    * `:client` — the client name (default: `Chronicle.Client`)
+    * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence id (default: `"event-log"`)
+  """
+  @spec get_tail_sequence_number(String.t() | nil, keyword()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def get_tail_sequence_number(event_source_id \\ nil, opts \\ []) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      namespace = Keyword.get(opts, :namespace, config.namespace)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+
+      request = %{
+        EventStore: config.event_store,
+        Namespace: namespace,
+        EventSequenceId: event_sequence_id,
+        EventSourceId: event_source_id || "",
+        EventTypes: [],
+        EventSourceType: "Default",
+        EventStreamId: "",
+        EventStreamType: "Default"
+      }
+
+      case EventSequences.Stub.get_tail_sequence_number(channel, request) do
+        {:ok, response} ->
+          sequence_number = Map.get(response, :SequenceNumber, Map.get(response, :sequence_number, 0))
+          {:ok, normalize_sequence_number(sequence_number)}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Checks whether an event sequence has events for an event source id.
+
+  ## Options
+
+    * `:client` — the client name (default: `Chronicle.Client`)
+    * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence id (default: `"event-log"`)
+  """
+  @spec has_events_for?(String.t(), keyword()) :: {:ok, boolean()} | {:error, term()}
+  def has_events_for?(event_source_id, opts \\ []) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      namespace = Keyword.get(opts, :namespace, config.namespace)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+
+      request = %{
+        EventStore: config.event_store,
+        Namespace: namespace,
+        EventSequenceId: event_sequence_id,
+        EventSourceId: event_source_id
+      }
+
+      case EventSequences.Stub.has_events_for_event_source_id(channel, request) do
+        {:ok, response} ->
+          has_events = Map.get(response, :HasEvents, Map.get(response, :has_events, false))
+          {:ok, has_events}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     end
   end
@@ -340,4 +415,8 @@ defmodule Chronicle.EventLog do
   defp current_datetime_offset do
     struct(SerializableDateTimeOffset, Value: DateTime.utc_now() |> DateTime.to_iso8601())
   end
+
+  defp normalize_sequence_number(18_446_744_073_709_551_615), do: 0
+  defp normalize_sequence_number(value) when is_integer(value) and value >= 0, do: value
+  defp normalize_sequence_number(_), do: 0
 end

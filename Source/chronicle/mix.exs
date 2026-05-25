@@ -67,7 +67,12 @@ defmodule Chronicle.MixProject do
           Chronicle.CausationEntry,
           Chronicle.CausationManager
         ],
-        "Event Sourcing": [Chronicle.EventType, Chronicle.EventLog, Chronicle.EventTypes],
+        "Event Sourcing": [
+          Chronicle.EventType,
+          Chronicle.EventLog,
+          Chronicle.EventTypes,
+          Chronicle.EventStores
+        ],
         Observers: [Chronicle.Reactor, Chronicle.Reducer],
         "Read Models": [Chronicle.ReadModel, Chronicle.ReadModels],
         Constraints: [Chronicle.Constraints]

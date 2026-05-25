@@ -177,6 +177,16 @@ IO.inspect(account)
 {:ok, accounts} = Chronicle.all(MyApp.ReadModels.Account)
 ```
 
+You can also inspect event-store metadata and event-sequence state:
+
+```elixir
+{:ok, stores} = Chronicle.get_event_stores()
+{:ok, namespaces} = Chronicle.get_namespaces()
+
+{:ok, has_events?} = Chronicle.has_events_for?("account-42")
+{:ok, tail_sequence_number} = Chronicle.get_tail_sequence_number("account-42")
+```
+
 ### Correlation, identity, and causation
 
 You can set process-scoped correlation, identity, and causation context.
@@ -206,6 +216,13 @@ For one-off overrides, pass explicit metadata as options:
     correlation_id: "92a130f7-16e2-44f7-a8e3-79e76f5df3e1",
     identity: Chronicle.Identity.new("service-1", "Billing Service", "billing")
   )
+```
+
+To append/query a non-default event sequence, pass `:event_sequence_id`:
+
+```elixir
+:ok = Chronicle.append("account-42", event, event_sequence_id: "audit-sequence")
+{:ok, events} = Chronicle.EventLog.get_for_event_source("account-42", event_sequence_id: "audit-sequence")
 ```
 
 ## Quick Start (Reducer Alternative)
