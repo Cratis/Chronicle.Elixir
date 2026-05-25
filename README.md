@@ -13,6 +13,7 @@ Key features:
 - **`use Chronicle.Reducer`** — build read models by folding events into state
 - **`use Chronicle.ReadModel`** — define read models with model-bound projections
 - **Model-bound constraints** — declare unique and unique-event-type constraints on event types
+- **Context-aware appends** — process-scoped identity, correlation, and causation metadata
 - **Resilient connection** — automatic reconnection with exponential backoff
 - **OTP-native** — fits naturally in your supervision tree
 
@@ -174,6 +175,37 @@ IO.inspect(account)
 
 # Get all instances
 {:ok, accounts} = Chronicle.all(MyApp.ReadModels.Account)
+```
+
+### Correlation, identity, and causation
+
+You can set process-scoped correlation, identity, and causation context.
+`Chronicle.append/3` automatically includes this metadata on append requests.
+
+```elixir
+alias Chronicle.{CausationManager, CorrelationId, Identity}
+
+Chronicle.set_correlation_id(CorrelationId.create())
+Chronicle.set_identity(Identity.new("user-42", "Alice", "alice"))
+
+CausationManager.define_root(%{application: "banking-api"})
+CausationManager.add("Banking.Commands.OpenAccount", %{account_id: "account-42"})
+
+:ok = Chronicle.append("account-42", %MyApp.Events.AccountOpened{...})
+
+Chronicle.clear_identity()
+Chronicle.clear_correlation_id()
+CausationManager.clear()
+```
+
+For one-off overrides, pass explicit metadata as options:
+
+```elixir
+:ok =
+  Chronicle.append("account-42", event,
+    correlation_id: "92a130f7-16e2-44f7-a8e3-79e76f5df3e1",
+    identity: Chronicle.Identity.new("service-1", "Billing Service", "billing")
+  )
 ```
 
 ## Quick Start (Reducer Alternative)

@@ -12,6 +12,7 @@ defmodule ConsoleSample do
 
   alias ConsoleSample.Events.{AccountOpened, FundsDeposited, FundsWithdrawn}
   alias ConsoleSample.ReadModels.Account
+  alias Chronicle.{CausationManager, CorrelationIdManager, Identity}
 
   @doc """
   Runs the demo scenario:
@@ -25,9 +26,20 @@ defmodule ConsoleSample do
     Process.sleep(8_000)
 
     account_id = "account-#{:rand.uniform(1_000_000)}"
+    correlation_id = Chronicle.CorrelationId.create()
+
+    Chronicle.set_correlation_id(correlation_id)
+
+    Chronicle.set_identity(
+      Identity.new("console-sample-user", "Console Sample", "console-sample")
+    )
+
+    CausationManager.define_root(%{application: "console-sample"})
+    CausationManager.add("ConsoleSample.RunDemo", %{account_id: account_id})
 
     Logger.info("=== Chronicle Elixir Console Sample ===")
     Logger.info("Using account ID: #{account_id}")
+    Logger.info("Correlation ID: #{correlation_id.value}")
 
     Logger.info("Appending AccountOpened event...")
 
@@ -84,5 +96,9 @@ defmodule ConsoleSample do
     end
 
     Logger.info("=== Demo complete ===")
+
+    Chronicle.clear_identity()
+    CorrelationIdManager.clear()
+    CausationManager.clear()
   end
 end
