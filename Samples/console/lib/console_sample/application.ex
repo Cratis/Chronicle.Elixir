@@ -6,21 +6,13 @@ defmodule ConsoleSample.Application do
 
   use Application
 
-  alias ConsoleSample.Events.{AccountOpened, FundsDeposited, FundsWithdrawn}
-  alias ConsoleSample.ReadModels.Account
-  alias ConsoleSample.Reactors.NotificationReactor
-  alias ConsoleSample.Reducers.AccountReducer
-
   @impl true
   def start(_type, _args) do
     children = [
       {Chronicle.Client,
        connection_string: connection_string(),
        event_store: "console-sample",
-       event_types: [AccountOpened, FundsDeposited, FundsWithdrawn],
-       reactors: [NotificationReactor],
-       reducers: [AccountReducer],
-       read_models: [Account]}
+       otp_app: :console_sample}
     ]
 
     opts = [strategy: :one_for_one, name: ConsoleSample.Supervisor]

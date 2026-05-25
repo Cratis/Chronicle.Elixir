@@ -28,7 +28,9 @@ defmodule Chronicle.Reactors.Handler do
   }
 
   alias Cratis.Chronicle.Contracts.Observation.Reactors.EventType, as: ProtoEventType
-  alias Cratis.Chronicle.Contracts.Observation.Reactors.OneOf_RegisterReactor_ReactorResult, as: OneOf
+
+  alias Cratis.Chronicle.Contracts.Observation.Reactors.OneOf_RegisterReactor_ReactorResult,
+    as: OneOf
 
   @reconnect_base_delay 1_000
   @reconnect_max_delay 30_000
@@ -103,17 +105,20 @@ defmodule Chronicle.Reactors.Handler do
         event -> Map.get(Map.get(event, :Context, %{}), :SequenceNumber, 0)
       end
 
-    result = %ReactorMessage{
-      Content: %OneOf{
-        Value1: %ReactorResult{
-          Partition: partition,
-          State: encode_observation_state(observation_state),
-          LastSuccessfulObservation: last_seq,
-          ExceptionMessages: exception_messages,
-          ExceptionStackTrace: stack_trace
-        }
-      }
-    }
+    result =
+      struct(ReactorMessage,
+        Content:
+          struct(OneOf,
+            Value1:
+              struct(ReactorResult,
+                Partition: partition,
+                State: encode_observation_state(observation_state),
+                LastSuccessfulObservation: last_seq,
+                ExceptionMessages: exception_messages,
+                ExceptionStackTrace: stack_trace
+              )
+          )
+      )
 
     GRPC.Stub.send_request(state.stream, result)
     {:noreply, state}
@@ -175,35 +180,43 @@ defmodule Chronicle.Reactors.Handler do
   defp build_registration(state) do
     event_types =
       Enum.map(state.event_type_map, fn {id, module} ->
-        %EventTypeWithKeyExpression{
-          EventType: %ProtoEventType{
-            Id: id,
-            Generation: module.__chronicle_event_type__(:generation)
-          },
+        struct(EventTypeWithKeyExpression,
+          EventType:
+            struct(ProtoEventType,
+              Id: id,
+              Generation: module.__chronicle_event_type__(:generation)
+            ),
           Key: "$eventSourceId"
-        }
+        )
       end)
 
     reactor_id = state.module.__chronicle_reactor__(:id)
-    conn_id = if state.session, do: Chronicle.Session.connection_id(state.session), else: generate_connection_id()
 
-    %ReactorMessage{
-      Content: %OneOf{
-        Value0: %RegisterReactor{
-          ConnectionId: conn_id,
-          EventStore: state.event_store,
-          Namespace: state.namespace,
-          Reactor: %ReactorDefinition{
-            ReactorId: reactor_id,
-            EventSequenceId: "event-log",
-            EventTypes: event_types,
-            IsReplayable: true,
-            Tags: [],
-            Filters: %ObserverFilters{}
-          }
-        }
-      }
-    }
+    conn_id =
+      if state.session,
+        do: Chronicle.Session.connection_id(state.session),
+        else: generate_connection_id()
+
+    struct(ReactorMessage,
+      Content:
+        struct(OneOf,
+          Value0:
+            struct(RegisterReactor,
+              ConnectionId: conn_id,
+              EventStore: state.event_store,
+              Namespace: state.namespace,
+              Reactor:
+                struct(ReactorDefinition,
+                  ReactorId: reactor_id,
+                  EventSequenceId: "event-log",
+                  EventTypes: event_types,
+                  IsReplayable: true,
+                  Tags: [],
+                  Filters: struct(ObserverFilters)
+                )
+            )
+        )
+    )
   end
 
   defp dispatch_event(state, appended_event) do

@@ -19,21 +19,30 @@ defmodule ConsoleSample.Reactors.NotificationReactor do
 
   @impl true
   def handle(%ConsoleSample.Events.AccountOpened{} = event, context) do
-    Logger.info("[Reactor] Account opened: #{event.account_id} for #{event.owner_name} " <>
-                "with initial balance #{event.initial_balance} " <>
-                "(seq=#{context.sequence_number})")
+    Logger.info(
+      "[Reactor] Account opened: #{event.account_id} for #{event.owner_name} " <>
+        "with initial balance #{event.initial_balance} " <>
+        "(seq=#{context.sequence_number})"
+    )
+
     :ok
   end
 
   def handle(%ConsoleSample.Events.FundsDeposited{} = event, context) do
-    Logger.info("[Reactor] Funds deposited: #{event.amount} to #{event.account_id} " <>
-                "(seq=#{context.sequence_number})")
+    Logger.info(
+      "[Reactor] Funds deposited: #{event.amount} to #{event.account_id} " <>
+        "(seq=#{context.sequence_number})"
+    )
+
     :ok
   end
 
   def handle(%ConsoleSample.Events.FundsWithdrawn{} = event, context) do
-    Logger.info("[Reactor] Funds withdrawn: #{event.amount} from #{event.account_id} " <>
-                "(seq=#{context.sequence_number})")
+    Logger.info(
+      "[Reactor] Funds withdrawn: #{event.amount} from #{event.account_id} " <>
+        "(seq=#{context.sequence_number})"
+    )
+
     :ok
   end
 end

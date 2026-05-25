@@ -117,8 +117,10 @@ defmodule Chronicle.Connections.Connection do
       disconnect_fun: Keyword.get(options, :disconnect_fun, &default_disconnect/1),
       grpc_options: Keyword.get(options, :grpc_options, []),
       retry_attempts: Keyword.get(options, :retry_attempts, @default_retry_attempts),
-      reconnect_base_delay: Keyword.get(options, :reconnect_base_delay, @default_reconnect_base_delay),
-      reconnect_max_delay: Keyword.get(options, :reconnect_max_delay, @default_reconnect_max_delay),
+      reconnect_base_delay:
+        Keyword.get(options, :reconnect_base_delay, @default_reconnect_base_delay),
+      reconnect_max_delay:
+        Keyword.get(options, :reconnect_max_delay, @default_reconnect_max_delay),
       reconnect_attempt: 0,
       reconnect_timer: nil,
       connection_process: nil,
@@ -182,7 +184,8 @@ defmodule Chronicle.Connections.Connection do
   end
 
   def handle_info({:connect_result, {:error, _reason}}, state) do
-    {:noreply, schedule_reconnect(%{state | channel: nil, connected?: false, connection_process: nil})}
+    {:noreply,
+     schedule_reconnect(%{state | channel: nil, connected?: false, connection_process: nil})}
   end
 
   def handle_info({:connect_timeout, from}, state) do
@@ -196,15 +199,18 @@ defmodule Chronicle.Connections.Connection do
     {:noreply, %{state | pending_connects: remaining}}
   end
 
-  def handle_info({:elixir_grpc, :connection_down, pid}, state) when pid == state.connection_process do
+  def handle_info({:elixir_grpc, :connection_down, pid}, state)
+      when pid == state.connection_process do
     {:noreply, handle_connection_down(state)}
   end
 
-  def handle_info({:gun_down, pid, _protocol, _reason}, state) when pid == state.connection_process do
+  def handle_info({:gun_down, pid, _protocol, _reason}, state)
+      when pid == state.connection_process do
     {:noreply, handle_connection_down(state)}
   end
 
-  def handle_info({:gun_down, pid, _protocol, _reason, _streams}, state) when pid == state.connection_process do
+  def handle_info({:gun_down, pid, _protocol, _reason, _streams}, state)
+      when pid == state.connection_process do
     {:noreply, handle_connection_down(state)}
   end
 
@@ -248,7 +254,8 @@ defmodule Chronicle.Connections.Connection do
     |> schedule_reconnect()
   end
 
-  defp schedule_reconnect(%{reconnect_timer: timer_ref} = state) when not is_nil(timer_ref), do: state
+  defp schedule_reconnect(%{reconnect_timer: timer_ref} = state) when not is_nil(timer_ref),
+    do: state
 
   defp schedule_reconnect(state) do
     delay =
@@ -332,10 +339,17 @@ defmodule Chronicle.Connections.Connection do
       present?(connection_string.username) and present?(connection_string.password) ->
         cs = connection_string
         host = cs.server_address.host
+
         # Use explicit auth_port if provided, otherwise default to 8080 (Chronicle's management port)
         port = cs.auth_port || 8080
 
-        case Chronicle.Connections.Auth.fetch_token(host, port, cs.username, cs.password, cs.disable_tls) do
+        case Chronicle.Connections.Auth.fetch_token(
+               host,
+               port,
+               cs.username,
+               cs.password,
+               cs.disable_tls
+             ) do
           {:ok, token} ->
             [{"authorization", "Bearer #{token}"}]
 

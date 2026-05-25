@@ -4,12 +4,16 @@
 defmodule Chronicle.MixProject do
   use Mix.Project
 
-  @version System.get_env("CHRONICLE_VERSION") || "0.1.0"
+  @version (
+    Path.join(__DIR__, "VERSION")
+    |> File.read!()
+    |> String.trim()
+  )
   @source_url "https://github.com/Cratis/Chronicle.Elixir"
 
   def project do
     [
-      app: :chronicle,
+      app: :cratis_chronicle,
       version: @version,
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
@@ -44,7 +48,7 @@ defmodule Chronicle.MixProject do
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url},
       maintainers: ["Cratis"],
-      files: ~w(lib mix.exs README.md .formatter.exs)
+      files: ~w(lib mix.exs README.md VERSION .formatter.exs)
     ]
   end
 

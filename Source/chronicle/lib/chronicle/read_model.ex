@@ -18,20 +18,17 @@ defmodule Chronicle.ReadModel do
         defstruct account_id: nil, owner_name: nil, balance: 0, transaction_count: 0
 
         from MyApp.Events.AccountOpened,
-          key: "$eventSourceId",
           set: [
-            account_id: "$eventSourceId",
-            owner_name: "OwnerName",
-            balance: "InitialBalance"
+            account_id: :event_source_id,
+            owner_name: :owner_name,
+            balance: :initial_balance
           ]
 
         from MyApp.Events.FundsDeposited,
-          key: "$eventSourceId",
-          add: [balance: "Amount", transaction_count: 1]
+          add: [balance: :amount, transaction_count: 1]
 
         from MyApp.Events.FundsWithdrawn,
-          key: "$eventSourceId",
-          subtract: [balance: "Amount"],
+          subtract: [balance: :amount],
           add: [transaction_count: 1]
       end
 
@@ -42,12 +39,12 @@ defmodule Chronicle.ReadModel do
   Maps properties from an event onto the read model.
 
       from MyApp.Events.AccountOpened,
-        key: "$eventSourceId",
-        set: [account_id: "$eventSourceId", owner_name: "OwnerName"],
+        set: [account_id: :event_source_id, owner_name: :owner_name],
         count: :transaction_count
 
   Options:
-    * `:key` — key expression identifying the model instance (default: `"$eventSourceId"`)
+    * `:key` — key expression identifying the model instance.
+      Defaults to `"$eventSourceId"` when omitted.
     * `:parent_key` — parent key for nested models
     * `:set` — keyword list of `field: expression` pairs to set directly
     * `:add` — keyword list of `field: expression` pairs to add to
@@ -59,13 +56,12 @@ defmodule Chronicle.ReadModel do
   Joins a secondary event onto the model by a matching field.
 
       join MyApp.Events.AccountVerified,
-        on: "AccountId",
-        key: "$eventSourceId",
+        on: "accountId",
         set: [verified: true]
 
   Options:
     * `:on` — **(required)** the field name in the event to join on
-    * `:key` — key expression (default: `"$eventSourceId"`)
+    * `:key` — key expression (defaults to `"$eventSourceId"`)
     * `:set`, `:add`, `:subtract` — property mappings
 
   ### `removed_with/2`
@@ -73,10 +69,10 @@ defmodule Chronicle.ReadModel do
   Removes the model instance when the given event occurs.
 
       removed_with MyApp.Events.AccountClosed,
-        key: "$eventSourceId"
+        []
 
   Options:
-    * `:key` — key expression (default: `"$eventSourceId"`)
+    * `:key` — key expression (defaults to `"$eventSourceId"`)
     * `:parent_key` — parent key for nested models
 
   ### `from_every/1`
@@ -90,16 +86,21 @@ defmodule Chronicle.ReadModel do
 
   ## Property Expressions
 
-  Values in `set:`, `add:`, and `subtract:` lists are Chronicle property path
-  expressions:
+  Values in `set:`, `add:`, and `subtract:` lists can be atoms, strings, or
+  literals:
+
+  - Use atoms for event fields (preferred): `:owner_name`, `:amount`
+  - Use `:event_source_id` and `:occurred` for built-in context values
+  - Use strings for advanced Chronicle expressions when needed
+  - Use numbers and booleans as literal values
 
   | Expression | Meaning |
   |-----------|---------|
-  | `"OwnerName"` | The `OwnerName` field from the event |
-  | `"$eventSourceId"` | The event source identifier |
-  | `"$occurred"` | When the event was recorded |
+  | `:owner_name` | The `owner_name` field from the event |
+  | `:event_source_id` | The event source identifier |
+  | `:occurred` | When the event was recorded |
   | `1` | A literal integer constant |
-  | `"Amount"` | A named field from the event payload |
+  | `"$add(amount, balance)"` | An explicit Chronicle expression |
 
   ## Registering with Chronicle.Client
 

@@ -6,8 +6,9 @@ A runnable example demonstrating the Chronicle Elixir client.
 
 1. Appends three domain events (`AccountOpened`, `FundsDeposited`, `FundsWithdrawn`) to a Chronicle event store
 2. Reacts to those events via a `NotificationReactor` (prints log messages)
-3. Reduces them into an `Account` read model via `AccountReducer`
-4. Reads back the resulting `Account` read model and prints its state
+3. Projects them into an `Account` read model using model-bound `Chronicle.ReadModel` mappings
+4. Also runs a reducer (`AccountReducer`) into `AccountSummary` as an alternative approach
+5. Reads back the projection-backed `Account` model and prints its state
 
 ## Prerequisites
 
@@ -16,7 +17,7 @@ A runnable example demonstrating the Chronicle Elixir client.
 
 > **Tip:** The easiest way to run Chronicle locally is via Docker:
 > ```shell
-> docker run -p 35000:35000 -p 8080:8080 cratis/chronicle:latest
+> docker run -p 35000:35000 -p 8080:8080 cratis/chronicle:latest-development
 > ```
 
 ## Running
@@ -61,17 +62,16 @@ CHRONICLE_CONNECTION_STRING="chronicle://myserver:35000?apiKey=secret" mix run -
 lib/
   console_sample.ex                        # Demo scenario
   console_sample/
-    application.ex                         # OTP Application (starts Chronicle.Client)
+    application.ex                         # OTP Application (starts Chronicle.Client with auto-discovery)
     events/
       account_opened.ex                    # use Chronicle.EventType
       funds_deposited.ex
       funds_withdrawn.ex
     read_models/
-      account.ex                           # use Chronicle.ReadModel
+      account.ex                           # use Chronicle.ReadModel (projection-backed)
+      account_summary.ex                   # reducer-owned read model
     reactors/
       notification_reactor.ex              # use Chronicle.Reactor
     reducers/
       account_reducer.ex                   # use Chronicle.Reducer
-    projections/
-      account_projection.ex                # use Chronicle.Projection (declarative)
 ```

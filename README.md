@@ -11,8 +11,8 @@ Key features:
 - **`use Chronicle.EventType`** — annotate structs as event types with stable IDs
 - **`use Chronicle.Reactor`** — react to events with side effects
 - **`use Chronicle.Reducer`** — build read models by folding events into state
-- **`use Chronicle.Projection`** — declare server-side read model projections
-- **Model-bound constraints** — declare unique constraints on event types with attributes
+- **`use Chronicle.ReadModel`** — define read models with model-bound projections
+- **Model-bound constraints** — declare unique and unique-event-type constraints on event types
 - **Resilient connection** — automatic reconnection with exponential backoff
 - **OTP-native** — fits naturally in your supervision tree
 
@@ -29,6 +29,8 @@ end
 ```
 
 ## Quick Start
+
+This guide uses **projections as the default** because they run inside Chronicle and keep read model updates close to the event store.
 
 ### 1. Define event types
 
@@ -49,50 +51,65 @@ end
 ```elixir
 defmodule MyApp.ReadModels.Account do
   use Chronicle.ReadModel
+
+  alias MyApp.Events.{AccountOpened, FundsDeposited}
+
   defstruct account_id: nil, owner_name: nil, balance: 0
+
+  from AccountOpened,
+    set: [
+      account_id: :event_source_id,
+      owner_name: :owner_name,
+      balance: :initial_balance
+    ]
+
+  from FundsDeposited,
+    add: [balance: :amount]
 end
 ```
 
 ### Constraints (model-bound)
 
-Declare unique constraints directly on event types:
+Declare constraints directly on event types:
 
 ```elixir
 defmodule MyApp.Events.UserRegistered do
   use Chronicle.EventType, id: "user-registered-v1"
+  defstruct [:email, :tenant_id]
+
+  @unique [:email, :tenant_id]
+  unique_event_type()
+end
+
+defmodule MyApp.Events.UserDeleted do
+  use Chronicle.EventType, id: "user-deleted-v1"
   defstruct [:email]
 
-  @unique :email
+  @remove_constraint "email"
 end
 ```
 
 Constraints declared this way are discovered and registered automatically during `Chronicle.Client` startup.
 
-### 3. Define a reducer
+### 3. Define projection mappings (recommended)
 
-Reducers fold events into a read model, one event at a time:
+Projection mappings are registered on Chronicle and executed server-side.
+Each `from/2` maps an event type to:
 
-```elixir
-defmodule MyApp.Reducers.AccountReducer do
-  use Chronicle.Reducer, model: MyApp.ReadModels.Account
+- A read model key (`$eventSourceId` by default when `:key` is omitted)
+- A set of property assignments
+- Optional expressions that can use event fields and existing model values
 
-  @handles MyApp.Events.AccountOpened
-  @handles MyApp.Events.FundsDeposited
+That means Chronicle can maintain read models directly from the event stream without reducer code running in your client process.
 
-  @impl true
-  def reduce(%MyApp.Events.AccountOpened{} = event, _model, _context) do
-    %MyApp.ReadModels.Account{
-      account_id: event.account_id,
-      owner_name: event.owner_name,
-      balance: event.initial_balance
-    }
-  end
+The projection mapping is declared directly in the read model module using
+`from`, `join`, `removed_with`, and `from_every`.
 
-  def reduce(%MyApp.Events.FundsDeposited{} = event, model, _context) do
-    %{model | balance: model.balance + event.amount}
-  end
-end
-```
+For expressions, atoms are preferred and more natural:
+
+- `:owner_name`, `:amount` for event fields
+- `:event_source_id`, `:occurred` for built-in context values
+- string expressions only for advanced cases
 
 ### 4. Define a reactor (optional)
 
@@ -114,6 +131,9 @@ end
 
 ### 5. Start Chronicle.Client in your supervision tree
 
+If your Chronicle artifacts are defined in one OTP app, use `otp_app` and let
+Chronicle discover event types, reactors, reducers, and read models automatically.
+
 ```elixir
 defmodule MyApp.Application do
   use Application
@@ -123,12 +143,7 @@ defmodule MyApp.Application do
       {Chronicle.Client,
         connection_string: "chronicle://localhost:35000?disableTls=true",
         event_store: "my-app",
-        event_types: [
-          MyApp.Events.AccountOpened,
-          MyApp.Events.FundsDeposited
-        ],
-        reactors: [MyApp.Reactors.NotificationReactor],
-        reducers: [MyApp.Reducers.AccountReducer]}
+        otp_app: :my_app}
     ]
 
     Supervisor.start_link(children, strategy: :one_for_one)
@@ -161,6 +176,58 @@ IO.inspect(account)
 {:ok, accounts} = Chronicle.all(MyApp.ReadModels.Account)
 ```
 
+## Quick Start (Reducer Alternative)
+
+Use reducers when you want the read model folding logic in Elixir code in your app process.
+In this mode, Chronicle streams events to the reducer and your reducer returns the next model state.
+
+### 1. Define a reducer
+
+Reducers fold events into a read model, one event at a time:
+
+```elixir
+defmodule MyApp.Reducers.AccountReducer do
+  use Chronicle.Reducer, model: MyApp.ReadModels.Account
+
+  @handles MyApp.Events.AccountOpened
+  @handles MyApp.Events.FundsDeposited
+
+  @impl true
+  def reduce(%MyApp.Events.AccountOpened{} = event, _model, _context) do
+    %MyApp.ReadModels.Account{
+      account_id: event.account_id,
+      owner_name: event.owner_name,
+      balance: event.initial_balance
+    }
+  end
+
+  def reduce(%MyApp.Events.FundsDeposited{} = event, model, _context) do
+    %{model | balance: model.balance + event.amount}
+  end
+end
+```
+
+### 2. Start Chronicle.Client with reducers
+
+With auto-discovery:
+
+```elixir
+defmodule MyApp.Application do
+  use Application
+
+  def start(_type, _args) do
+    children = [
+      {Chronicle.Client,
+        connection_string: "chronicle://localhost:35000?disableTls=true",
+        event_store: "my-app",
+        otp_app: :my_app}
+    ]
+
+    Supervisor.start_link(children, strategy: :one_for_one)
+  end
+end
+```
+
 ## Connection Strings
 
 Chronicle connection strings use the `chronicle://` scheme:
@@ -190,28 +257,26 @@ cs = ConnectionString.with_credentials(cs, "client-id", "secret")
 
 ## Declarative Projections
 
-As an alternative to reducers, projections declare server-side property mappings. Chronicle executes them on the kernel, enabling richer query capabilities:
+Projections are the recommended default. They are model-bound mappings declared
+on `Chronicle.ReadModel` and executed server-side by Chronicle:
 
 ```elixir
-defmodule MyApp.Projections.AccountProjection do
-  use Chronicle.Projection, model: MyApp.ReadModels.Account
+defmodule MyApp.ReadModels.Account do
+  use Chronicle.ReadModel
 
-  @impl true
-  def define do
-    import Chronicle.Projection.Builder
+  alias MyApp.Events.{AccountOpened, FundsDeposited}
 
-    new()
-    |> from(MyApp.Events.AccountOpened,
-        key: "$eventSourceId",
-        properties: %{
-          "account_id" => "$eventSourceId",
-          "owner_name" => "OwnerName",
-          "balance" => "InitialBalance"
-        })
-    |> from(MyApp.Events.FundsDeposited,
-        key: "$eventSourceId",
-        properties: %{"balance" => "$add(Amount, balance)"})
-  end
+  defstruct account_id: nil, owner_name: nil, balance: 0
+
+  from AccountOpened,
+    set: [
+      account_id: :event_source_id,
+      owner_name: :owner_name,
+      balance: :initial_balance
+    ]
+
+  from FundsDeposited,
+    add: [balance: :amount]
 end
 ```
 
@@ -304,12 +369,10 @@ Source/
           connection_string.ex
           connection.ex
         client.ex         # Supervisor entry point
+        artifacts.ex      # Artifact auto-discovery helpers
         event_type.ex     # use Chronicle.EventType macro
         reactor.ex        # use Chronicle.Reactor behaviour
         reducer.ex        # use Chronicle.Reducer behaviour
-        projection.ex     # use Chronicle.Projection behaviour
-        projection/
-          builder.ex      # Fluent projection builder
         read_model.ex     # use Chronicle.ReadModel macro
         event_log.ex      # Append and query events
         event_types.ex    # Register event types with Chronicle

@@ -96,7 +96,9 @@ defmodule Chronicle.Connections.ConnectionString do
   """
   @spec development() :: t()
   def development do
-    parse("chronicle://#{@development_client}:#{@development_client_secret}@localhost:#{@default_port}")
+    parse(
+      "chronicle://#{@development_client}:#{@development_client_secret}@localhost:#{@default_port}"
+    )
   end
 
   @doc """
@@ -124,6 +126,7 @@ defmodule Chronicle.Connections.ConnectionString do
         h when is_binary(h) and h != "" -> h
         _ -> raise ArgumentError, "Connection string must include a host"
       end
+
     port = if uri.port in [nil, -1], do: @default_port, else: uri.port
 
     if port < 1 or port > 65_535 do
@@ -199,7 +202,13 @@ defmodule Chronicle.Connections.ConnectionString do
   def with_credentials(%__MODULE__{} = connection_string, username, password) do
     updated_query_parameters = Map.delete(connection_string.query_parameters, "apiKey")
 
-    %{connection_string | username: username, password: password, api_key: nil, query_parameters: updated_query_parameters}
+    %{
+      connection_string
+      | username: username,
+        password: password,
+        api_key: nil,
+        query_parameters: updated_query_parameters
+    }
   end
 
   @doc """
@@ -211,7 +220,13 @@ defmodule Chronicle.Connections.ConnectionString do
   def with_api_key(%__MODULE__{} = connection_string, api_key) do
     query_parameters = Map.put(connection_string.query_parameters, "apiKey", api_key)
 
-    %{connection_string | username: nil, password: nil, api_key: api_key, query_parameters: query_parameters}
+    %{
+      connection_string
+      | username: nil,
+        password: nil,
+        api_key: api_key,
+        query_parameters: query_parameters
+    }
   end
 
   @doc """

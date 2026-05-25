@@ -23,21 +23,21 @@ defmodule ConsoleSample.ReadModels.Account do
           transaction_count: non_neg_integer()
         }
 
-  from AccountOpened,
-    key: "$eventSourceId",
+  from(AccountOpened,
     set: [
-      account_id: "$eventSourceId",
-      owner_name: "ownerName",
-      balance: "initialBalance"
+      account_id: :event_source_id,
+      owner_name: :owner_name,
+      balance: :initial_balance
     ]
+  )
 
-  from FundsDeposited,
-    key: "$eventSourceId",
-    add: [balance: "amount"],
+  from(FundsDeposited,
+    add: [balance: :amount],
     count: :transaction_count
+  )
 
-  from FundsWithdrawn,
-    key: "$eventSourceId",
-    subtract: [balance: "amount"],
+  from(FundsWithdrawn,
+    subtract: [balance: :amount],
     count: :transaction_count
+  )
 end

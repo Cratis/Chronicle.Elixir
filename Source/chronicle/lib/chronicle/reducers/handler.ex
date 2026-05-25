@@ -28,11 +28,14 @@ defmodule Chronicle.Reducers.Handler do
   }
 
   alias Cratis.Chronicle.Contracts.Observation.Reducers.EventType, as: ProtoEventType
-  alias Cratis.Chronicle.Contracts.Observation.Reducers.OneOf_RegisterReducer_ReducerResult, as: OneOf
+
+  alias Cratis.Chronicle.Contracts.Observation.Reducers.OneOf_RegisterReducer_ReducerResult,
+    as: OneOf
+
   alias Bcl.Guid, as: BclGuid
 
   # MongoDB sink type ID: "22202c41-2be1-4547-9c00-f0b1f797fd75"
-  @mongodb_sink_type_id %BclGuid{lo: 0x45472BE122202C41, hi: 0x75FD97F7B1F0009C}
+  defp mongodb_sink_type_id, do: struct(BclGuid, lo: 0x45472BE122202C41, hi: 0x75FD97F7B1F0009C)
 
   @reconnect_base_delay 1_000
   @reconnect_max_delay 30_000
@@ -100,8 +103,11 @@ defmodule Chronicle.Reducers.Handler do
     {final_state, observation_state, exception_messages, stack_trace} =
       Enum.reduce_while(events, {initial_model, :success, [], ""}, fn event, {model, _, _, _} ->
         case apply_reduce(state, event, model) do
-          {:ok, new_model} -> {:cont, {new_model, :success, [], ""}}
-          {:error, reason} -> {:halt, {model, :failed, [inspect(reason)], format_stack_trace(reason)}}
+          {:ok, new_model} ->
+            {:cont, {new_model, :success, [], ""}}
+
+          {:error, reason} ->
+            {:halt, {model, :failed, [inspect(reason)], format_stack_trace(reason)}}
         end
       end)
 
@@ -117,18 +123,21 @@ defmodule Chronicle.Reducers.Handler do
         model -> model |> Map.from_struct() |> Jason.encode!()
       end
 
-    result = %ReducerMessage{
-      Content: %OneOf{
-        Value1: %ReducerResult{
-          Partition: partition,
-          State: encode_observation_state(observation_state),
-          LastSuccessfulObservation: last_seq,
-          ExceptionMessages: exception_messages,
-          ExceptionStackTrace: stack_trace,
-          ReadModelState: read_model_json
-        }
-      }
-    }
+    result =
+      struct(ReducerMessage,
+        Content:
+          struct(OneOf,
+            Value1:
+              struct(ReducerResult,
+                Partition: partition,
+                State: encode_observation_state(observation_state),
+                LastSuccessfulObservation: last_seq,
+                ExceptionMessages: exception_messages,
+                ExceptionStackTrace: stack_trace,
+                ReadModelState: read_model_json
+              )
+          )
+      )
 
     GRPC.Stub.send_request(state.stream, result)
     {:noreply, state}
@@ -190,38 +199,46 @@ defmodule Chronicle.Reducers.Handler do
   defp build_registration(state) do
     event_types =
       Enum.map(state.event_type_map, fn {id, module} ->
-        %EventTypeWithKeyExpression{
-          EventType: %ProtoEventType{
-            Id: id,
-            Generation: module.__chronicle_event_type__(:generation)
-          },
+        struct(EventTypeWithKeyExpression,
+          EventType:
+            struct(ProtoEventType,
+              Id: id,
+              Generation: module.__chronicle_event_type__(:generation)
+            ),
           Key: "$eventSourceId"
-        }
+        )
       end)
 
     reducer_id = state.module.__chronicle_reducer__(:id)
     model_id = state.model_module.__chronicle_read_model__(:id)
-    conn_id = if state.session, do: Chronicle.Session.connection_id(state.session), else: generate_connection_id()
 
-    %ReducerMessage{
-      Content: %OneOf{
-        Value0: %RegisterReducer{
-          ConnectionId: conn_id,
-          EventStore: state.event_store,
-          Namespace: state.namespace,
-          Reducer: %ReducerDefinition{
-            ReducerId: reducer_id,
-            EventSequenceId: "event-log",
-            EventTypes: event_types,
-            ReadModel: model_id,
-            IsActive: true,
-            Sink: %SinkDefinition{TypeId: @mongodb_sink_type_id},
-            Tags: [],
-            Filters: %ObserverFilters{}
-          }
-        }
-      }
-    }
+    conn_id =
+      if state.session,
+        do: Chronicle.Session.connection_id(state.session),
+        else: generate_connection_id()
+
+    struct(ReducerMessage,
+      Content:
+        struct(OneOf,
+          Value0:
+            struct(RegisterReducer,
+              ConnectionId: conn_id,
+              EventStore: state.event_store,
+              Namespace: state.namespace,
+              Reducer:
+                struct(ReducerDefinition,
+                  ReducerId: reducer_id,
+                  EventSequenceId: "event-log",
+                  EventTypes: event_types,
+                  ReadModel: model_id,
+                  IsActive: true,
+                  Sink: struct(SinkDefinition, TypeId: mongodb_sink_type_id()),
+                  Tags: [],
+                  Filters: struct(ObserverFilters)
+                )
+            )
+        )
+    )
   end
 
   defp apply_reduce(state, appended_event, model) do
