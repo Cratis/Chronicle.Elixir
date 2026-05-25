@@ -17,6 +17,7 @@ defmodule Chronicle.EventType do
         defstruct [:email]
 
         @unique :email
+        unique_event_type()
       end
 
       defmodule MyApp.Events.UserDeleted do

@@ -25,6 +25,13 @@ defmodule Chronicle.ConstraintsTest do
     @remove_constraint "email_per_tenant"
   end
 
+  defmodule AccountOpened do
+    use Chronicle.EventType, id: "account-opened-v1"
+    defstruct [:account_id]
+
+    unique_event_type()
+  end
+
   describe "from_event_types/1" do
     test "captures options from unique/2 macro" do
       assert AccountCreated.__chronicle_event_type__(:constraints) == %{
@@ -56,6 +63,18 @@ defmodule Chronicle.ConstraintsTest do
                  event_definitions: [%{event_type: AccountCreated, on: ["email", "tenant_id"]}],
                  removed_with_event_type: UserDeleted
                }
+             ]
+    end
+
+    test "builds unique event type constraints" do
+      constraints = Chronicle.Constraints.from_event_types([AccountOpened])
+
+      assert constraints == [
+              %{
+                type: :unique_event_type,
+                name: "account-opened-v1",
+                event_type_id: "account-opened-v1"
+              }
              ]
     end
   end
