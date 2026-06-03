@@ -80,6 +80,8 @@ defmodule Chronicle.Client do
     * `:reducers` — list of reducer modules to start (each `use Chronicle.Reducer`).
     * `:read_models` — list of read model modules (each `use Chronicle.ReadModel`).
       Modules that contain `from/2` declarations are registered as projections.
+    * `:seeders` — list of seeder modules (each `use Chronicle.Seeder`). Seeders
+      populate the event store with initial events during client startup.
 
   ## Convenience functions
 
@@ -131,18 +133,20 @@ defmodule Chronicle.Client do
           otp_app -> Artifacts.discover(otp_app)
         end
       else
-        %{event_types: [], reactors: [], reducers: [], read_models: []}
+        %{event_types: [], reactors: [], reducers: [], read_models: [], seeders: []}
       end
 
     event_types = Enum.uniq(Keyword.get(opts, :event_types, []) ++ discovered.event_types)
     reactors = Enum.uniq(Keyword.get(opts, :reactors, []) ++ discovered.reactors)
     reducers = Enum.uniq(Keyword.get(opts, :reducers, []) ++ discovered.reducers)
     read_models = Enum.uniq(Keyword.get(opts, :read_models, []) ++ discovered.read_models)
+    seeders = Enum.uniq(Keyword.get(opts, :seeders, []) ++ discovered.seeders)
 
     :persistent_term.put({__MODULE__, name}, %{
       connection: conn_name,
       event_store: event_store,
-      namespace: namespace
+      namespace: namespace,
+      seeders: seeders
     })
 
     connection_opts =
@@ -176,6 +180,13 @@ defmodule Chronicle.Client do
         {Chronicle.Reducers.Handler, Keyword.put(observer_opts, :module, module)}
       end)
 
+    # Execute seeders during startup
+    spawn(fn ->
+      # Wait a bit for the connection to be ready
+      Process.sleep(1000)
+      execute_seeders(conn_name, event_store, namespace, seeders)
+    end)
+
     children =
       [
         GRPC.Client.Supervisor,
@@ -198,4 +209,29 @@ defmodule Chronicle.Client do
 
   @doc false
   def connection_name(client_name), do: :"#{client_name}.Connection"
+
+  defp execute_seeders(_connection, _event_store, _namespace, []) do
+    require Logger
+    Logger.debug("No seeders to execute")
+    :ok
+  end
+
+  defp execute_seeders(connection, event_store, namespace, seeders) do
+    require Logger
+    Logger.info("Executing #{length(seeders)} seeder(s)")
+
+    builder = %Chronicle.Seeding{
+      entries: [],
+      event_types: Chronicle.EventTypes,
+      connection: connection,
+      event_store: event_store,
+      namespace: namespace
+    }
+
+    builder
+    |> Chronicle.Seeding.discover(seeders)
+    |> Chronicle.Seeding.register()
+
+    Logger.info("Seeding completed")
+  end
 end

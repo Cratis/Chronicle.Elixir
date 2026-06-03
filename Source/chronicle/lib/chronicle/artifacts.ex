@@ -20,7 +20,8 @@ defmodule Chronicle.Artifacts do
           event_types: [module()],
           reactors: [module()],
           reducers: [module()],
-          read_models: [module()]
+          read_models: [module()],
+          seeders: [module()]
         }
 
   @doc """
@@ -38,7 +39,7 @@ defmodule Chronicle.Artifacts do
 
     Enum.reduce(
       modules,
-      %{event_types: [], reactors: [], reducers: [], read_models: []},
+      %{event_types: [], reactors: [], reducers: [], read_models: [], seeders: []},
       fn module, acc ->
         if Code.ensure_loaded?(module) do
           acc
@@ -54,6 +55,7 @@ defmodule Chronicle.Artifacts do
             module,
             function_exported?(module, :__chronicle_read_model__, 1)
           )
+          |> maybe_put(:seeders, module, function_exported?(module, :__chronicle_seeder__, 1))
         else
           acc
         end
@@ -76,7 +78,7 @@ defmodule Chronicle.Artifacts do
 
     Enum.reduce(
       modules,
-      %{event_types: [], reactors: [], reducers: [], read_models: []},
+      %{event_types: [], reactors: [], reducers: [], read_models: [], seeders: []},
       fn module, acc ->
         acc
         |> maybe_put(
@@ -91,6 +93,7 @@ defmodule Chronicle.Artifacts do
           module,
           function_exported?(module, :__chronicle_read_model__, 1)
         )
+        |> maybe_put(:seeders, module, function_exported?(module, :__chronicle_seeder__, 1))
       end
     )
     |> Enum.map(fn {key, value} -> {key, Enum.reverse(value)} end)
