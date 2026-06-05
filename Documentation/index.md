@@ -8,3 +8,4 @@ Comprehensive guides for using Chronicle Elixir.
 - [Context Management](context.md) — Process-scoped correlation IDs, identity tracking, and causation chains; typical web handler patterns; async process considerations
 - [Event Sequences](event-sequences.md) — Organizing events into named sequences (default `"event-log"`); querying and checking sequence state; multi-sequence patterns
 - [Event Store Discovery](event-stores.md) — Discovering event stores and namespaces; multi-tenant admin patterns; verifying environment before operations
+- [Seeding](seeding/index.md) — Pre-populate your event store with initial events during application startup; define seeders, register them with Chronicle.Client, and use the builder API to organize events by type and source

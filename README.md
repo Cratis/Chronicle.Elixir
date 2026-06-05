@@ -9,7 +9,6 @@ Chronicle is an event-sourcing kernel that stores domain events and projects the
 Key features:
 
 - **`use Chronicle.EventType`** — annotate structs as event types with stable IDs
-- **`use Chronicle.Seeder`** — pre-populate the event store with initial events
 - **`use Chronicle.Reactor`** — react to events with side effects
 - **`use Chronicle.Reducer`** — build read models by folding events into state
 - **`use Chronicle.ReadModel`** — define read models with model-bound projections
@@ -153,50 +152,7 @@ defmodule MyApp.Application do
 end
 ```
 
-### 6. Seed initial data (optional)
-
-Define seeders to pre-populate the event store with initial events during application startup:
-
-```elixir
-defmodule MyApp.Seeders.InitialDataSeeder do
-  use Chronicle.Seeder
-
-  @impl true
-  def seed(builder) do
-    builder
-    |> Chronicle.Seeding.for(
-      MyApp.Events.AccountOpened,
-      "seed-account-1",
-      [%MyApp.Events.AccountOpened{
-        account_id: "seed-account-1",
-        owner_name: "Alice",
-        initial_balance: 10_000
-      }]
-    )
-    |> Chronicle.Seeding.for(
-      MyApp.Events.FundsDeposited,
-      "seed-account-1",
-      [%MyApp.Events.FundsDeposited{
-        account_id: "seed-account-1",
-        amount: 5_000
-      }]
-    )
-  end
-end
-```
-
-Then register the seeder with Chronicle.Client (auto-discovered via `otp_app` or explicitly listed):
-
-```elixir
-{Chronicle.Client,
-  connection_string: "chronicle://localhost:35000?disableTls=true",
-  event_store: "my-app",
-  seeders: [MyApp.Seeders.InitialDataSeeder]}
-```
-
-See [SEEDING.md](SEEDING.md) for the complete seeding guide.
-
-### 7. Append events and query read models
+### 6. Append events and query read models
 
 ```elixir
 # Append a single event

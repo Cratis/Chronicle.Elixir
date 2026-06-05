@@ -1,6 +1,10 @@
-# Chronicle Seeding
+# Seeding
 
-Seeding support for Chronicle.Elixir allows you to pre-populate your event store with initial events during application startup. This is useful for development, testing, and initial production setup.
+Seeding allows you to pre-populate your event store with initial events during application startup. This is useful for development, testing, and initial production setup.
+
+## Why seed events?
+
+Instead of manually creating aggregate instances through your application's event-append API, seeders let you define baseline data declaratively. Seeders run once at startup and provide a clean way to establish preconditions for your application's domain.
 
 ## Overview
 
@@ -11,7 +15,9 @@ Seeders follow the same pattern as Reactors and Reducers in Chronicle:
 3. **Register** the seeder with `Chronicle.Client`
 4. **Auto-discovery** finds seeders automatically when enabled
 
-## Defining a Seeder
+## Defining a seeder
+
+Create a module and implement the `seed/1` callback:
 
 ```elixir
 defmodule MyApp.Seeders.AccountSeeder do
@@ -47,43 +53,13 @@ defmodule MyApp.Seeders.AccountSeeder do
 end
 ```
 
-## Builder API
+The `seed/1` callback receives a builder struct and returns the updated builder (or `:ok`). Use the builder's accumulation methods to populate events.
 
-The `Chronicle.Seeding` builder provides three main functions:
+## Registering seeders
 
-### `for/4` - Seed events of a specific type
+### Explicit registration
 
-```elixir
-Chronicle.Seeding.for(builder, EventType, "event-source-id", [event1, event2])
-```
-
-Adds events of a single type for a given event source (aggregate) ID.
-
-### `for_event_source/3` - Seed multiple event types
-
-```elixir
-Chronicle.Seeding.for_event_source(builder, "event-source-id", [
-  %AccountOpened{...},
-  %FundsDeposited{...}
-])
-```
-
-Adds events of different types for the same event source.
-
-### `for_namespace/3` - Scope to a namespace
-
-```elixir
-Chronicle.Seeding.for_namespace(builder, "production", fn scoped ->
-  scoped
-  |> Chronicle.Seeding.for(EventType, "event-source-id", [event1])
-end)
-```
-
-Scopes subsequent events to a specific namespace instead of the global scope.
-
-## Registering Seeders
-
-### Explicit Registration
+Pass the seeder modules directly to `Chronicle.Client`:
 
 ```elixir
 {Chronicle.Client,
@@ -95,25 +71,61 @@ Scopes subsequent events to a specific namespace instead of the global scope.
   ]}
 ```
 
-### Auto-Discovery
+### Auto-discovery
+
+Enable auto-discovery and Chronicle will find all seeders in your OTP app:
 
 ```elixir
 {Chronicle.Client,
   connection_string: "chronicle://localhost:35000",
   event_store: "my-app",
-  otp_app: :my_app}  # Discovers all seeders in :my_app
+  otp_app: :my_app}
 ```
 
-Auto-discovery is enabled by default and finds all modules using `Chronicle.Seeder`.
+Auto-discovery is enabled by default. It finds all modules using `Chronicle.Seeder` and invokes them during client initialization.
+
+## Builder API
+
+The `Chronicle.Seeding` module provides methods for accumulating events:
+
+### `for/4` — seed events of a specific type
+
+```elixir
+Chronicle.Seeding.for(builder, EventType, "event-source-id", [event1, event2])
+```
+
+Adds events of a single type for a given event source (aggregate) ID.
+
+### `for_event_source/3` — seed multiple event types
+
+```elixir
+Chronicle.Seeding.for_event_source(builder, "event-source-id", [
+  %AccountOpened{...},
+  %FundsDeposited{...}
+])
+```
+
+Adds events of different types for the same event source.
+
+### `for_namespace/3` — scope to a namespace
+
+```elixir
+Chronicle.Seeding.for_namespace(builder, "production", fn scoped ->
+  scoped
+  |> Chronicle.Seeding.for(EventType, "event-source-id", [event1])
+end)
+```
+
+Scopes subsequent events to a specific namespace instead of the global scope.
 
 ## Lifecycle
 
-Seeders execute during `Chronicle.Client` initialization:
+Seeders execute during `Chronicle.Client` initialization in this order:
 
-1. **Discovery** - Find all seeder modules (explicit + auto-discovered)
-2. **Accumulation** - Call each seeder's `seed/1` to populate the builder
-3. **Organization** - Group events by global/namespaced, event type, and event source
-4. **Registration** - Send all accumulated events to Chronicle in a single batch
+1. **Discovery** — Find all seeder modules (explicit + auto-discovered)
+2. **Accumulation** — Call each seeder's `seed/1` to populate the builder
+3. **Organization** — Group events by global/namespaced, event type, and event source
+4. **Registration** — Send all accumulated events to Chronicle in a single batch
 
 ## Idempotency
 
@@ -121,23 +133,23 @@ Seeders run every time your application starts. Design your seeders to be idempo
 
 - Use event constraints (unique constraints) to prevent duplicate events
 - Seed events with stable, deterministic IDs
-- Consider conditional seeding based on existing data
+- Consider conditional seeding based on existing data or environment
 
-## Error Handling
+## Error handling
 
 - Failed seeders log a warning but don't prevent application startup
 - Other seeders continue executing even if one fails
 - The Chronicle client starts normally even if seeding fails
 
-## Best Practices
+## Best practices
 
-1. **Keep seeders fast** - They run during startup and block the client initialization
-2. **Use stable IDs** - Generate deterministic event source IDs for seed data
-3. **Document seed data** - Comment what each seeder provides
-4. **Separate concerns** - Create one seeder per domain aggregate or feature
-5. **Test seeders** - Verify your seed data loads correctly in tests
+1. **Keep seeders fast** — They run during startup and block the client initialization
+2. **Use stable IDs** — Generate deterministic event source IDs for seed data
+3. **Document seed data** — Comment what each seeder provides
+4. **Separate concerns** — Create one seeder per domain aggregate or feature
+5. **Test seeders** — Verify your seed data loads correctly in tests
 
-## Example: Development Seed Data
+## Example: development seed data
 
 ```elixir
 defmodule MyApp.Seeders.DevelopmentSeeder do
@@ -185,9 +197,11 @@ defmodule MyApp.Seeders.DevelopmentSeeder do
 end
 ```
 
-## Comparison with Other Clients
+## Comparison with other clients
 
-### C# Client
+The seeding API is consistent across Chronicle's clients:
+
+**C#**
 ```csharp
 public class AccountSeeder : ICanSeedEvents
 {
@@ -200,7 +214,7 @@ public class AccountSeeder : ICanSeedEvents
 }
 ```
 
-### TypeScript Client
+**TypeScript**
 ```typescript
 @seeder()
 export class AccountSeeder implements ICanSeedEvents {
@@ -212,7 +226,7 @@ export class AccountSeeder implements ICanSeedEvents {
 }
 ```
 
-### Elixir Client
+**Elixir**
 ```elixir
 defmodule AccountSeeder do
   use Chronicle.Seeder
