@@ -245,7 +245,7 @@ unit_of_work = UnitOfWork.begin()
 
 For custom sequences, use `Chronicle.event_sequence/2` together with
 `Chronicle.EventSequences.EventSequence.transactional/1`.
-See `Source/chronicle/TRANSACTIONS.md` for the full guide.
+See [Documentation/transactions.md](Documentation/transactions.md) for the full guide.
 
 ### Concurrency scope
 
@@ -265,7 +265,7 @@ alias Chronicle.Events.ConcurrencyScope
   )
 ```
 
-For more details and scoping options, see [CONCURRENCY.md](CONCURRENCY.md).
+For more details and scoping options, see [Documentation/concurrency.md](Documentation/concurrency.md).
 
 ## Quick Start (Reducer Alternative)
 
