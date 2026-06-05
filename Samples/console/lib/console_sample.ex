@@ -21,6 +21,8 @@ defmodule ConsoleSample do
   alias ConsoleSample.ReadModels.{Customer, EmployeeList, EmployeeState}
   alias Chronicle.ReadModels
   alias Chronicle.Transactions.UnitOfWork
+  alias Chronicle.Auditing.CausationManager
+  alias Chronicle.Identity
 
   @titles [
     "Software Engineer",
@@ -40,6 +42,14 @@ defmodule ConsoleSample do
     },
     %{address: "1 Infinite Loop", city: "Cupertino", zip_code: "95014", country: "USA"},
     %{address: "5 Wall Street", city: "New York", zip_code: "10005", country: "USA"}
+  ]
+
+  # Three mock users whose identity is attached to every append they trigger.
+  # Press I in the console to cycle through them.
+  @users [
+    Identity.new("u0000001-0000-0000-0000-000000000000", "Alice Smith", "alice.smith"),
+    Identity.new("u0000002-0000-0000-0000-000000000000", "Bob Jones", "bob.jones"),
+    Identity.system()
   ]
 
   @sample_customer %{
@@ -66,11 +76,11 @@ defmodule ConsoleSample do
 
     print_seeded_employee_status()
     write_instructions()
-    write_selected_employee(0)
+    write_selected_employee(0, 0)
 
     status =
       try do
-        with_terminal_mode(fn -> loop(0) end)
+        with_terminal_mode(fn -> loop(0, 0) end)
         0
       rescue
         error ->
@@ -86,86 +96,92 @@ defmodule ConsoleSample do
     end
   end
 
-  defp loop(selected_index) do
+  defp loop(selected_index, user_index) do
     case read_key() do
-      "\u0003" ->
+      "" ->
         IO.puts("\nExiting...")
 
       "q" ->
         IO.puts("\nExiting...")
 
       "1" ->
-        write_selected_employee(0)
-        loop(0)
+        write_selected_employee(0, user_index)
+        loop(0, user_index)
 
       "2" ->
-        write_selected_employee(1)
-        loop(1)
+        write_selected_employee(1, user_index)
+        loop(1, user_index)
 
       "3" ->
-        write_selected_employee(2)
-        loop(2)
+        write_selected_employee(2, user_index)
+        loop(2, user_index)
+
+      "i" ->
+        next_user_index = rem(user_index + 1, length(@users))
+        write_selected_user(next_user_index)
+        loop(selected_index, next_user_index)
 
       "p" ->
-        promote(selected_employee!(selected_index))
-        loop(selected_index)
+        promote(selected_employee!(selected_index), selected_user!(user_index))
+        loop(selected_index, user_index)
 
       "a" ->
-        move(selected_employee!(selected_index))
-        loop(selected_index)
+        move(selected_employee!(selected_index), selected_user!(user_index))
+        loop(selected_index, user_index)
 
       "e" ->
-        set_email(selected_employee!(selected_index))
-        loop(selected_index)
+        set_email(selected_employee!(selected_index), selected_user!(user_index))
+        loop(selected_index, user_index)
 
       "u" ->
-        steal_email(selected_index)
-        loop(selected_index)
+        steal_email(selected_index, selected_user!(user_index))
+        loop(selected_index, user_index)
 
       "r" ->
         show_employee_read_model(selected_employee!(selected_index))
-        loop(selected_index)
+        loop(selected_index, user_index)
 
       "j" ->
         show_employee_model_bound_projection(selected_employee!(selected_index))
-        loop(selected_index)
+        loop(selected_index, user_index)
 
       "k" ->
         show_employee_list_projection(selected_employee!(selected_index))
-        loop(selected_index)
+        loop(selected_index, user_index)
 
       "t" ->
-        transact(selected_index)
-        loop(selected_index)
+        transact(selected_index, selected_user!(user_index))
+        loop(selected_index, user_index)
 
       "c" ->
-        register_customer_with_pii()
-        loop(selected_index)
+        register_customer_with_pii(selected_user!(user_index))
+        loop(selected_index, user_index)
 
       "v" ->
         show_customer_read_model()
-        loop(selected_index)
+        loop(selected_index, user_index)
 
       "h" ->
         write_instructions()
-        loop(selected_index)
+        loop(selected_index, user_index)
 
       "?" ->
         write_instructions()
-        loop(selected_index)
+        loop(selected_index, user_index)
 
       _other ->
-        loop(selected_index)
+        loop(selected_index, user_index)
     end
   end
 
-  defp promote(%Person{} = person) do
+  defp promote(%Person{} = person, %Identity{} = user) do
     title = random_from(@titles)
+    setup_causation(user, "ConsoleSample.Commands.Promote", %{employee_id: person.id})
 
     case Chronicle.append(person.id, %EmployeePromoted{new_title: title}) do
       :ok ->
         IO.puts(
-          "\n[#{person.id}] Promoted #{full_name(person)} to '#{title}' at sequence #{tail_sequence(person.id)}"
+          "\n[#{person.id}] Promoted #{full_name(person)} to '#{title}' at sequence #{tail_sequence(person.id)}  [caused-by: #{user.user_name}]"
         )
 
       {:error, reason} ->
@@ -175,8 +191,9 @@ defmodule ConsoleSample do
     end
   end
 
-  defp move(%Person{} = person) do
+  defp move(%Person{} = person, %Identity{} = user) do
     address = random_from(@addresses)
+    setup_causation(user, "ConsoleSample.Commands.Move", %{employee_id: person.id})
 
     case Chronicle.append(person.id, %EmployeeMoved{
            address: address.address,
@@ -186,7 +203,7 @@ defmodule ConsoleSample do
          }) do
       :ok ->
         IO.puts(
-          "\n[#{person.id}] Moved #{full_name(person)} to #{address.address}, #{address.city} at sequence #{tail_sequence(person.id)}"
+          "\n[#{person.id}] Moved #{full_name(person)} to #{address.address}, #{address.city} at sequence #{tail_sequence(person.id)}  [caused-by: #{user.user_name}]"
         )
 
       {:error, reason} ->
@@ -194,13 +211,14 @@ defmodule ConsoleSample do
     end
   end
 
-  defp set_email(%Person{} = person) do
+  defp set_email(%Person{} = person, %Identity{} = user) do
     email = Employees.email_for(person)
+    setup_causation(user, "ConsoleSample.Commands.SetEmail", %{employee_id: person.id})
 
     case Chronicle.append(person.id, %EmployeeEmailSet{email: email}) do
       :ok ->
         IO.puts(
-          "\n[#{person.id}] Set #{full_name(person)}'s email to #{email} at sequence #{tail_sequence(person.id)}"
+          "\n[#{person.id}] Set #{full_name(person)}'s email to #{email} at sequence #{tail_sequence(person.id)}  [caused-by: #{user.user_name}]"
         )
 
       {:error, reason} ->
@@ -208,15 +226,16 @@ defmodule ConsoleSample do
     end
   end
 
-  defp steal_email(selected_index) do
+  defp steal_email(selected_index, %Identity{} = user) do
     person = selected_employee!(selected_index)
     victim = selected_employee!(rem(selected_index + 1, length(Employees.all())))
     email = Employees.email_for(victim)
+    setup_causation(user, "ConsoleSample.Commands.SetEmail", %{employee_id: person.id})
 
     case Chronicle.append(person.id, %EmployeeEmailSet{email: email}) do
       :ok ->
         IO.puts(
-          "\n[#{person.id}] Unexpectedly took #{email} at sequence #{tail_sequence(person.id)}"
+          "\n[#{person.id}] Unexpectedly took #{email} at sequence #{tail_sequence(person.id)}  [caused-by: #{user.user_name}]"
         )
 
       {:error, reason} ->
@@ -226,12 +245,18 @@ defmodule ConsoleSample do
     end
   end
 
-  defp transact(selected_index) do
+  defp transact(selected_index, %Identity{} = user) do
     selected = selected_employee!(selected_index)
     also_update = selected_employee!(rem(selected_index + 1, length(Employees.all())))
     selected_title = random_from(@titles)
     selected_address = random_from(@addresses)
     second_title = random_from(@titles)
+
+    # Set up identity and causation once — all appends within the unit of work share this context.
+    setup_causation(user, "ConsoleSample.Commands.BulkUpdate", %{
+      employees: [selected.id, also_update.id]
+    })
+
     unit_of_work = Chronicle.begin_unit_of_work()
 
     try do
@@ -252,7 +277,7 @@ defmodule ConsoleSample do
       case UnitOfWork.commit(unit_of_work) do
         :ok ->
           IO.puts(
-            "\n[transaction] Committed staged events for #{full_name(selected)} and #{full_name(also_update)}"
+            "\n[transaction] Committed staged events for #{full_name(selected)} and #{full_name(also_update)}  [caused-by: #{user.user_name}]"
           )
 
         {:error, reason} ->
@@ -262,6 +287,51 @@ defmodule ConsoleSample do
       if not UnitOfWork.is_completed?(unit_of_work) do
         UnitOfWork.rollback(unit_of_work)
       end
+    end
+  end
+
+  defp register_customer_with_pii(%Identity{} = user) do
+    case Chronicle.has_events_for?(@sample_customer.id) do
+      {:ok, true} ->
+        IO.puts("\n[pii] #{@sample_customer.full_name} is already registered.")
+
+      {:ok, false} ->
+        setup_causation(user, "ConsoleSample.Commands.RegisterCustomer", %{
+          customer_id: @sample_customer.id
+        })
+
+        events = [
+          %CustomerRegistered{
+            customer_id: @sample_customer.id,
+            full_name: @sample_customer.full_name,
+            email: @sample_customer.email,
+            phone_number: @sample_customer.phone_number
+          },
+          %CustomerAddressUpdated{
+            customer_id: @sample_customer.id,
+            street_address: @sample_customer.street_address,
+            city: @sample_customer.city,
+            postal_code: @sample_customer.postal_code,
+            country: @sample_customer.country
+          }
+        ]
+
+        # The subject identifies the encryption key the Chronicle kernel uses for
+        # PII-adorned fields. Without a subject, compliance (PII) encryption is skipped.
+        case Chronicle.append_many(@sample_customer.id, events, subject: @sample_customer.id) do
+          :ok ->
+            IO.puts(
+              "\n[pii] Registered #{@sample_customer.full_name} (#{@sample_customer.id}) with customer data events up to sequence #{tail_sequence(@sample_customer.id)}  [caused-by: #{user.user_name}]"
+            )
+
+          {:error, reason} ->
+            IO.puts(
+              "\n[pii] Could not register #{@sample_customer.full_name}: #{format_reason(reason)}"
+            )
+        end
+
+      {:error, reason} ->
+        IO.puts("\n[pii] Could not check customer state: #{format_reason(reason)}")
     end
   end
 
@@ -314,47 +384,6 @@ defmodule ConsoleSample do
     end
   end
 
-  defp register_customer_with_pii do
-    case Chronicle.has_events_for?(@sample_customer.id) do
-      {:ok, true} ->
-        IO.puts("\n[pii] #{@sample_customer.full_name} is already registered.")
-
-      {:ok, false} ->
-        events = [
-          %CustomerRegistered{
-            customer_id: @sample_customer.id,
-            full_name: @sample_customer.full_name,
-            email: @sample_customer.email,
-            phone_number: @sample_customer.phone_number
-          },
-          %CustomerAddressUpdated{
-            customer_id: @sample_customer.id,
-            street_address: @sample_customer.street_address,
-            city: @sample_customer.city,
-            postal_code: @sample_customer.postal_code,
-            country: @sample_customer.country
-          }
-        ]
-
-        # The subject identifies the encryption key the Chronicle kernel uses for
-        # PII-adorned fields. Without a subject, compliance (PII) encryption is skipped.
-        case Chronicle.append_many(@sample_customer.id, events, subject: @sample_customer.id) do
-          :ok ->
-            IO.puts(
-              "\n[pii] Registered #{@sample_customer.full_name} (#{@sample_customer.id}) with customer data events up to sequence #{tail_sequence(@sample_customer.id)}"
-            )
-
-          {:error, reason} ->
-            IO.puts(
-              "\n[pii] Could not register #{@sample_customer.full_name}: #{format_reason(reason)}"
-            )
-        end
-
-      {:error, reason} ->
-        IO.puts("\n[pii] Could not check customer state: #{format_reason(reason)}")
-    end
-  end
-
   defp show_customer_read_model do
     case ReadModels.get_instance_by_id(Customer, @sample_customer.id) do
       {:ok, nil} ->
@@ -382,6 +411,16 @@ defmodule ConsoleSample do
       {:error, reason} ->
         IO.puts("\n[pii] Could not read the customer model: #{format_reason(reason)}")
     end
+  end
+
+  # Sets the process-scoped identity and rebuilds the causation chain for the next append.
+  # Identity and causation are stored with every event written to the Chronicle event log,
+  # enabling full auditability of who triggered each state change and what command caused it.
+  defp setup_causation(%Identity{} = user, command, properties) do
+    Chronicle.set_identity(user)
+    CausationManager.clear()
+    CausationManager.define_root(%{source: "console-sample"})
+    CausationManager.add(command, properties)
   end
 
   defp print_seeded_employee_status do
@@ -424,6 +463,7 @@ defmodule ConsoleSample do
         "  R = Read model       T = Transactional update",
         "  J = Model-bound projection       K = Declarative projection",
         "  C = Register customer with PII   V = View customer PII read model",
+        "  I = Switch user (cycle: Alice Smith → Bob Jones → System)",
         "  H or ? = Show this menu          Q = Quit",
         ""
       ]
@@ -431,9 +471,16 @@ defmodule ConsoleSample do
     )
   end
 
-  defp write_selected_employee(index) do
-    person = selected_employee!(index)
-    IO.puts("Selected [#{index + 1}] #{full_name(person)} (#{person.id})")
+  defp write_selected_employee(emp_index, user_index) do
+    person = selected_employee!(emp_index)
+    user = selected_user!(user_index)
+    IO.puts("Selected  [#{emp_index + 1}] #{full_name(person)} (#{person.id})")
+    IO.puts("Acting as [#{user_index + 1}] #{user.name} (@#{user.user_name})")
+  end
+
+  defp write_selected_user(user_index) do
+    user = selected_user!(user_index)
+    IO.puts("\nSwitched to user [#{user_index + 1}] #{user.name} (@#{user.user_name})")
   end
 
   defp with_terminal_mode(fun) do
@@ -506,6 +553,10 @@ defmodule ConsoleSample do
 
   defp selected_employee!(index) do
     Employees.at(index) || raise ArgumentError, "unknown employee index #{index}"
+  end
+
+  defp selected_user!(index) do
+    Enum.at(@users, index) || raise ArgumentError, "unknown user index #{index}"
   end
 
   defp random_from(items), do: Enum.at(items, :rand.uniform(length(items)) - 1)

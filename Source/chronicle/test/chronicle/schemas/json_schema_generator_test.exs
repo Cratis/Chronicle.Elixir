@@ -49,13 +49,13 @@ defmodule Chronicle.Schemas.JsonSchemaGeneratorTest do
 
       assert schema["properties"]["email"]["compliance"] == [
                %{
-                 "metadataType" => "cae5580e-83d6-44dc-9d7a-a72e8a2f17d7",
+                 "metadataType" => "PII",
                  "details" => "Customer email address"
                }
              ]
 
       assert schema["properties"]["fullName"]["compliance"] == [
-               %{"metadataType" => "cae5580e-83d6-44dc-9d7a-a72e8a2f17d7", "details" => ""}
+               %{"metadataType" => "PII", "details" => ""}
              ]
     end
 
@@ -71,7 +71,7 @@ defmodule Chronicle.Schemas.JsonSchemaGeneratorTest do
 
       assert schema["properties"]["email"]["compliance"] == [
                %{
-                 "metadataType" => "cae5580e-83d6-44dc-9d7a-a72e8a2f17d7",
+                 "metadataType" => "PII",
                  "details" => "Personal email"
                }
              ]
