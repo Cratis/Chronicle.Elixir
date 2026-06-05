@@ -4,7 +4,7 @@
 defmodule ConsoleSample.Reducers.CustomerReducer do
   @moduledoc "Builds the customer read model used for the compliance demonstration."
 
-  use Chronicle.Reducer, model: ConsoleSample.ReadModels.Customer
+  use Chronicle.Reducers.Reducer, model: ConsoleSample.ReadModels.Customer
 
   alias ConsoleSample.Events.{CustomerAddressUpdated, CustomerRegistered}
   alias ConsoleSample.ReadModels.Customer

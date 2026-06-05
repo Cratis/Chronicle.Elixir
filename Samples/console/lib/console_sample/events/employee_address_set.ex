@@ -4,7 +4,7 @@
 defmodule ConsoleSample.Events.EmployeeAddressSet do
   @moduledoc "An employee's address has been set."
 
-  use Chronicle.EventType, id: "employee-address-set"
+  use Chronicle.Events.EventType, id: "employee-address-set"
 
   defstruct [:address, :city, :zip_code, :country]
 end

@@ -4,7 +4,7 @@
 defmodule ConsoleSample.Seeders.EmployeeSeeder do
   @moduledoc "Seeds the three employees used by the interactive sample."
 
-  use Chronicle.Seeder
+  use Chronicle.Seeding.Seeder
 
   alias ConsoleSample.Employees
   alias ConsoleSample.Events.{EmployeeAddressSet, EmployeeEmailSet, EmployeeHired}

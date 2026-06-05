@@ -4,7 +4,7 @@
 defmodule ConsoleSample.Events.EmployeeHired do
   @moduledoc "An employee has been hired into the organization."
 
-  use Chronicle.EventType, id: "employee-hired"
+  use Chronicle.Events.EventType, id: "employee-hired"
 
   defstruct [:first_name, :last_name, :title]
 

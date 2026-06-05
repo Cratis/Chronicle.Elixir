@@ -287,7 +287,9 @@ defmodule ConsoleSample do
           }
         ]
 
-        case Chronicle.append_many(@sample_customer.id, events) do
+        # The subject identifies the encryption key the Chronicle kernel uses for
+        # PII-adorned fields. Without a subject, compliance (PII) encryption is skipped.
+        case Chronicle.append_many(@sample_customer.id, events, subject: @sample_customer.id) do
           :ok ->
             IO.puts(
               "\n[pii] Registered #{@sample_customer.full_name} (#{@sample_customer.id}) with customer data events up to sequence #{tail_sequence(@sample_customer.id)}"

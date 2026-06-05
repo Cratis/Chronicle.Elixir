@@ -4,7 +4,7 @@
 defmodule ConsoleSample.ReadModels.EmployeeState do
   @moduledoc "Employee read model produced by the reducer-backed sample."
 
-  use Chronicle.ReadModel
+  use Chronicle.ReadModels.ReadModel
 
   defstruct id: "",
             first_name: "",

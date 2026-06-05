@@ -4,7 +4,7 @@
 defmodule ConsoleSample.ReadModels.Customer do
   @moduledoc "Customer read model used for the compliance and PII demonstration."
 
-  use Chronicle.ReadModel
+  use Chronicle.ReadModels.ReadModel
 
   defstruct id: "",
             full_name: "",
@@ -17,4 +17,11 @@ defmodule ConsoleSample.ReadModels.Customer do
             customer_number: "",
             account_status: "active",
             total_orders: 0
+
+  pii :full_name, "Customer full name"
+  pii :email, "Customer email address"
+  pii :phone_number, "Customer phone number"
+  pii :street_address, "Customer street address"
+  pii :city, "Customer city"
+  pii :postal_code, "Customer postal code"
 end

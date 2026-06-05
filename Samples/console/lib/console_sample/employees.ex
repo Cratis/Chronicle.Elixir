@@ -6,17 +6,7 @@ defmodule ConsoleSample.Employees do
   Shared employee data used by the seeder and interactive console.
   """
 
-  defmodule Person do
-    @moduledoc false
-
-    @type t :: %__MODULE__{
-            id: String.t(),
-            first_name: String.t(),
-            last_name: String.t()
-          }
-
-    defstruct [:id, :first_name, :last_name]
-  end
+  alias ConsoleSample.Employees.Person
 
   @employees [
     %Person{id: "a0000001-0000-0000-0000-000000000000", first_name: "Ada", last_name: "Lovelace"},
