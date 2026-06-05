@@ -410,10 +410,10 @@ open doc/index.html
 
 For detailed information on specific features, see:
 
-- **[CONSTRAINTS.md](CONSTRAINTS.md)** — Model-bound unique constraints and constraint removal
-- **[CONTEXT.md](CONTEXT.md)** — Correlation IDs, identity tracking, and causation chains
-- **[EVENT_SEQUENCES.md](EVENT_SEQUENCES.md)** — Organizing events into separate logical streams
-- **[EVENT_STORES.md](EVENT_STORES.md)** — Discovering event stores and namespaces
+- **[constraints.md](constraints.md)** — Model-bound unique constraints and constraint removal
+- **[context.md](context.md)** — Correlation IDs, identity tracking, and causation chains
+- **[event-sequences.md](event-sequences.md)** — Organizing events into separate logical streams
+- **[event-stores.md](event-stores.md)** — Discovering event stores and namespaces
 
 ## Package structure
 
