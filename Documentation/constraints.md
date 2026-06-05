@@ -28,6 +28,12 @@ end
 
 The `@unique` attribute can be a single field or a list of fields. Fields are checked for uniqueness across all instances of that event type.
 
+Use the macro form when you need options such as case-insensitive matching:
+
+```elixir
+unique(:email, ignore_casing: true, name: "employee-email")
+```
+
 ### Unique Event Type Constraint
 
 Use `@unique_event_type` (or `unique_event_type()` macro) to ensure at most one event of this type exists per event source:

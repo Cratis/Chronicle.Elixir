@@ -26,9 +26,13 @@ defmodule Chronicle do
               connection_string: "chronicle://localhost:35000?disableTls=true",
               event_store: "my-app",
               event_types: [MyApp.Events.AccountOpened, MyApp.Events.FundsDeposited],
+              migrations: [MyApp.Migrations.AccountOpenedV2Migration],
               reactors: [MyApp.Reactors.NotificationReactor],
               reducers: [MyApp.Reducers.AccountReducer],
-              seeders: [MyApp.Seeders.InitialDataSeeder]}
+              seeders: [MyApp.Seeders.InitialDataSeeder],
+              event_store_subscriptions: [
+                MyApp.EventStoreSubscriptions.DefaultAccountEvents
+              ]}
           ]
 
           Supervisor.start_link(children, strategy: :one_for_one)
@@ -119,13 +123,23 @@ defmodule Chronicle do
     * `Chronicle.Identity` / `Chronicle.IdentityProvider` — track who caused state changes
     * `Chronicle.CausationType`, `Chronicle.CausationEntry`, `Chronicle.CausationManager` — audit causation chains
     * `Chronicle.EventType` — macro for defining event types
+    * `Chronicle.Events.Migration` — macro for defining event migrations
+    * `Chronicle.Events.MigrationBuilder` — fluent API for migration transforms
+    * `Chronicle.Events.Migrators` — migration discovery and registration support
+    * `Chronicle.Events.ConcurrencyScope` — scope optimistic concurrency checks for appends
     * `Chronicle.Reactor` — behaviour for event reactors
     * `Chronicle.Reducer` — behaviour for read model reducers
     * `Chronicle.Seeder` — behaviour for event seeders
+    * `Chronicle.EventStoreSubscriptions` — register event store subscriptions
+    * `Chronicle.EventStoreSubscriptions.Subscription` — define discoverable event store subscriptions
     * `Chronicle.ReadModel` — macro for read model structs with embedded projection DSL
     * `Chronicle.EventLog` — append and query events
+    * `Chronicle.EventSequences.EventSequence` — work with custom event sequences
+    * `Chronicle.Transactions.UnitOfWork` — buffer and commit transactional appends
     * `Chronicle.EventStores` — list event stores and namespaces
     * `Chronicle.ReadModels` — query read model instances
+    * `Chronicle.Jobs` — inspect and control Chronicle jobs
+    * `Chronicle.WebHooks` — inspect and register webhooks
     * `Chronicle.Connections.ConnectionString` — parse and format connection strings
     * `Chronicle.Connections.Connection` — resilient gRPC channel management
   """
@@ -145,6 +159,7 @@ defmodule Chronicle do
     * `:correlation_id` — `Chronicle.CorrelationId` (or id string) override
     * `:identity` — `Chronicle.Identity` override
     * `:causation` — list of `Chronicle.CausationEntry` overrides
+    * `:concurrency_scope` — `Chronicle.Events.ConcurrencyScope` or keyword options
   """
   @spec append(String.t(), struct(), keyword()) :: :ok | {:error, term()}
   defdelegate append(event_source_id, event, opts \\ []), to: Chronicle.EventLog
@@ -153,9 +168,36 @@ defmodule Chronicle do
   Appends multiple events to the event log for the given event source.
 
   Delegates to `Chronicle.EventLog.append_many/3`.
+  Accepts the same append options as `append/3`, including `:concurrency_scope`.
   """
   @spec append_many(String.t(), [struct()], keyword()) :: :ok | {:error, term()}
   defdelegate append_many(event_source_id, events, opts \\ []), to: Chronicle.EventLog
+
+  @doc """
+  Creates an event sequence wrapper for the given event sequence id.
+  """
+  @spec event_sequence(String.t(), keyword()) :: Chronicle.EventSequences.EventSequence.t()
+  defdelegate event_sequence(event_sequence_id, opts \\ []),
+    to: Chronicle.EventSequences.EventSequence,
+    as: :new
+
+  @doc """
+  Begins a new unit of work for the calling process.
+  """
+  @spec begin_unit_of_work(keyword()) :: Chronicle.Transactions.UnitOfWork.t()
+  defdelegate begin_unit_of_work(opts \\ []), to: Chronicle.Transactions.UnitOfWork, as: :begin
+
+  @doc """
+  Returns the current unit of work for the calling process.
+  """
+  @spec current_unit_of_work() :: Chronicle.Transactions.UnitOfWork.t()
+  defdelegate current_unit_of_work(), to: Chronicle.Transactions.UnitOfWork, as: :current
+
+  @doc """
+  Runs a function inside a unit of work and commits it if the function succeeds.
+  """
+  @spec with_unit_of_work((Chronicle.Transactions.UnitOfWork.t() -> any()), keyword()) :: any()
+  defdelegate with_unit_of_work(fun, opts \\ []), to: Chronicle.Transactions.UnitOfWork
 
   @doc """
   Fetches a read model instance by its key (typically an event source ID).
@@ -211,14 +253,151 @@ defmodule Chronicle do
   @doc """
   Sets the current process correlation id.
   """
-  @spec set_correlation_id(Chronicle.CorrelationId.t() | String.t()) :: Chronicle.CorrelationId.t()
-  defdelegate set_correlation_id(correlation_id), to: Chronicle.CorrelationIdManager, as: :set_current
+  @spec set_correlation_id(Chronicle.CorrelationId.t() | String.t()) ::
+          Chronicle.CorrelationId.t()
+  defdelegate set_correlation_id(correlation_id),
+    to: Chronicle.CorrelationIdManager,
+    as: :set_current
 
   @doc """
   Clears the current process correlation id.
   """
   @spec clear_correlation_id() :: Chronicle.CorrelationId.t()
   defdelegate clear_correlation_id(), to: Chronicle.CorrelationIdManager, as: :clear
+
+  @doc """
+  Gets all jobs for the configured event store namespace.
+  """
+  @spec get_jobs(keyword()) :: {:ok, [Chronicle.Jobs.Job.t()]} | {:error, term()}
+  defdelegate get_jobs(opts \\ []), to: Chronicle.Jobs, as: :all
+
+  @doc """
+  Gets a single Chronicle job by identifier.
+  """
+  @spec get_job(String.t(), keyword()) :: {:ok, Chronicle.Jobs.Job.t() | nil} | {:error, term()}
+  defdelegate get_job(job_id, opts \\ []), to: Chronicle.Jobs, as: :get
+
+  @doc """
+  Gets all steps for a Chronicle job.
+  """
+  @spec get_job_steps(String.t(), keyword()) ::
+          {:ok, [Chronicle.Jobs.JobStep.t()]} | {:error, term()}
+  defdelegate get_job_steps(job_id, opts \\ []), to: Chronicle.Jobs, as: :steps
+
+  @doc """
+  Stops a Chronicle job.
+  """
+  @spec stop_job(String.t(), keyword()) :: :ok | {:error, term()}
+  defdelegate stop_job(job_id, opts \\ []), to: Chronicle.Jobs, as: :stop
+
+  @doc """
+  Resumes a Chronicle job.
+  """
+  @spec resume_job(String.t(), keyword()) :: :ok | {:error, term()}
+  defdelegate resume_job(job_id, opts \\ []), to: Chronicle.Jobs, as: :resume
+
+  @doc """
+  Deletes a Chronicle job.
+  """
+  @spec delete_job(String.t(), keyword()) :: :ok | {:error, term()}
+  defdelegate delete_job(job_id, opts \\ []), to: Chronicle.Jobs, as: :delete
+
+  @doc """
+  Gets all registered webhooks.
+  """
+  @spec get_webhooks(keyword()) :: {:ok, [Chronicle.WebHooks.Definition.t()]} | {:error, term()}
+  defdelegate get_webhooks(opts \\ []), to: Chronicle.WebHooks, as: :all
+
+  @doc """
+  Registers all discoverable webhooks.
+  """
+  @spec register_discovered_webhooks(keyword()) :: :ok | {:error, term()}
+  defdelegate register_discovered_webhooks(opts \\ []),
+    to: Chronicle.WebHooks,
+    as: :register_discovered
+
+  @doc """
+  Removes a registered webhook by identifier.
+  """
+  @spec remove_webhook(String.t(), keyword()) :: :ok | {:error, term()}
+  defdelegate remove_webhook(webhook_id, opts \\ []), to: Chronicle.WebHooks, as: :remove
+
+  @doc """
+  Registers a discoverable webhook module.
+  """
+  @spec register_webhook(module(), keyword()) :: :ok | {:error, term()}
+  def register_webhook(webhook_module, opts \\ [])
+      when is_atom(webhook_module) and is_list(opts) do
+    Chronicle.WebHooks.register(webhook_module, opts)
+  end
+
+  @doc """
+  Registers a webhook imperatively.
+  """
+  @spec register_webhook(
+          String.t(),
+          String.t(),
+          (Chronicle.WebHooks.DefinitionBuilder.t() -> Chronicle.WebHooks.DefinitionBuilder.t()),
+          keyword()
+        ) ::
+          :ok | {:error, term()}
+  def register_webhook(webhook_id, target_url, configure, opts \\ []) do
+    Chronicle.WebHooks.register(webhook_id, target_url, configure, opts)
+  end
+
+  @doc """
+  Registers all discoverable event store subscriptions.
+  """
+  @spec register_discovered_event_store_subscriptions(keyword()) :: :ok | {:error, term()}
+  defdelegate register_discovered_event_store_subscriptions(opts \\ []),
+    to: Chronicle.EventStoreSubscriptions,
+    as: :register_discovered
+
+  @doc """
+  Registers a discoverable event store subscription module.
+  """
+  @spec register_event_store_subscription(module(), keyword()) :: :ok | {:error, term()}
+  def register_event_store_subscription(subscription_module, opts \\ [])
+      when is_atom(subscription_module) and is_list(opts) do
+    Chronicle.EventStoreSubscriptions.register(subscription_module, opts)
+  end
+
+  @doc """
+  Registers an event store subscription imperatively using all available event
+  types.
+  """
+  @spec subscribe_to_event_store(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  def subscribe_to_event_store(subscription_id, source_event_store, opts)
+      when is_binary(subscription_id) and is_binary(source_event_store) and is_list(opts) do
+    Chronicle.EventStoreSubscriptions.subscribe(subscription_id, source_event_store, opts)
+  end
+
+  @doc """
+  Registers an event store subscription imperatively.
+  """
+  @spec subscribe_to_event_store(
+          String.t(),
+          String.t(),
+          (Chronicle.EventStoreSubscriptions.DefinitionBuilder.t() ->
+             Chronicle.EventStoreSubscriptions.DefinitionBuilder.t()),
+          keyword()
+        ) :: :ok | {:error, term()}
+  def subscribe_to_event_store(subscription_id, source_event_store, configure, opts \\ []) do
+    Chronicle.EventStoreSubscriptions.subscribe(
+      subscription_id,
+      source_event_store,
+      configure,
+      opts
+    )
+  end
+
+  @doc """
+  Removes an event store subscription by identifier.
+  """
+  @spec unsubscribe_from_event_store(String.t(), keyword()) :: :ok | {:error, term()}
+  defdelegate unsubscribe_from_event_store(subscription_id, opts \\ []),
+    to: Chronicle.EventStoreSubscriptions,
+    as: :unsubscribe
 
   @doc """
   Gets the current process identity.

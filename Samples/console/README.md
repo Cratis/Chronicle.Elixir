@@ -1,28 +1,34 @@
 # Chronicle Elixir Console Sample
 
-A runnable example demonstrating the Chronicle Elixir client.
+An interactive employee-focused console sample that mirrors the Chronicle TypeScript console sample.
 
-## What it does
+## What it demonstrates
 
-1. Appends three domain events (`AccountOpened`, `FundsDeposited`, `FundsWithdrawn`) to a Chronicle event store
-2. Reacts to those events via a `NotificationReactor` (prints log messages)
-3. Projects them into an `Account` read model using model-bound `Chronicle.ReadModel` mappings
-4. Also runs a reducer (`AccountReducer`) into `AccountSummary` as an alternative approach
-5. Registers a model-bound `unique_event_type` constraint on `AccountOpened`
-6. Demonstrates process-scoped identity, correlation id, and causation chain for appends
-7. Reads back the projection-backed `Account` model and prints its state
-8. Queries event-sequence state (`has_events_for?`, `get_tail_sequence_number`)
-9. Lists available event stores and namespaces from the kernel
+- Seeding Ada Lovelace, Grace Hopper, and Alan Turing through `EmployeeSeeder`
+- Employee lifecycle events: `EmployeeHired`, `EmployeePromoted`, `EmployeeMoved`, `EmployeeEmailSet`, and `EmployeeAddressSet`
+- Reducer-backed `EmployeeState` read models
+- Model-bound constraints for unique employee hire and case-insensitive unique email addresses
+- Transactional multi-employee updates through `Chronicle.Transactions.UnitOfWork`
+- A customer compliance / PII walkthrough with register-and-view commands
+
+## Controls
+
+- `1`-`3` — select Ada, Grace, or Alan
+- `P` — promote the selected employee
+- `A` — move the selected employee to a new address
+- `E` — set the selected employee's canonical email address
+- `U` — try to steal the next employee's email (constraint violation)
+- `R` — read the selected employee's `EmployeeState` read model
+- `T` — commit a transactional multi-employee update
+- `C` — register a customer with PII-style data
+- `V` — view the customer read model
+- `H` / `?` — show help
+- `Q` — quit
 
 ## Prerequisites
 
 - Elixir 1.14+ and OTP 25+
 - A Chronicle kernel running on `localhost:35000`
-
-> **Tip:** The easiest way to run Chronicle locally is via Docker:
-> ```shell
-> docker run -p 35000:35000 -p 8080:8080 cratis/chronicle:latest-development
-> ```
 
 ## Running
 
@@ -32,56 +38,12 @@ mix deps.get
 mix run --no-halt
 ```
 
-You should see output similar to:
-
-```
-[info] === Chronicle Elixir Console Sample ===
-[info] Using account ID: account-384291
-[info] Appending AccountOpened event...
-[info] Appending FundsDeposited event...
-[info] Appending FundsWithdrawn event...
-[info] [Reactor] Account opened: account-384291 for Alice with initial balance 1000
-[info] [Reactor] Funds deposited: 500 to account-384291
-[info] [Reactor] Funds withdrawn: 200 from account-384291
-[info] Reading Account read model...
-[info] Event sequence has events for account-384291
-[info] Tail sequence number for account-384291: 3
-[info] Event stores: ["default"]
-[info] Namespaces: ["Default"]
-[info] === Account State ===
-[info]   ID:           account-384291
-[info]   Owner:        Alice
-[info]   Balance:      1300
-[info]   Transactions: 2
-[info] === Demo complete ===
-```
-
-## Configuration
-
-Override the Chronicle connection string via environment variable:
+Override the Chronicle connection string with:
 
 ```shell
 CHRONICLE_CONNECTION_STRING="chronicle://myserver:35000?apiKey=secret" mix run --no-halt
 ```
 
-## Project structure
+## Notes
 
-```
-lib/
-  console_sample.ex                        # Demo scenario
-  console_sample/
-    application.ex                         # OTP Application (starts Chronicle.Client with auto-discovery)
-    events/
-      account_opened.ex                    # use Chronicle.EventType
-                                           # includes model-bound unique_event_type constraint
-      funds_deposited.ex
-      funds_withdrawn.ex
-    read_models/
-      account.ex                           # use Chronicle.ReadModel (projection-backed)
-      account_summary.ex                   # reducer-owned read model
-    reactors/
-      notification_reactor.ex              # use Chronicle.Reactor
-    reducers/
-      account_reducer.ex                   # use Chronicle.Reducer
-                                           # and sequence/store discovery calls in demo flow
-```
+The customer commands are a compliance demonstration that routes personally identifiable information through events and reducer-backed read models. The Elixir sample labels those fields clearly in the console output so you can see which fields require protection in downstream systems.

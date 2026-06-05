@@ -15,7 +15,14 @@ defmodule Chronicle.ConstraintsTest do
     use Chronicle.EventType, id: "account-created-v1"
     defstruct [:email, :tenant_id]
 
-    unique [:email, :tenant_id], name: "email_per_tenant"
+    unique([:email, :tenant_id], name: "email_per_tenant")
+  end
+
+  defmodule CaseInsensitiveEmailSet do
+    use Chronicle.EventType, id: "case-insensitive-email-set-v1"
+    defstruct [:email]
+
+    unique(:email, ignore_casing: true, name: "email")
   end
 
   defmodule UserDeleted do
@@ -48,7 +55,21 @@ defmodule Chronicle.ConstraintsTest do
                %{
                  type: :unique,
                  name: "email",
+                 ignore_casing: false,
                  event_definitions: [%{event_type: UserRegistered, on: ["email"]}]
+               }
+             ]
+    end
+
+    test "supports case-insensitive unique constraints" do
+      constraints = Chronicle.Constraints.from_event_types([CaseInsensitiveEmailSet])
+
+      assert constraints == [
+               %{
+                 type: :unique,
+                 name: "email",
+                 ignore_casing: true,
+                 event_definitions: [%{event_type: CaseInsensitiveEmailSet, on: ["email"]}]
                }
              ]
     end
@@ -60,6 +81,7 @@ defmodule Chronicle.ConstraintsTest do
                %{
                  type: :unique,
                  name: "email_per_tenant",
+                 ignore_casing: false,
                  event_definitions: [%{event_type: AccountCreated, on: ["email", "tenant_id"]}],
                  removed_with_event_type: UserDeleted
                }
@@ -70,11 +92,11 @@ defmodule Chronicle.ConstraintsTest do
       constraints = Chronicle.Constraints.from_event_types([AccountOpened])
 
       assert constraints == [
-              %{
-                type: :unique_event_type,
-                name: "account-opened-v1",
-                event_type_id: "account-opened-v1"
-              }
+               %{
+                 type: :unique_event_type,
+                 name: "account-opened-v1",
+                 event_type_id: "account-opened-v1"
+               }
              ]
     end
   end

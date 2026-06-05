@@ -43,19 +43,29 @@ defmodule Chronicle.Seeding do
           target_namespace: namespace() | nil
         }
 
+  @type has_events_for_fun ::
+          (event_source_id(), keyword() -> {:ok, boolean()} | {:error, term()})
+  @type append_many_fun :: (event_source_id(), [struct()], keyword() -> :ok | {:error, term()})
+
   @type t :: %__MODULE__{
           entries: [seeding_entry()],
           event_types: module(),
           connection: atom(),
           event_store: String.t(),
-          namespace: String.t()
+          namespace: String.t(),
+          client: atom() | nil,
+          has_events_for: has_events_for_fun() | nil,
+          append_many: append_many_fun() | nil
         }
 
   defstruct entries: [],
             event_types: nil,
             connection: nil,
             event_store: nil,
-            namespace: nil
+            namespace: nil,
+            client: nil,
+            has_events_for: nil,
+            append_many: nil
 
   @doc """
   Discovers seeder modules and invokes them to populate the builder.
@@ -70,9 +80,14 @@ defmodule Chronicle.Seeding do
     Enum.reduce(seeder_modules, builder, fn module, acc ->
       try do
         case module.seed(acc) do
-          %__MODULE__{} = updated -> updated
-          :ok -> acc
-          other -> raise "Seeder #{inspect(module)} returned #{inspect(other)}, expected builder or :ok"
+          %__MODULE__{} = updated ->
+            updated
+
+          :ok ->
+            acc
+
+          other ->
+            raise "Seeder #{inspect(module)} returned #{inspect(other)}, expected builder or :ok"
         end
       rescue
         e ->
@@ -185,7 +200,7 @@ defmodule Chronicle.Seeding do
       when is_binary(namespace) and is_function(fun, 1) do
     scoped = %{builder | namespace: namespace}
     result = fun.(scoped)
-    
+
     # Update entries to mark them as namespaced
     updated_entries =
       Enum.map(result.entries -- builder.entries, fn entry ->
@@ -211,22 +226,61 @@ defmodule Chronicle.Seeding do
   end
 
   def register(%__MODULE__{} = builder) do
-    # This is a simplified implementation
-    # In a full implementation, this would organize entries and send via gRPC
     require Logger
-    
+
     global_entries = Enum.filter(builder.entries, & &1.is_global)
     namespaced_entries = Enum.reject(builder.entries, & &1.is_global)
 
-    Logger.info("Registering #{length(global_entries)} global seed events and #{length(namespaced_entries)} namespaced seed events")
-    
-    # TODO: Implement gRPC call to Chronicle.Contracts.Seeding.EventSeeding.Seed
-    # For now, we'll just log that seeding would happen
-    
-    :ok
+    Logger.info(
+      "Registering #{length(global_entries)} global seed events and #{length(namespaced_entries)} namespaced seed events"
+    )
+
+    builder
+    |> group_entries_by_target()
+    |> Enum.reduce_while(:ok, fn {{namespace, event_source_id}, entries}, :ok ->
+      opts = [client: builder.client, namespace: namespace]
+
+      case has_events_for(builder).(event_source_id, opts) do
+        {:ok, true} ->
+          Logger.debug(
+            "Skipping seed data for #{event_source_id} in #{namespace}; events already exist"
+          )
+
+          {:cont, :ok}
+
+        {:ok, false} ->
+          case append_many(builder).(event_source_id, Enum.map(entries, & &1.event), opts) do
+            :ok -> {:cont, :ok}
+            {:error, reason} -> {:halt, {:error, reason}}
+          end
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
+    end)
   end
 
   # Private helpers
+
+  defp group_entries_by_target(%__MODULE__{} = builder) do
+    builder.entries
+    |> Enum.group_by(fn entry -> {target_namespace(entry, builder), entry.event_source_id} end)
+    |> Enum.sort_by(fn {{namespace, event_source_id}, _entries} ->
+      {namespace, event_source_id}
+    end)
+  end
+
+  defp target_namespace(%{is_global: true}, %__MODULE__{namespace: namespace}), do: namespace
+
+  defp target_namespace(%{target_namespace: namespace}, %__MODULE__{namespace: default_namespace}) do
+    namespace || default_namespace
+  end
+
+  defp has_events_for(%__MODULE__{has_events_for: fun}) when is_function(fun, 2), do: fun
+  defp has_events_for(_builder), do: &Chronicle.has_events_for?/2
+
+  defp append_many(%__MODULE__{append_many: fun}) when is_function(fun, 3), do: fun
+  defp append_many(_builder), do: &Chronicle.append_many/3
 
   defp extract_tags(%{__struct__: module} = _event) do
     if function_exported?(module, :__chronicle_event_type__, 1) do

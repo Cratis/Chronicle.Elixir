@@ -12,8 +12,11 @@ Key features:
 - **`use Chronicle.Reactor`** — react to events with side effects
 - **`use Chronicle.Reducer`** — build read models by folding events into state
 - **`use Chronicle.ReadModel`** — define read models with model-bound projections
+- **`use Chronicle.WebHooks.Webhook`** — define discoverable webhooks alongside your client artifacts
 - **Model-bound constraints** — declare unique and unique-event-type constraints on event types
+- **Jobs and webhooks APIs** — inspect Chronicle jobs and manage webhook registrations
 - **Context-aware appends** — process-scoped identity, correlation, and causation metadata
+- **Optimistic concurrency scopes** — guard `append/3` and `append_many/3` with scoped tail checks
 - **Resilient connection** — automatic reconnection with exponential backoff
 - **OTP-native** — fits naturally in your supervision tree
 
@@ -133,7 +136,7 @@ end
 ### 5. Start Chronicle.Client in your supervision tree
 
 If your Chronicle artifacts are defined in one OTP app, use `otp_app` and let
-Chronicle discover event types, reactors, reducers, and read models automatically.
+Chronicle discover event types, reactors, reducers, read models, and webhooks automatically.
 
 ```elixir
 defmodule MyApp.Application do
@@ -224,6 +227,45 @@ To append/query a non-default event sequence, pass `:event_sequence_id`:
 :ok = Chronicle.append("account-42", event, event_sequence_id: "audit-sequence")
 {:ok, events} = Chronicle.EventLog.get_for_event_source("account-42", event_sequence_id: "audit-sequence")
 ```
+
+### Transactions / Unit of Work
+
+Use `Chronicle.Transactions.UnitOfWork` to buffer appends and commit them together:
+
+```elixir
+alias Chronicle.Transactions.UnitOfWork
+
+unit_of_work = UnitOfWork.begin()
+
+:ok = Chronicle.append("account-42", %MyApp.Events.AccountOpened{...})
+:ok = Chronicle.append("account-42", %MyApp.Events.FundsDeposited{...})
+
+:ok = UnitOfWork.commit(unit_of_work)
+```
+
+For custom sequences, use `Chronicle.event_sequence/2` together with
+`Chronicle.EventSequences.EventSequence.transactional/1`.
+See [Documentation/transactions.md](Documentation/transactions.md) for the full guide.
+
+### Concurrency scope
+
+Use `Chronicle.Events.ConcurrencyScope` to make appends conditional on the current tail sequence number:
+
+```elixir
+alias Chronicle.Events.ConcurrencyScope
+
+{:ok, tail} = Chronicle.get_tail_sequence_number("account-42")
+
+:ok =
+  Chronicle.append_many("account-42", [
+    %MyApp.Events.FundsDeposited{account_id: "account-42", amount: 500},
+    %MyApp.Events.FundsWithdrawn{account_id: "account-42", amount: 200}
+  ],
+    concurrency_scope: ConcurrencyScope.for_event_source(tail)
+  )
+```
+
+For more details and scoping options, see [Documentation/concurrency.md](Documentation/concurrency.md).
 
 ## Quick Start (Reducer Alternative)
 
@@ -354,6 +396,7 @@ Chronicle.read_model(Account, "account-1", client: :bank)
 ## Running the Console Sample
 
 A working example is in the [`Samples/console`](Samples/console) directory.
+It mirrors the interactive TypeScript sample with seeded employees (Ada Lovelace, Grace Hopper, and Alan Turing), keyboard-driven employee updates, transaction demos, constraint violations, and a customer compliance / PII walkthrough.
 
 **Prerequisites:** A Chronicle kernel running locally on port 35000.
 
@@ -414,6 +457,14 @@ For detailed information on specific features, see the [guides](Documentation/in
 - **[Context Management](Documentation/context.md)** — Correlation IDs, identity tracking, and causation chains
 - **[Event Sequences](Documentation/event-sequences.md)** — Organizing events into separate logical streams
 - **[Event Store Discovery](Documentation/event-stores.md)** — Discovering event stores and namespaces
+- **[Seeding](Documentation/seeding/index.md)** — Populating event stores with baseline events during startup
+- **[Event Migrations](Documentation/migrations.md)** — Evolving event generations safely
+- **[Transactions](Documentation/transactions.md)** — Buffering and committing multi-event units of work
+- **[Concurrency Scope](Documentation/concurrency.md)** — Guarding appends with optimistic concurrency checks
+- **[Event Store Subscriptions](Documentation/event-store-subscriptions.md)** — Importing events across stores
+- **[Jobs](Documentation/jobs.md)** — Inspecting and controlling Chronicle jobs
+- **[WebHooks](Documentation/webhooks.md)** — Registering event webhooks
+- **[Read Models](Documentation/read-models.md)** — Querying read models, snapshots, and definitions
 
 ## Package structure
 

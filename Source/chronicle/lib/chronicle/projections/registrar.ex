@@ -60,6 +60,7 @@ defmodule Chronicle.Projections.Registrar do
       event_store: Keyword.fetch!(opts, :event_store),
       namespace: Keyword.get(opts, :namespace, "Default"),
       event_types: Keyword.get(opts, :event_types, []),
+      migrations: Keyword.get(opts, :migrations, []),
       read_models: Keyword.get(opts, :read_models, []),
       reducers: Keyword.get(opts, :reducers, [])
     }
@@ -113,7 +114,8 @@ defmodule Chronicle.Projections.Registrar do
 
     with :ok <- ensure_event_store(channel, state.event_store),
          :ok <- ensure_namespace(channel, state.event_store, state.namespace),
-         :ok <- EventTypes.register(channel, state.event_store, all_event_types),
+         :ok <-
+           EventTypes.register(channel, state.event_store, all_event_types, state.migrations),
          :ok <- register_constraints(channel, state, all_event_types),
          :ok <- register_read_models(channel, state),
          :ok <- register_projections(channel, state) do

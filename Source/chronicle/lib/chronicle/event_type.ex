@@ -76,7 +76,13 @@ defmodule Chronicle.EventType do
       Module.register_attribute(__MODULE__, :unique_event_type, accumulate: true)
 
       import Chronicle.EventType,
-        only: [unique: 1, unique: 2, unique_event_type: 0, unique_event_type: 1, remove_constraint: 1]
+        only: [
+          unique: 1,
+          unique: 2,
+          unique_event_type: 0,
+          unique_event_type: 1,
+          remove_constraint: 1
+        ]
 
       @chronicle_event_type_id unquote(event_type_id)
       @chronicle_event_type_generation unquote(generation)
@@ -84,6 +90,7 @@ defmodule Chronicle.EventType do
       @impl Chronicle.EventType
       def __chronicle_event_type__(:id), do: @chronicle_event_type_id
       def __chronicle_event_type__(:generation), do: @chronicle_event_type_generation
+
       def __chronicle_event_type__(:constraints) do
         %{
           unique: Enum.reverse(@unique),

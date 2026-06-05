@@ -218,4 +218,58 @@ defmodule Chronicle.SeederTest do
       assert length(namespaced_entries) == 1
     end
   end
+
+  describe "Chronicle.Seeding.register/1" do
+    test "appends grouped seed events for sources without existing events" do
+      builder =
+        base_builder(self())
+        |> Chronicle.Seeding.for_event_source("source-1", [
+          %SomeEvent{value: "first"},
+          %AnotherEvent{count: 2}
+        ])
+        |> Chronicle.Seeding.for_namespace("production", fn scoped ->
+          Chronicle.Seeding.for(scoped, SomeEvent, "source-2", [%SomeEvent{value: "namespaced"}])
+        end)
+
+      assert :ok = Chronicle.Seeding.register(builder)
+
+      assert_received {:checked, "source-1", [client: :test_client, namespace: "default"]}
+      assert_received {:checked, "source-2", [client: :test_client, namespace: "production"]}
+
+      assert_received {:appended, "source-1", [SomeEvent, AnotherEvent],
+                       [client: :test_client, namespace: "default"]}
+
+      assert_received {:appended, "source-2", [SomeEvent],
+                       [client: :test_client, namespace: "production"]}
+    end
+
+    test "skips appending for sources that already have events" do
+      builder =
+        base_builder(self(), fn _event_source_id, _opts -> {:ok, true} end)
+        |> Chronicle.Seeding.for(SomeEvent, "source-1", [%SomeEvent{value: "existing"}])
+
+      assert :ok = Chronicle.Seeding.register(builder)
+      assert_received {:checked, "source-1", [client: :test_client, namespace: "default"]}
+      refute_received {:appended, _, _, _}
+    end
+  end
+
+  defp base_builder(receiver, has_events_for \\ fn _event_source_id, _opts -> {:ok, false} end) do
+    %Chronicle.Seeding{
+      entries: [],
+      event_types: Chronicle.EventTypes,
+      connection: :test_connection,
+      event_store: "test",
+      namespace: "default",
+      client: :test_client,
+      has_events_for: fn event_source_id, opts ->
+        send(receiver, {:checked, event_source_id, opts})
+        has_events_for.(event_source_id, opts)
+      end,
+      append_many: fn event_source_id, events, opts ->
+        send(receiver, {:appended, event_source_id, Enum.map(events, & &1.__struct__), opts})
+        :ok
+      end
+    }
+  end
 end

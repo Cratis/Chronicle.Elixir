@@ -4,11 +4,9 @@
 defmodule Chronicle.MixProject do
   use Mix.Project
 
-  @version (
-    Path.join(__DIR__, "VERSION")
-    |> File.read!()
-    |> String.trim()
-  )
+  @version Path.join(__DIR__, "VERSION")
+           |> File.read!()
+           |> String.trim()
   @source_url "https://github.com/Cratis/Chronicle.Elixir"
 
   def project do
@@ -48,14 +46,22 @@ defmodule Chronicle.MixProject do
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url},
       maintainers: ["Cratis"],
-      files: ~w(lib mix.exs README.md VERSION .formatter.exs)
+      files: ~w(
+        lib
+        mix.exs
+        README.md
+        VERSION
+        .formatter.exs
+      )
     ]
   end
 
   defp docs do
     [
       main: "Chronicle",
-      extras: ["README.md"],
+      extras: [
+        "README.md"
+      ],
       groups_for_modules: [
         Connections: [Chronicle.Connections.ConnectionString, Chronicle.Connections.Connection],
         Context: [
@@ -69,12 +75,44 @@ defmodule Chronicle.MixProject do
         ],
         "Event Sourcing": [
           Chronicle.EventType,
+          Chronicle.Events.Migration,
+          Chronicle.Events.MigrationBuilder,
+          Chronicle.Events.Migrators,
           Chronicle.EventLog,
+          Chronicle.EventSequences.EventSequence,
+          Chronicle.EventSequences.TransactionalEventSequence,
+          Chronicle.Events.ConcurrencyScope,
           Chronicle.EventTypes,
           Chronicle.EventStores
         ],
-        Observers: [Chronicle.Reactor, Chronicle.Reducer],
+        Transactions: [Chronicle.Transactions.UnitOfWork],
+        Observers: [
+          Chronicle.Reactor,
+          Chronicle.Reducer,
+          Chronicle.EventStoreSubscriptions,
+          Chronicle.EventStoreSubscriptions.Subscription,
+          Chronicle.EventStoreSubscriptions.Definition,
+          Chronicle.EventStoreSubscriptions.DefinitionBuilder,
+          Chronicle.EventStoreSubscriptions.EventType
+        ],
         "Read Models": [Chronicle.ReadModel, Chronicle.ReadModels],
+        Jobs: [
+          Chronicle.Jobs,
+          Chronicle.Jobs.Job,
+          Chronicle.Jobs.JobProgress,
+          Chronicle.Jobs.JobStatusChanged,
+          Chronicle.Jobs.JobStep,
+          Chronicle.Jobs.JobStepProgress,
+          Chronicle.Jobs.JobStepStatusChanged
+        ],
+        WebHooks: [
+          Chronicle.WebHooks,
+          Chronicle.WebHooks.Definition,
+          Chronicle.WebHooks.DefinitionBuilder,
+          Chronicle.WebHooks.EventType,
+          Chronicle.WebHooks.Target,
+          Chronicle.WebHooks.Webhook
+        ],
         Constraints: [Chronicle.Constraints]
       ]
     ]

@@ -40,4 +40,10 @@ defmodule Chronicle.CausationType do
   """
   @spec append_many_events() :: t()
   def append_many_events, do: new("ElixirClient.AppendMany")
+
+  @doc """
+  Causation type for transactional event sequence appends.
+  """
+  @spec transactional_event_sequence() :: t()
+  def transactional_event_sequence, do: new("TransactionalEventSequence")
 end

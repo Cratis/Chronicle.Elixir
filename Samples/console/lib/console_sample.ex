@@ -3,123 +3,477 @@
 
 defmodule ConsoleSample do
   @moduledoc """
-  Console demo for the Chronicle Elixir client.
-
-  Demonstrates appending events and reading back a read model.
+  Interactive employee-focused Chronicle sample.
   """
 
-  require Logger
+  alias ConsoleSample.Employees
+  alias ConsoleSample.Employees.Person
 
-  alias ConsoleSample.Events.{AccountOpened, FundsDeposited, FundsWithdrawn}
-  alias ConsoleSample.ReadModels.Account
-  alias Chronicle.{CausationManager, CorrelationIdManager, Identity}
+  alias ConsoleSample.Events.{
+    CustomerAddressUpdated,
+    CustomerRegistered,
+    EmployeeEmailSet,
+    EmployeeMoved,
+    EmployeePromoted
+  }
 
-  @doc """
-  Runs the demo scenario:
-  1. Open a new account
-  2. Deposit funds
-  3. Withdraw funds
-  4. Read back the account read model
-  """
-  def run_demo do
-    # Give Chronicle time to connect, authenticate, establish the session, and register projections
-    Process.sleep(8_000)
+  alias ConsoleSample.ReadModels.{Customer, EmployeeState}
+  alias Chronicle.ReadModels
+  alias Chronicle.Transactions.UnitOfWork
 
-    account_id = "account-#{:rand.uniform(1_000_000)}"
-    correlation_id = Chronicle.CorrelationId.create()
+  @titles [
+    "Software Engineer",
+    "Senior Engineer",
+    "Principal Engineer",
+    "Engineering Manager",
+    "Architect"
+  ]
 
-    Chronicle.set_correlation_id(correlation_id)
+  @addresses [
+    %{address: "221B Baker Street", city: "London", zip_code: "NW1 6XE", country: "UK"},
+    %{
+      address: "1600 Amphitheatre Parkway",
+      city: "Mountain View",
+      zip_code: "94043",
+      country: "USA"
+    },
+    %{address: "1 Infinite Loop", city: "Cupertino", zip_code: "95014", country: "USA"},
+    %{address: "5 Wall Street", city: "New York", zip_code: "10005", country: "USA"}
+  ]
 
-    Chronicle.set_identity(
-      Identity.new("console-sample-user", "Console Sample", "console-sample")
-    )
+  @sample_customer %{
+    id: "c0000001-0000-0000-0000-000000000000",
+    full_name: "Eve Jackson",
+    email: "eve.jackson@example.com",
+    phone_number: "+1-202-555-0143",
+    street_address: "742 Evergreen Terrace",
+    city: "Springfield",
+    postal_code: "49007",
+    country: "USA"
+  }
 
-    CausationManager.define_root(%{application: "console-sample"})
-    CausationManager.add("ConsoleSample.RunDemo", %{account_id: account_id})
+  @spec run() :: no_return()
+  def run do
+    Process.sleep(2_000)
+    wait_for_seeded_employees(20)
 
-    Logger.info("=== Chronicle Elixir Console Sample ===")
-    Logger.info("Using account ID: #{account_id}")
-    Logger.info("Correlation ID: #{correlation_id.value}")
+    print_seeded_employee_status()
+    write_instructions()
+    write_selected_employee(0)
 
-    Logger.info("Appending AccountOpened event...")
+    status =
+      try do
+        with_terminal_mode(fn -> loop(0) end)
+        0
+      rescue
+        error ->
+          IO.puts("\nUnhandled error: #{Exception.message(error)}")
+          1
+      end
 
-    case Chronicle.append(account_id, %AccountOpened{
-           account_id: account_id,
-           owner_name: "Alice",
-           initial_balance: 1000
+    System.stop(status)
+
+    receive do
+    after
+      :infinity -> :ok
+    end
+  end
+
+  defp loop(selected_index) do
+    case read_key() do
+      "\u0003" ->
+        IO.puts("\nExiting...")
+
+      "q" ->
+        IO.puts("\nExiting...")
+
+      "1" ->
+        write_selected_employee(0)
+        loop(0)
+
+      "2" ->
+        write_selected_employee(1)
+        loop(1)
+
+      "3" ->
+        write_selected_employee(2)
+        loop(2)
+
+      "p" ->
+        promote(selected_employee!(selected_index))
+        loop(selected_index)
+
+      "a" ->
+        move(selected_employee!(selected_index))
+        loop(selected_index)
+
+      "e" ->
+        set_email(selected_employee!(selected_index))
+        loop(selected_index)
+
+      "u" ->
+        steal_email(selected_index)
+        loop(selected_index)
+
+      "r" ->
+        show_employee_read_model(selected_employee!(selected_index))
+        loop(selected_index)
+
+      "t" ->
+        transact(selected_index)
+        loop(selected_index)
+
+      "c" ->
+        register_customer_with_pii()
+        loop(selected_index)
+
+      "v" ->
+        show_customer_read_model()
+        loop(selected_index)
+
+      "h" ->
+        write_instructions()
+        loop(selected_index)
+
+      "?" ->
+        write_instructions()
+        loop(selected_index)
+
+      _other ->
+        loop(selected_index)
+    end
+  end
+
+  defp promote(%Person{} = person) do
+    title = random_from(@titles)
+
+    case Chronicle.append(person.id, %EmployeePromoted{new_title: title}) do
+      :ok ->
+        IO.puts(
+          "\n[#{person.id}] Promoted #{full_name(person)} to '#{title}' at sequence #{tail_sequence(person.id)}"
+        )
+
+      {:error, reason} ->
+        IO.puts(
+          "\n[#{person.id}] Could not promote #{full_name(person)}: #{format_reason(reason)}"
+        )
+    end
+  end
+
+  defp move(%Person{} = person) do
+    address = random_from(@addresses)
+
+    case Chronicle.append(person.id, %EmployeeMoved{
+           address: address.address,
+           city: address.city,
+           zip_code: address.zip_code,
+           country: address.country
          }) do
       :ok ->
-        Logger.info("AccountOpened appended successfully")
+        IO.puts(
+          "\n[#{person.id}] Moved #{full_name(person)} to #{address.address}, #{address.city} at sequence #{tail_sequence(person.id)}"
+        )
 
       {:error, reason} ->
-        Logger.error("Failed to append AccountOpened: #{inspect(reason)}")
+        IO.puts("\n[#{person.id}] Could not move #{full_name(person)}: #{format_reason(reason)}")
     end
+  end
 
-    Logger.info("Appending FundsDeposited event...")
+  defp set_email(%Person{} = person) do
+    email = Employees.email_for(person)
 
-    case Chronicle.append(account_id, %FundsDeposited{
-           account_id: account_id,
-           amount: 500
-         }) do
-      :ok -> Logger.info("FundsDeposited appended successfully")
-      {:error, reason} -> Logger.error("Failed: #{inspect(reason)}")
+    case Chronicle.append(person.id, %EmployeeEmailSet{email: email}) do
+      :ok ->
+        IO.puts(
+          "\n[#{person.id}] Set #{full_name(person)}'s email to #{email} at sequence #{tail_sequence(person.id)}"
+        )
+
+      {:error, reason} ->
+        IO.puts("\n[#{person.id}] Could not set email: #{format_reason(reason)}")
     end
+  end
 
-    Logger.info("Appending FundsWithdrawn event...")
+  defp steal_email(selected_index) do
+    person = selected_employee!(selected_index)
+    victim = selected_employee!(rem(selected_index + 1, length(Employees.all())))
+    email = Employees.email_for(victim)
 
-    case Chronicle.append(account_id, %FundsWithdrawn{
-           account_id: account_id,
-           amount: 200
-         }) do
-      :ok -> Logger.info("FundsWithdrawn appended successfully")
-      {:error, reason} -> Logger.error("Failed: #{inspect(reason)}")
+    case Chronicle.append(person.id, %EmployeeEmailSet{email: email}) do
+      :ok ->
+        IO.puts(
+          "\n[#{person.id}] Unexpectedly took #{email} at sequence #{tail_sequence(person.id)}"
+        )
+
+      {:error, reason} ->
+        IO.puts(
+          "\n[#{person.id}] Rejected taking #{victim.first_name}'s email (#{email}): #{format_reason(reason)}"
+        )
     end
+  end
 
-    # Allow the server-side projection and reactor/reducer to process events
-    Process.sleep(6_000)
+  defp transact(selected_index) do
+    selected = selected_employee!(selected_index)
+    also_update = selected_employee!(rem(selected_index + 1, length(Employees.all())))
+    selected_title = random_from(@titles)
+    selected_address = random_from(@addresses)
+    second_title = random_from(@titles)
+    unit_of_work = Chronicle.begin_unit_of_work()
 
-    Logger.info("Reading Account read model (projection)...")
+    try do
+      :ok = Chronicle.append(selected.id, %EmployeePromoted{new_title: selected_title})
 
-    case Chronicle.read_model(Account, account_id) do
+      :ok =
+        Chronicle.append_many(selected.id, [
+          %EmployeeMoved{
+            address: selected_address.address,
+            city: selected_address.city,
+            zip_code: selected_address.zip_code,
+            country: selected_address.country
+          }
+        ])
+
+      :ok = Chronicle.append(also_update.id, %EmployeePromoted{new_title: second_title})
+
+      case UnitOfWork.commit(unit_of_work) do
+        :ok ->
+          IO.puts(
+            "\n[transaction] Committed staged events for #{full_name(selected)} and #{full_name(also_update)}"
+          )
+
+        {:error, reason} ->
+          IO.puts("\n[transaction] Failed committing staged events: #{format_reason(reason)}")
+      end
+    after
+      if not UnitOfWork.is_completed?(unit_of_work) do
+        UnitOfWork.rollback(unit_of_work)
+      end
+    end
+  end
+
+  defp show_employee_read_model(%Person{} = person) do
+    case ReadModels.get_instance_by_id(EmployeeState, person.id) do
       {:ok, nil} ->
-        Logger.warning("Projection read model not yet available.")
+        IO.puts("\n[read-model] No EmployeeState found for #{full_name(person)}")
 
-      {:ok, account} ->
-        Logger.info("=== Account (projection) ===")
-        Logger.info("  ID:           #{account.account_id}")
-        Logger.info("  Owner:        #{account.owner_name}")
-        Logger.info("  Balance:      #{account.balance}")
-        Logger.info("  Transactions: #{account.transaction_count}")
+      {:ok, state} ->
+        IO.puts(
+          "\n[read-model] #{full_name(person)}: #{state.title} <#{blank_as(state.email, "no email yet")}> @ #{blank_as(state.address, "no address yet")}"
+        )
 
       {:error, reason} ->
-        Logger.error("Failed to read projection model: #{inspect(reason)}")
+        IO.puts("\n[read-model] Could not read #{full_name(person)}: #{format_reason(reason)}")
     end
+  end
 
-    case Chronicle.has_events_for?(account_id) do
-      {:ok, true} -> Logger.info("Event sequence has events for #{account_id}")
-      {:ok, false} -> Logger.warning("No events found for #{account_id}")
-      {:error, reason} -> Logger.error("Failed checking sequence state: #{inspect(reason)}")
+  defp register_customer_with_pii do
+    case Chronicle.has_events_for?(@sample_customer.id) do
+      {:ok, true} ->
+        IO.puts("\n[pii] #{@sample_customer.full_name} is already registered.")
+
+      {:ok, false} ->
+        events = [
+          %CustomerRegistered{
+            customer_id: @sample_customer.id,
+            full_name: @sample_customer.full_name,
+            email: @sample_customer.email,
+            phone_number: @sample_customer.phone_number
+          },
+          %CustomerAddressUpdated{
+            customer_id: @sample_customer.id,
+            street_address: @sample_customer.street_address,
+            city: @sample_customer.city,
+            postal_code: @sample_customer.postal_code,
+            country: @sample_customer.country
+          }
+        ]
+
+        case Chronicle.append_many(@sample_customer.id, events) do
+          :ok ->
+            IO.puts(
+              "\n[pii] Registered #{@sample_customer.full_name} (#{@sample_customer.id}) with customer data events up to sequence #{tail_sequence(@sample_customer.id)}"
+            )
+
+          {:error, reason} ->
+            IO.puts(
+              "\n[pii] Could not register #{@sample_customer.full_name}: #{format_reason(reason)}"
+            )
+        end
+
+      {:error, reason} ->
+        IO.puts("\n[pii] Could not check customer state: #{format_reason(reason)}")
     end
+  end
 
-    case Chronicle.get_tail_sequence_number(account_id) do
-      {:ok, sequence_number} -> Logger.info("Tail sequence number for #{account_id}: #{sequence_number}")
-      {:error, reason} -> Logger.error("Failed getting tail sequence number: #{inspect(reason)}")
+  defp show_customer_read_model do
+    case ReadModels.get_instance_by_id(Customer, @sample_customer.id) do
+      {:ok, nil} ->
+        IO.puts(
+          "\n[pii] No Customer read model found for #{@sample_customer.id}. Append the customer events first."
+        )
+
+      {:ok, customer} ->
+        IO.puts("\nCustomer read model for #{customer.id}:")
+        IO.puts(format_customer_field("Full name", customer.full_name, true))
+        IO.puts(format_customer_field("Email", customer.email, true))
+        IO.puts(format_customer_field("Phone number", customer.phone_number, true))
+        IO.puts(format_customer_field("Street address", customer.street_address, true))
+        IO.puts(format_customer_field("City", customer.city, true))
+        IO.puts(format_customer_field("Postal code", customer.postal_code, true))
+        IO.puts(format_customer_field("Country", customer.country, false))
+        IO.puts(format_customer_field("Customer number", customer.customer_number, false))
+        IO.puts(format_customer_field("Account status", customer.account_status, false))
+        IO.puts(format_customer_field("Total orders", customer.total_orders, false))
+
+        IO.puts(
+          "  PII fields are marked above so you can identify which values need extra protection."
+        )
+
+      {:error, reason} ->
+        IO.puts("\n[pii] Could not read the customer model: #{format_reason(reason)}")
     end
+  end
 
-    case Chronicle.get_event_stores() do
-      {:ok, stores} -> Logger.info("Event stores: #{inspect(stores)}")
-      {:error, reason} -> Logger.error("Failed getting event stores: #{inspect(reason)}")
+  defp print_seeded_employee_status do
+    Enum.each(Employees.all(), fn employee ->
+      status =
+        case Chronicle.has_events_for?(employee.id) do
+          {:ok, true} -> "seeded"
+          {:ok, false} -> "missing"
+          {:error, reason} -> "error: #{format_reason(reason)}"
+        end
+
+      IO.puts("Seeder status for #{full_name(employee)} (#{employee.id}): #{status}")
+    end)
+  end
+
+  defp wait_for_seeded_employees(0), do: :ok
+
+  defp wait_for_seeded_employees(attempts_left) do
+    if Enum.all?(Employees.all(), fn employee ->
+         match?({:ok, true}, Chronicle.has_events_for?(employee.id))
+       end) do
+      :ok
+    else
+      Process.sleep(500)
+      wait_for_seeded_employees(attempts_left - 1)
     end
+  end
 
-    case Chronicle.get_namespaces() do
-      {:ok, namespaces} -> Logger.info("Namespaces: #{inspect(namespaces)}")
-      {:error, reason} -> Logger.error("Failed getting namespaces: #{inspect(reason)}")
+  defp write_instructions do
+    IO.puts(
+      [
+        "",
+        "Use 1-3 to select an employee. Then:",
+        "  P = Promote          A = Move (change address)",
+        "  E = Set email        U = Try to take the next employee's email (constraint violation)",
+        "  R = Read model       T = Transactional update",
+        "  C = Register customer with PII   V = View customer PII read model",
+        "  H or ? = Show this menu          Q = Quit",
+        ""
+      ]
+      |> Enum.join("\n")
+    )
+  end
+
+  defp write_selected_employee(index) do
+    person = selected_employee!(index)
+    IO.puts("Selected [#{index + 1}] #{full_name(person)} (#{person.id})")
+  end
+
+  defp with_terminal_mode(fun) do
+    stty = System.find_executable("stty")
+
+    original_mode =
+      case stty do
+        nil ->
+          nil
+
+        _ ->
+          case System.cmd(stty, ["-g"], stderr_to_stdout: true) do
+            {settings, 0} ->
+              System.cmd(stty, ["raw", "-echo"], stderr_to_stdout: true)
+              String.trim(settings)
+
+            _ ->
+              nil
+          end
+      end
+
+    try do
+      fun.()
+    after
+      restore_terminal_mode(stty, original_mode)
     end
+  end
 
-    Logger.info("=== Demo complete ===")
+  defp restore_terminal_mode(nil, _original_mode), do: :ok
 
-    Chronicle.clear_identity()
-    CorrelationIdManager.clear()
-    CausationManager.clear()
+  defp restore_terminal_mode(stty, original_mode)
+       when is_binary(original_mode) and original_mode != "" do
+    System.cmd(stty, [original_mode], stderr_to_stdout: true)
+    :ok
+  end
+
+  defp restore_terminal_mode(stty, _original_mode) do
+    System.cmd(stty, ["sane"], stderr_to_stdout: true)
+    :ok
+  end
+
+  defp read_key do
+    case IO.binread(:stdio, 1) do
+      :eof -> "q"
+      {:error, _reason} -> "q"
+      key when is_binary(key) -> String.downcase(key)
+    end
+  end
+
+  defp selected_employee!(index) do
+    Employees.at(index) || raise ArgumentError, "unknown employee index #{index}"
+  end
+
+  defp random_from(items), do: Enum.at(items, :rand.uniform(length(items)) - 1)
+
+  defp tail_sequence(event_source_id) do
+    case Chronicle.get_tail_sequence_number(event_source_id) do
+      {:ok, sequence_number} -> sequence_number
+      _ -> 0
+    end
+  end
+
+  defp full_name(%Person{} = person), do: "#{person.first_name} #{person.last_name}"
+
+  defp blank_as(value, fallback) when value in [nil, ""], do: fallback
+  defp blank_as(value, _fallback), do: value
+
+  defp format_reason({:constraint_violations, violations}) when is_list(violations) do
+    violations
+    |> Enum.map(&violation_message/1)
+    |> Enum.join("; ")
+  end
+
+  defp format_reason({:append_errors, errors}) when is_list(errors) do
+    errors
+    |> Enum.map(&violation_message/1)
+    |> Enum.join("; ")
+  end
+
+  defp format_reason(reason), do: inspect(reason)
+
+  defp violation_message(value) when is_binary(value), do: value
+
+  defp violation_message(value) when is_map(value) do
+    Map.get(value, :Message) || Map.get(value, :message) || inspect(value)
+  end
+
+  defp violation_message(value), do: inspect(value)
+
+  defp format_customer_field(label, value, pii?) do
+    display =
+      value
+      |> to_string()
+      |> blank_as("(empty)")
+
+    suffix = if pii?, do: "   [PII]", else: ""
+    "  #{String.pad_trailing(label, 15)}: #{display}#{suffix}"
   end
 end
