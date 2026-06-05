@@ -4,7 +4,7 @@
 defmodule Chronicle.Transactions.UnitOfWorkTest do
   use ExUnit.Case, async: true
 
-  alias Chronicle.EventLog
+  alias Chronicle.EventSequences.EventLog
 
   alias Chronicle.EventSequences.{
     EventForEventSourceId,
@@ -15,7 +15,7 @@ defmodule Chronicle.Transactions.UnitOfWorkTest do
   alias Chronicle.Transactions.{NoUnitOfWorkStarted, UnitOfWork}
 
   defmodule TestEvent do
-    use Chronicle.EventType, id: "transactions-test-event"
+    use Chronicle.Events.EventType, id: "transactions-test-event"
 
     defstruct [:value]
   end

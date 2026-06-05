@@ -1,12 +1,12 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.CausationEntry do
+defmodule Chronicle.Auditing.CausationEntry do
   @moduledoc """
   Represents a single causation entry in an audit chain.
   """
 
-  alias Chronicle.CausationType
+  alias Chronicle.Auditing.CausationType
 
   @enforce_keys [:occurred, :type]
   defstruct [:occurred, :type, properties: %{}]

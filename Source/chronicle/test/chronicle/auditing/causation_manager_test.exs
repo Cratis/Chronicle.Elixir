@@ -4,7 +4,7 @@
 defmodule Chronicle.CausationManagerTest do
   use ExUnit.Case, async: true
 
-  alias Chronicle.{CausationManager, CausationType}
+  alias Chronicle.Auditing.{CausationManager, CausationType}
 
   describe "CausationManager" do
     setup do

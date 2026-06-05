@@ -7,7 +7,7 @@ defmodule Chronicle.Events.ConcurrencyScopeTest do
   alias Chronicle.Events.ConcurrencyScope
 
   defmodule FundsDeposited do
-    use Chronicle.EventType, id: "funds-deposited-v1"
+    use Chronicle.Events.EventType, id: "funds-deposited-v1"
     defstruct [:amount]
   end
 

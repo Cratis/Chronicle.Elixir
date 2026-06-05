@@ -1,11 +1,11 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.ReadModel do
+defmodule Chronicle.ReadModels.ReadModel do
   @moduledoc """
   Macro for defining Chronicle read models with embedded model-bound projections.
 
-  Use `Chronicle.ReadModel` in a struct module to define both the read model
+  Use `Chronicle.ReadModels.ReadModel` in a struct module to define both the read model
   shape and how Chronicle should project events into it. The projection
   definition lives right next to the struct fields — no separate projection
   module is needed.
@@ -13,7 +13,7 @@ defmodule Chronicle.ReadModel do
   ## Quick Example
 
       defmodule MyApp.ReadModels.Account do
-        use Chronicle.ReadModel
+        use Chronicle.ReadModels.ReadModel
 
         defstruct account_id: nil, owner_name: nil, balance: 0, transaction_count: 0
 
@@ -125,19 +125,23 @@ defmodule Chronicle.ReadModel do
       Module.register_attribute(__MODULE__, :chronicle_projection_join, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_removed_with, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_from_every, accumulate: true)
+      Module.register_attribute(__MODULE__, :chronicle_pii, accumulate: true)
 
       @chronicle_read_model_id Keyword.get(opts, :id, __MODULE__ |> Module.split() |> List.last())
 
-      import Chronicle.ReadModel, only: [from: 2, join: 2, removed_with: 2, from_every: 1]
+      import Chronicle.ReadModels.ReadModel,
+        only: [from: 2, join: 2, removed_with: 2, from_every: 1]
 
-      @before_compile Chronicle.ReadModel
+      import Chronicle.Compliance, only: [pii: 1, pii: 2]
+
+      @before_compile Chronicle.ReadModels.ReadModel
     end
   end
 
   @doc """
   Declares how an event maps onto this read model.
 
-  See the `Chronicle.ReadModel` module documentation for full options.
+  See the `Chronicle.ReadModels.ReadModel` module documentation for full options.
   """
   defmacro from(event_module, opts) do
     quote do
@@ -148,7 +152,7 @@ defmodule Chronicle.ReadModel do
   @doc """
   Declares a join from a secondary event onto this read model.
 
-  See the `Chronicle.ReadModel` module documentation for full options.
+  See the `Chronicle.ReadModels.ReadModel` module documentation for full options.
   """
   defmacro join(event_module, opts) do
     quote do
@@ -159,7 +163,7 @@ defmodule Chronicle.ReadModel do
   @doc """
   Declares that this model is removed when the given event occurs.
 
-  See the `Chronicle.ReadModel` module documentation for full options.
+  See the `Chronicle.ReadModels.ReadModel` module documentation for full options.
   """
   defmacro removed_with(event_module, opts \\ []) do
     quote do
@@ -170,7 +174,7 @@ defmodule Chronicle.ReadModel do
   @doc """
   Applies property mappings on every event, regardless of type.
 
-  See the `Chronicle.ReadModel` module documentation for full options.
+  See the `Chronicle.ReadModels.ReadModel` module documentation for full options.
   """
   defmacro from_every(opts) do
     quote do
@@ -197,6 +201,11 @@ defmodule Chronicle.ReadModel do
 
       def __chronicle_read_model__(:has_projection?),
         do: not Enum.empty?(@chronicle_projection_from)
+
+      def __chronicle_read_model__(:pii), do: Enum.reverse(@chronicle_pii)
+
+      @doc false
+      def __chronicle_pii__, do: Enum.reverse(@chronicle_pii)
     end
   end
 end

@@ -1,7 +1,7 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.Seeder do
+defmodule Chronicle.Seeding.Seeder do
   @moduledoc """
   Behaviour and macro for defining Chronicle seeders.
 
@@ -12,12 +12,12 @@ defmodule Chronicle.Seeder do
 
   ## Defining a seeder
 
-  Use `Chronicle.Seeder` in a module and implement the `seed/1` callback.
+  Use `Chronicle.Seeding.Seeder` in a module and implement the `seed/1` callback.
   The callback receives a builder that accumulates events to be sent to
   Chronicle.
 
       defmodule MyApp.Seeders.AccountSeeder do
-        use Chronicle.Seeder
+        use Chronicle.Seeding.Seeder
 
         alias MyApp.Events.{AccountOpened, FundsDeposited}
 
@@ -48,7 +48,7 @@ defmodule Chronicle.Seeder do
         end
       end
 
-  ## Options for `use Chronicle.Seeder`
+  ## Options for `use Chronicle.Seeding.Seeder`
 
     * `:id` — a stable string identifier for this seeder. Defaults to the
       module's full name. Changing this value does not affect seeding behavior,
@@ -101,11 +101,11 @@ defmodule Chronicle.Seeder do
 
   defmacro __using__(opts) do
     quote bind_quoted: [opts: opts] do
-      @behaviour Chronicle.Seeder
+      @behaviour Chronicle.Seeding.Seeder
 
       @chronicle_seeder_id Keyword.get(opts, :id, __MODULE__ |> to_string())
 
-      @before_compile Chronicle.Seeder
+      @before_compile Chronicle.Seeding.Seeder
     end
   end
 

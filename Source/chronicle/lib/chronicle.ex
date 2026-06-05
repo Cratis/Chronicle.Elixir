@@ -49,7 +49,7 @@ defmodule Chronicle do
   ## Defining Event Types
 
       defmodule MyApp.Events.AccountOpened do
-        use Chronicle.EventType, id: "account-opened-v1"
+        use Chronicle.Events.EventType, id: "account-opened-v1"
         defstruct [:account_id, :owner_name, :initial_balance]
       end
 
@@ -68,7 +68,7 @@ defmodule Chronicle do
   ## Defining Reactors
 
       defmodule MyApp.Reactors.NotificationReactor do
-        use Chronicle.Reactor
+        use Chronicle.Reactors.Reactor
 
         @handles MyApp.Events.AccountOpened
 
@@ -82,7 +82,7 @@ defmodule Chronicle do
   ## Defining Reducers
 
       defmodule MyApp.Reducers.AccountReducer do
-        use Chronicle.Reducer, model: MyApp.ReadModels.Account
+        use Chronicle.Reducers.Reducer, model: MyApp.ReadModels.Account
 
         @handles MyApp.Events.AccountOpened
 
@@ -99,7 +99,7 @@ defmodule Chronicle do
   ## Defining Seeders
 
       defmodule MyApp.Seeders.InitialDataSeeder do
-        use Chronicle.Seeder
+        use Chronicle.Seeding.Seeder
 
         @impl true
         def seed(builder) do
@@ -119,21 +119,21 @@ defmodule Chronicle do
   ## Modules
 
     * `Chronicle.Client` — the main supervisor; start it in your supervision tree
-    * `Chronicle.CorrelationId` / `Chronicle.CorrelationIdManager` — correlate operations
-    * `Chronicle.Identity` / `Chronicle.IdentityProvider` — track who caused state changes
-    * `Chronicle.CausationType`, `Chronicle.CausationEntry`, `Chronicle.CausationManager` — audit causation chains
-    * `Chronicle.EventType` — macro for defining event types
+    * `Chronicle.Correlation.CorrelationId` / `Chronicle.Correlation.CorrelationIdManager` — correlate operations
+    * `Chronicle.Identity` / `Chronicle.Identity.IdentityProvider` — track who caused state changes
+    * `Chronicle.Auditing.CausationType`, `Chronicle.Auditing.CausationEntry`, `Chronicle.Auditing.CausationManager` — audit causation chains
+    * `Chronicle.Events.EventType` — macro for defining event types
     * `Chronicle.Events.Migration` — macro for defining event migrations
     * `Chronicle.Events.MigrationBuilder` — fluent API for migration transforms
     * `Chronicle.Events.Migrators` — migration discovery and registration support
     * `Chronicle.Events.ConcurrencyScope` — scope optimistic concurrency checks for appends
-    * `Chronicle.Reactor` — behaviour for event reactors
-    * `Chronicle.Reducer` — behaviour for read model reducers
-    * `Chronicle.Seeder` — behaviour for event seeders
+    * `Chronicle.Reactors.Reactor` — behaviour for event reactors
+    * `Chronicle.Reducers.Reducer` — behaviour for read model reducers
+    * `Chronicle.Seeding.Seeder` — behaviour for event seeders
     * `Chronicle.EventStoreSubscriptions` — register event store subscriptions
     * `Chronicle.EventStoreSubscriptions.Subscription` — define discoverable event store subscriptions
-    * `Chronicle.ReadModel` — macro for read model structs with embedded projection DSL
-    * `Chronicle.EventLog` — append and query events
+    * `Chronicle.ReadModels.ReadModel` — macro for read model structs with embedded projection DSL
+    * `Chronicle.EventSequences.EventLog` — append and query events
     * `Chronicle.EventSequences.EventSequence` — work with custom event sequences
     * `Chronicle.Transactions.UnitOfWork` — buffer and commit transactional appends
     * `Chronicle.EventStores` — list event stores and namespaces
@@ -147,7 +147,7 @@ defmodule Chronicle do
   @doc """
   Appends a single event to the event log for the given event source.
 
-  Delegates to `Chronicle.EventLog.append/3`.
+  Delegates to `Chronicle.EventSequences.EventLog.append/3`.
 
   ## Options
 
@@ -156,22 +156,23 @@ defmodule Chronicle do
     * `:event_sequence_id` — event sequence id (default: `"event-log"`)
     * `:tags` — list of tag strings
     * `:subject` — the identity subject string
-    * `:correlation_id` — `Chronicle.CorrelationId` (or id string) override
+    * `:correlation_id` — `Chronicle.Correlation.CorrelationId` (or id string) override
     * `:identity` — `Chronicle.Identity` override
-    * `:causation` — list of `Chronicle.CausationEntry` overrides
+    * `:causation` — list of `Chronicle.Auditing.CausationEntry` overrides
     * `:concurrency_scope` — `Chronicle.Events.ConcurrencyScope` or keyword options
   """
   @spec append(String.t(), struct(), keyword()) :: :ok | {:error, term()}
-  defdelegate append(event_source_id, event, opts \\ []), to: Chronicle.EventLog
+  defdelegate append(event_source_id, event, opts \\ []), to: Chronicle.EventSequences.EventLog
 
   @doc """
   Appends multiple events to the event log for the given event source.
 
-  Delegates to `Chronicle.EventLog.append_many/3`.
+  Delegates to `Chronicle.EventSequences.EventLog.append_many/3`.
   Accepts the same append options as `append/3`, including `:concurrency_scope`.
   """
   @spec append_many(String.t(), [struct()], keyword()) :: :ok | {:error, term()}
-  defdelegate append_many(event_source_id, events, opts \\ []), to: Chronicle.EventLog
+  defdelegate append_many(event_source_id, events, opts \\ []),
+    to: Chronicle.EventSequences.EventLog
 
   @doc """
   Creates an event sequence wrapper for the given event sequence id.
@@ -236,34 +237,37 @@ defmodule Chronicle do
   """
   @spec get_tail_sequence_number(String.t() | nil, keyword()) ::
           {:ok, non_neg_integer()} | {:error, term()}
-  defdelegate get_tail_sequence_number(event_source_id \\ nil, opts \\ []), to: Chronicle.EventLog
+  defdelegate get_tail_sequence_number(event_source_id \\ nil, opts \\ []),
+    to: Chronicle.EventSequences.EventLog
 
   @doc """
   Checks whether there are events for an event source id in an event sequence.
   """
   @spec has_events_for?(String.t(), keyword()) :: {:ok, boolean()} | {:error, term()}
-  defdelegate has_events_for?(event_source_id, opts \\ []), to: Chronicle.EventLog
+  defdelegate has_events_for?(event_source_id, opts \\ []), to: Chronicle.EventSequences.EventLog
 
   @doc """
   Gets the current process correlation id.
   """
-  @spec current_correlation_id() :: Chronicle.CorrelationId.t()
-  defdelegate current_correlation_id(), to: Chronicle.CorrelationIdManager, as: :current
+  @spec current_correlation_id() :: Chronicle.Correlation.CorrelationId.t()
+  defdelegate current_correlation_id(),
+    to: Chronicle.Correlation.CorrelationIdManager,
+    as: :current
 
   @doc """
   Sets the current process correlation id.
   """
-  @spec set_correlation_id(Chronicle.CorrelationId.t() | String.t()) ::
-          Chronicle.CorrelationId.t()
+  @spec set_correlation_id(Chronicle.Correlation.CorrelationId.t() | String.t()) ::
+          Chronicle.Correlation.CorrelationId.t()
   defdelegate set_correlation_id(correlation_id),
-    to: Chronicle.CorrelationIdManager,
+    to: Chronicle.Correlation.CorrelationIdManager,
     as: :set_current
 
   @doc """
   Clears the current process correlation id.
   """
-  @spec clear_correlation_id() :: Chronicle.CorrelationId.t()
-  defdelegate clear_correlation_id(), to: Chronicle.CorrelationIdManager, as: :clear
+  @spec clear_correlation_id() :: Chronicle.Correlation.CorrelationId.t()
+  defdelegate clear_correlation_id(), to: Chronicle.Correlation.CorrelationIdManager, as: :clear
 
   @doc """
   Gets all jobs for the configured event store namespace.
@@ -403,17 +407,21 @@ defmodule Chronicle do
   Gets the current process identity.
   """
   @spec current_identity() :: Chronicle.Identity.t()
-  defdelegate current_identity(), to: Chronicle.IdentityProvider, as: :get_current
+  defdelegate current_identity(), to: Chronicle.Identity.IdentityProvider, as: :get_current
 
   @doc """
   Sets the current process identity.
   """
   @spec set_identity(Chronicle.Identity.t()) :: Chronicle.Identity.t()
-  defdelegate set_identity(identity), to: Chronicle.IdentityProvider, as: :set_current_identity
+  defdelegate set_identity(identity),
+    to: Chronicle.Identity.IdentityProvider,
+    as: :set_current_identity
 
   @doc """
   Clears the current process identity.
   """
   @spec clear_identity() :: :ok
-  defdelegate clear_identity(), to: Chronicle.IdentityProvider, as: :clear_current_identity
+  defdelegate clear_identity(),
+    to: Chronicle.Identity.IdentityProvider,
+    as: :clear_current_identity
 end

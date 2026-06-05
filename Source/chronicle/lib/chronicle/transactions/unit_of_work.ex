@@ -12,7 +12,8 @@ defmodule Chronicle.Transactions.UnitOfWork do
 
   use Agent
 
-  alias Chronicle.{CorrelationId, EventSequences.EventForEventSourceId}
+  alias Chronicle.Correlation.CorrelationId
+  alias Chronicle.EventSequences.EventForEventSourceId
 
   alias Chronicle.Transactions.{
     UnitOfWorkIsAlreadyCommitted,
@@ -248,7 +249,8 @@ defmodule Chronicle.Transactions.UnitOfWork do
       rolled_back?: false,
       success?: false,
       callbacks: [],
-      commit_fun: Keyword.get(opts, :commit_fun, &Chronicle.EventLog.commit_transaction/1)
+      commit_fun:
+        Keyword.get(opts, :commit_fun, &Chronicle.EventSequences.EventLog.commit_transaction/1)
     }
   end
 

@@ -5,35 +5,35 @@ defmodule Chronicle.ConstraintsTest do
   use ExUnit.Case, async: true
 
   defmodule UserRegistered do
-    use Chronicle.EventType, id: "user-registered-v1"
+    use Chronicle.Events.EventType, id: "user-registered-v1"
     defstruct [:email]
 
     @unique :email
   end
 
   defmodule AccountCreated do
-    use Chronicle.EventType, id: "account-created-v1"
+    use Chronicle.Events.EventType, id: "account-created-v1"
     defstruct [:email, :tenant_id]
 
     unique([:email, :tenant_id], name: "email_per_tenant")
   end
 
   defmodule CaseInsensitiveEmailSet do
-    use Chronicle.EventType, id: "case-insensitive-email-set-v1"
+    use Chronicle.Events.EventType, id: "case-insensitive-email-set-v1"
     defstruct [:email]
 
     unique(:email, ignore_casing: true, name: "email")
   end
 
   defmodule UserDeleted do
-    use Chronicle.EventType, id: "user-deleted-v1"
+    use Chronicle.Events.EventType, id: "user-deleted-v1"
     defstruct [:email]
 
     @remove_constraint "email_per_tenant"
   end
 
   defmodule AccountOpened do
-    use Chronicle.EventType, id: "account-opened-v1"
+    use Chronicle.Events.EventType, id: "account-opened-v1"
     defstruct [:account_id]
 
     unique_event_type()
@@ -49,7 +49,7 @@ defmodule Chronicle.ConstraintsTest do
     end
 
     test "builds unique constraints from event type attributes" do
-      constraints = Chronicle.Constraints.from_event_types([UserRegistered])
+      constraints = Chronicle.Events.Constraints.from_event_types([UserRegistered])
 
       assert constraints == [
                %{
@@ -62,7 +62,7 @@ defmodule Chronicle.ConstraintsTest do
     end
 
     test "supports case-insensitive unique constraints" do
-      constraints = Chronicle.Constraints.from_event_types([CaseInsensitiveEmailSet])
+      constraints = Chronicle.Events.Constraints.from_event_types([CaseInsensitiveEmailSet])
 
       assert constraints == [
                %{
@@ -75,7 +75,7 @@ defmodule Chronicle.ConstraintsTest do
     end
 
     test "supports explicit names and removal event mapping" do
-      constraints = Chronicle.Constraints.from_event_types([AccountCreated, UserDeleted])
+      constraints = Chronicle.Events.Constraints.from_event_types([AccountCreated, UserDeleted])
 
       assert constraints == [
                %{
@@ -89,7 +89,7 @@ defmodule Chronicle.ConstraintsTest do
     end
 
     test "builds unique event type constraints" do
-      constraints = Chronicle.Constraints.from_event_types([AccountOpened])
+      constraints = Chronicle.Events.Constraints.from_event_types([AccountOpened])
 
       assert constraints == [
                %{

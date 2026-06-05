@@ -1,7 +1,7 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.CausationManager do
+defmodule Chronicle.Auditing.CausationManager do
   @moduledoc """
   Process-scoped causation chain manager.
 
@@ -9,7 +9,7 @@ defmodule Chronicle.CausationManager do
   current process.
   """
 
-  alias Chronicle.{CausationEntry, CausationType}
+  alias Chronicle.Auditing.{CausationEntry, CausationType}
 
   @root_key {__MODULE__, :root}
   @chain_key {__MODULE__, :chain}

@@ -1,7 +1,7 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.CausationType do
+defmodule Chronicle.Auditing.CausationType do
   @moduledoc """
   Identifies the kind of operation that caused an event append.
   """

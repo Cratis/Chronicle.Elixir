@@ -5,17 +5,17 @@ defmodule Chronicle.SeederTest do
   use ExUnit.Case, async: true
 
   defmodule SomeEvent do
-    use Chronicle.EventType, id: "some-event"
+    use Chronicle.Events.EventType, id: "some-event"
     defstruct [:value]
   end
 
   defmodule AnotherEvent do
-    use Chronicle.EventType, id: "another-event"
+    use Chronicle.Events.EventType, id: "another-event"
     defstruct [:count]
   end
 
   defmodule TestSeeder do
-    use Chronicle.Seeder
+    use Chronicle.Seeding.Seeder
 
     @impl true
     def seed(builder) do
@@ -27,7 +27,7 @@ defmodule Chronicle.SeederTest do
   end
 
   defmodule NamedSeeder do
-    use Chronicle.Seeder, id: "my-custom-seeder-id"
+    use Chronicle.Seeding.Seeder, id: "my-custom-seeder-id"
 
     @impl true
     def seed(builder) do
@@ -36,7 +36,7 @@ defmodule Chronicle.SeederTest do
   end
 
   defmodule MultiEventSeeder do
-    use Chronicle.Seeder
+    use Chronicle.Seeding.Seeder
 
     @impl true
     def seed(builder) do
@@ -48,7 +48,7 @@ defmodule Chronicle.SeederTest do
     end
   end
 
-  describe "use Chronicle.Seeder" do
+  describe "use Chronicle.Seeding.Seeder" do
     test "defines __chronicle_seeder__/1 function" do
       assert function_exported?(TestSeeder, :__chronicle_seeder__, 1)
     end
@@ -61,7 +61,7 @@ defmodule Chronicle.SeederTest do
       assert NamedSeeder.__chronicle_seeder__(:id) == "my-custom-seeder-id"
     end
 
-    test "implements Chronicle.Seeder behaviour" do
+    test "implements Chronicle.Seeding.Seeder behaviour" do
       assert function_exported?(TestSeeder, :seed, 1)
     end
   end
@@ -70,7 +70,7 @@ defmodule Chronicle.SeederTest do
     test "invokes seeders and accumulates entries" do
       builder = %Chronicle.Seeding{
         entries: [],
-        event_types: Chronicle.EventTypes,
+        event_types: Chronicle.Events.EventTypes,
         connection: :test_connection,
         event_store: "test",
         namespace: "default"
@@ -86,7 +86,7 @@ defmodule Chronicle.SeederTest do
     test "handles multiple seeders" do
       builder = %Chronicle.Seeding{
         entries: [],
-        event_types: Chronicle.EventTypes,
+        event_types: Chronicle.Events.EventTypes,
         connection: :test_connection,
         event_store: "test",
         namespace: "default"
@@ -99,7 +99,7 @@ defmodule Chronicle.SeederTest do
 
     test "continues on seeder failure" do
       defmodule FailingSeeder do
-        use Chronicle.Seeder
+        use Chronicle.Seeding.Seeder
 
         @impl true
         def seed(_builder) do
@@ -109,7 +109,7 @@ defmodule Chronicle.SeederTest do
 
       builder = %Chronicle.Seeding{
         entries: [],
-        event_types: Chronicle.EventTypes,
+        event_types: Chronicle.Events.EventTypes,
         connection: :test_connection,
         event_store: "test",
         namespace: "default"
@@ -127,7 +127,7 @@ defmodule Chronicle.SeederTest do
     test "adds events for a specific type" do
       builder = %Chronicle.Seeding{
         entries: [],
-        event_types: Chronicle.EventTypes,
+        event_types: Chronicle.Events.EventTypes,
         connection: :test_connection,
         event_store: "test",
         namespace: "default"
@@ -150,7 +150,7 @@ defmodule Chronicle.SeederTest do
     test "adds multiple event types for same source" do
       builder = %Chronicle.Seeding{
         entries: [],
-        event_types: Chronicle.EventTypes,
+        event_types: Chronicle.Events.EventTypes,
         connection: :test_connection,
         event_store: "test",
         namespace: "default"
@@ -173,7 +173,7 @@ defmodule Chronicle.SeederTest do
     test "scopes events to specific namespace" do
       builder = %Chronicle.Seeding{
         entries: [],
-        event_types: Chronicle.EventTypes,
+        event_types: Chronicle.Events.EventTypes,
         connection: :test_connection,
         event_store: "test",
         namespace: "default"
@@ -195,7 +195,7 @@ defmodule Chronicle.SeederTest do
     test "preserves global entries when adding namespaced" do
       builder = %Chronicle.Seeding{
         entries: [],
-        event_types: Chronicle.EventTypes,
+        event_types: Chronicle.Events.EventTypes,
         connection: :test_connection,
         event_store: "test",
         namespace: "default"
@@ -257,7 +257,7 @@ defmodule Chronicle.SeederTest do
   defp base_builder(receiver, has_events_for \\ fn _event_source_id, _opts -> {:ok, false} end) do
     %Chronicle.Seeding{
       entries: [],
-      event_types: Chronicle.EventTypes,
+      event_types: Chronicle.Events.EventTypes,
       connection: :test_connection,
       event_store: "test",
       namespace: "default",

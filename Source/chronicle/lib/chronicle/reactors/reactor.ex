@@ -1,7 +1,7 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.Reactor do
+defmodule Chronicle.Reactors.Reactor do
   @moduledoc """
   Behaviour and macro for defining Chronicle reactors.
 
@@ -11,12 +11,12 @@ defmodule Chronicle.Reactor do
 
   ## Defining a reactor
 
-  Use `Chronicle.Reactor` in a module and implement the `handle/2` callback.
+  Use `Chronicle.Reactors.Reactor` in a module and implement the `handle/2` callback.
   Declare which event types the reactor handles using the `@handles` module
   attribute.
 
       defmodule MyApp.Reactors.NotificationReactor do
-        use Chronicle.Reactor
+        use Chronicle.Reactors.Reactor
 
         @handles MyApp.Events.AccountOpened
         @handles MyApp.Events.FundsDeposited
@@ -34,7 +34,7 @@ defmodule Chronicle.Reactor do
         end
       end
 
-  ## Options for `use Chronicle.Reactor`
+  ## Options for `use Chronicle.Reactors.Reactor`
 
     * `:id` — a stable string identifier for this reactor. Defaults to the
       module's full name. Changing this value causes Chronicle to treat this as
@@ -73,13 +73,13 @@ defmodule Chronicle.Reactor do
 
   defmacro __using__(opts) do
     quote bind_quoted: [opts: opts] do
-      @behaviour Chronicle.Reactor
+      @behaviour Chronicle.Reactors.Reactor
 
       Module.register_attribute(__MODULE__, :handles, accumulate: true)
 
       @chronicle_reactor_id Keyword.get(opts, :id, __MODULE__ |> to_string())
 
-      @before_compile Chronicle.Reactor
+      @before_compile Chronicle.Reactors.Reactor
     end
   end
 

@@ -1,7 +1,7 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.Constraints do
+defmodule Chronicle.Events.Constraints do
   @moduledoc """
   Registers event constraints with a Chronicle event store.
 
@@ -11,7 +11,7 @@ defmodule Chronicle.Constraints do
 
   ## Registering a unique constraint
 
-      alias Chronicle.Constraints
+      alias Chronicle.Events.Constraints
 
       {:ok, channel} = Chronicle.Connections.Connection.channel(:my_conn)
       Constraints.register(channel, "my-store", [
@@ -33,6 +33,7 @@ defmodule Chronicle.Constraints do
     Constraint,
     UniqueConstraintDefinition,
     UniqueConstraintEventDefinition,
+    UniqueEventTypeConstraintDefinition,
     OneOf_UniqueConstraintDefinition_UniqueEventTypeConstraintDefinition
   }
 
@@ -165,7 +166,7 @@ defmodule Chronicle.Constraints do
        ) do
     definition =
       struct(OneOf_UniqueConstraintDefinition_UniqueEventTypeConstraintDefinition,
-        Value1: %{EventTypeId: event_type_id}
+        Value1: struct(UniqueEventTypeConstraintDefinition, EventTypeId: event_type_id)
       )
 
     struct(Constraint,

@@ -1,7 +1,7 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.CorrelationId do
+defmodule Chronicle.Correlation.CorrelationId do
   @moduledoc """
   Represents a correlation identifier for a logical operation.
 
@@ -42,6 +42,7 @@ defmodule Chronicle.CorrelationId do
         Integer.to_string(e, 16) |> String.pad_leading(12, "0")
       ]
       |> Enum.join("-")
+      |> String.downcase()
 
     new(uuid)
   end

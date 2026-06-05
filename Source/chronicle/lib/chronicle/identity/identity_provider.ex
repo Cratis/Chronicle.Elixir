@@ -1,7 +1,7 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.IdentityProvider do
+defmodule Chronicle.Identity.IdentityProvider do
   @moduledoc """
   Process-scoped identity provider.
 

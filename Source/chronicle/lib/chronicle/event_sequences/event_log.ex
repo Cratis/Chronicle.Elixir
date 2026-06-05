@@ -1,7 +1,7 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.EventLog do
+defmodule Chronicle.EventSequences.EventLog do
   @moduledoc """
   Appends and queries events in a Chronicle event log.
 
@@ -10,7 +10,7 @@ defmodule Chronicle.EventLog do
 
   ## Usage
 
-      :ok = Chronicle.EventLog.append("account-1", %MyApp.Events.AccountOpened{
+      :ok = Chronicle.EventSequences.EventLog.append("account-1", %MyApp.Events.AccountOpened{
         account_id: "account-1",
         owner_name: "Alice",
         initial_balance: 500
@@ -18,7 +18,7 @@ defmodule Chronicle.EventLog do
 
   To append to a specific client:
 
-      :ok = Chronicle.EventLog.append("account-1", event, client: :my_chronicle)
+      :ok = Chronicle.EventSequences.EventLog.append("account-1", event, client: :my_chronicle)
 
   ## Multiple events
 
@@ -26,7 +26,7 @@ defmodule Chronicle.EventLog do
         %MyApp.Events.AccountOpened{account_id: "1", owner_name: "Alice"},
         %MyApp.Events.FundsDeposited{account_id: "1", amount: 500}
       ]
-      :ok = Chronicle.EventLog.append_many("account-1", events)
+      :ok = Chronicle.EventSequences.EventLog.append_many("account-1", events)
 
   ## Transactions
 
@@ -42,21 +42,18 @@ defmodule Chronicle.EventLog do
     EventToAppend,
     EventType,
     GetForEventSourceIdAndEventTypesRequest,
+    GetTailSequenceNumberRequest,
+    HasEventsForEventSourceIdRequest,
     Identity,
     SerializableDateTimeOffset
   }
 
   alias Cratis.Chronicle.Contracts.EventSequences.ConcurrencyScope, as: ContractConcurrencyScope
 
-  alias Chronicle.{
-    CausationEntry,
-    CausationManager,
-    CausationType,
-    CorrelationId,
-    CorrelationIdManager,
-    EventSequences.EventForEventSourceId,
-    IdentityProvider
-  }
+  alias Chronicle.Auditing.{CausationEntry, CausationManager, CausationType}
+  alias Chronicle.Correlation.{CorrelationId, CorrelationIdManager}
+  alias Chronicle.EventSequences.EventForEventSourceId
+  alias Chronicle.Identity.IdentityProvider
 
   alias Chronicle.Events.ConcurrencyScope, as: ClientConcurrencyScope
 
@@ -81,9 +78,9 @@ defmodule Chronicle.EventLog do
     * `:event_stream_id` — the event stream ID (default: `"Default"`)
     * `:tags` — list of tag strings
     * `:subject` — the identity subject string
-    * `:correlation_id` — correlation id override (`Chronicle.CorrelationId` or string)
+    * `:correlation_id` — correlation id override (`Chronicle.Correlation.CorrelationId` or string)
     * `:identity` — identity override (`Chronicle.Identity`)
-    * `:causation` — causation chain override (list of `Chronicle.CausationEntry`)
+    * `:causation` — causation chain override (list of `Chronicle.Auditing.CausationEntry`)
     * `:concurrency_scope` — `Chronicle.Events.ConcurrencyScope` or keyword options with
       `:sequence_number`, `:event_source_id`, `:event_stream_type`, `:event_stream_id`,
       `:event_source_type`, and `:event_types`
@@ -105,7 +102,7 @@ defmodule Chronicle.EventLog do
   Appends multiple events to the event log for the given event source.
 
   All events are appended atomically. Each event must be a struct that
-  `use Chronicle.EventType`.
+  `use Chronicle.Events.EventType`.
 
   ## Options
 
@@ -232,16 +229,17 @@ defmodule Chronicle.EventLog do
       namespace = Keyword.get(opts, :namespace, config.namespace)
       event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
 
-      request = %{
-        EventStore: config.event_store,
-        Namespace: namespace,
-        EventSequenceId: event_sequence_id,
-        EventSourceId: event_source_id || "",
-        EventTypes: [],
-        EventSourceType: "Default",
-        EventStreamId: "",
-        EventStreamType: "Default"
-      }
+      request =
+        struct(GetTailSequenceNumberRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          EventSequenceId: event_sequence_id,
+          EventSourceId: event_source_id || "",
+          EventTypes: [],
+          EventSourceType: "Default",
+          EventStreamId: "",
+          EventStreamType: "Default"
+        )
 
       case EventSequences.Stub.get_tail_sequence_number(channel, request) do
         {:ok, response} ->
@@ -271,12 +269,13 @@ defmodule Chronicle.EventLog do
       namespace = Keyword.get(opts, :namespace, config.namespace)
       event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
 
-      request = %{
-        EventStore: config.event_store,
-        Namespace: namespace,
-        EventSequenceId: event_sequence_id,
-        EventSourceId: event_source_id
-      }
+      request =
+        struct(HasEventsForEventSourceIdRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          EventSequenceId: event_sequence_id,
+          EventSourceId: event_source_id
+        )
 
       case EventSequences.Stub.has_events_for_event_source_id(channel, request) do
         {:ok, response} ->

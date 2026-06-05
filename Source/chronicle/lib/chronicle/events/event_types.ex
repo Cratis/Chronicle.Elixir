@@ -1,11 +1,11 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.EventTypes do
+defmodule Chronicle.Events.EventTypes do
   @moduledoc """
   Registers event types with a Chronicle event store.
 
-  Called automatically by `Chronicle.Projections.Registrar` during startup.
+  Called automatically by `Chronicle.Registration.Coordinator` during startup.
   You can also call it directly to register event types at runtime.
 
   ## Example
@@ -13,7 +13,7 @@ defmodule Chronicle.EventTypes do
       {:ok, channel} = Chronicle.Connections.Connection.channel(:my_conn)
 
       :ok =
-        Chronicle.EventTypes.register(
+        Chronicle.Events.EventTypes.register(
           channel,
           "my-store",
           [MyApp.Events.AccountOpened],
@@ -22,6 +22,7 @@ defmodule Chronicle.EventTypes do
   """
 
   alias Chronicle.Events.Migrators
+  alias Chronicle.Schemas.JsonSchemaGenerator
 
   alias Cratis.Chronicle.Contracts.Events.{
     EventTypes,
@@ -37,7 +38,7 @@ defmodule Chronicle.EventTypes do
   @doc """
   Registers event type modules and their migrations with Chronicle.
 
-  Each event type module must `use Chronicle.EventType`. Chronicle groups all
+  Each event type module must `use Chronicle.Events.EventType`. Chronicle groups all
   known generations of the same event type into a single registration, includes
   schemas for each known generation, and attaches any registered migrations.
 
@@ -141,34 +142,9 @@ defmodule Chronicle.EventTypes do
     end
   end
 
+  # Event content is serialized as camelCase, so the schema uses camelCase keys.
+  # PII-adorned fields carry compliance metadata into the schema.
   defp generate_schema(module) do
-    fields =
-      if function_exported?(module, :__struct__, 0) do
-        module.__struct__()
-        |> Map.to_list()
-        |> Enum.reject(fn {k, _} -> k == :__struct__ end)
-        |> Enum.map(fn {key, default_val} ->
-          camel_key = key |> Atom.to_string() |> snake_to_camel()
-          {camel_key, event_property_schema(default_val)}
-        end)
-        |> Map.new()
-      else
-        %{}
-      end
-
-    Jason.encode!(%{"type" => "object", "properties" => fields})
-  end
-
-  # Use "number" without format: typeFormats.IsKnown(nil) returns false, so
-  # ConvertJsonValueFromUnknownFormat is called with type=Number, which calls
-  # GetValue<double>() — the only path that works for JsonElement-backed JSON numbers.
-  defp event_property_schema(v) when is_integer(v), do: %{"type" => "number"}
-  defp event_property_schema(v) when is_float(v), do: %{"type" => "number"}
-  defp event_property_schema(v) when is_boolean(v), do: %{"type" => "boolean"}
-  defp event_property_schema(_), do: %{"type" => "string"}
-
-  defp snake_to_camel(snake) do
-    [head | tail] = String.split(snake, "_")
-    head <> Enum.map_join(tail, &String.capitalize/1)
+    JsonSchemaGenerator.generate(module, key_transform: :camel)
   end
 end

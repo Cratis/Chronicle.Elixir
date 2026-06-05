@@ -1,11 +1,11 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.EventType do
+defmodule Chronicle.Events.EventType do
   @moduledoc """
   Macro for defining Chronicle event types.
 
-  Use `Chronicle.EventType` in an event struct module to annotate it with a
+  Use `Chronicle.Events.EventType` in an event struct module to annotate it with a
   stable event type identifier and generation number. Chronicle uses these to
   register the event schema and route events to the correct observers.
 
@@ -13,7 +13,7 @@ defmodule Chronicle.EventType do
   through attributes:
 
       defmodule MyApp.Events.UserRegistered do
-        use Chronicle.EventType, id: "user-registered-v1"
+        use Chronicle.Events.EventType, id: "user-registered-v1"
         defstruct [:email]
 
         @unique :email
@@ -21,7 +21,7 @@ defmodule Chronicle.EventType do
       end
 
       defmodule MyApp.Events.UserDeleted do
-        use Chronicle.EventType, id: "user-deleted-v1"
+        use Chronicle.Events.EventType, id: "user-deleted-v1"
         defstruct [:email]
 
         @remove_constraint "email"
@@ -30,20 +30,20 @@ defmodule Chronicle.EventType do
   ## Usage
 
       defmodule MyApp.Events.AccountOpened do
-        use Chronicle.EventType, id: "account-opened-v1"
+        use Chronicle.Events.EventType, id: "account-opened-v1"
         defstruct [:account_id, :owner_name, :initial_balance]
       end
 
   With an explicit generation:
 
       defmodule MyApp.Events.FundsDeposited do
-        use Chronicle.EventType, id: "funds-deposited", generation: 2
+        use Chronicle.Events.EventType, id: "funds-deposited", generation: 2
         defstruct [:account_id, :amount, :currency]
       end
 
   ## Introspection
 
-  Modules that `use Chronicle.EventType` expose metadata via
+  Modules that `use Chronicle.Events.EventType` expose metadata via
   `__chronicle_event_type__/1`:
 
       MyApp.Events.AccountOpened.__chronicle_event_type__(:id)
@@ -62,20 +62,21 @@ defmodule Chronicle.EventType do
 
   Accepts `:id`, `:generation`, or `:constraints` as the key.
   """
-  @callback __chronicle_event_type__(key :: :id | :generation | :constraints) :: term()
+  @callback __chronicle_event_type__(key :: :id | :generation | :constraints | :pii) :: term()
 
   defmacro __using__(opts) do
     event_type_id = Keyword.fetch!(opts, :id)
     generation = Keyword.get(opts, :generation, 1)
 
     quote do
-      @behaviour Chronicle.EventType
+      @behaviour Chronicle.Events.EventType
 
       Module.register_attribute(__MODULE__, :unique, accumulate: true)
       Module.register_attribute(__MODULE__, :remove_constraint, accumulate: true)
       Module.register_attribute(__MODULE__, :unique_event_type, accumulate: true)
+      Module.register_attribute(__MODULE__, :chronicle_pii, accumulate: true)
 
-      import Chronicle.EventType,
+      import Chronicle.Events.EventType,
         only: [
           unique: 1,
           unique: 2,
@@ -84,10 +85,26 @@ defmodule Chronicle.EventType do
           remove_constraint: 1
         ]
 
+      import Chronicle.Compliance, only: [pii: 1, pii: 2]
+
       @chronicle_event_type_id unquote(event_type_id)
       @chronicle_event_type_generation unquote(generation)
 
-      @impl Chronicle.EventType
+      @before_compile Chronicle.Events.EventType
+    end
+  end
+
+  @doc false
+  # Generates the `__chronicle_event_type__/1` accessors after the module body
+  # has been fully expanded. This is essential for the `:constraints` accessor:
+  # the `@unique`, `@unique_event_type`, and `@remove_constraint` attributes are
+  # accumulated by the `unique/1,2`, `unique_event_type/0,1`, and
+  # `remove_constraint/1` macros that appear *after* `use Chronicle.Events.EventType`.
+  # Reading them at `@before_compile` time captures their final values; reading
+  # them inline in `__using__` would always see empty lists.
+  defmacro __before_compile__(_env) do
+    quote do
+      @impl Chronicle.Events.EventType
       def __chronicle_event_type__(:id), do: @chronicle_event_type_id
       def __chronicle_event_type__(:generation), do: @chronicle_event_type_generation
 
@@ -98,6 +115,11 @@ defmodule Chronicle.EventType do
           remove_constraint: Enum.reverse(@remove_constraint)
         }
       end
+
+      def __chronicle_event_type__(:pii), do: Enum.reverse(@chronicle_pii)
+
+      @doc false
+      def __chronicle_pii__, do: Enum.reverse(@chronicle_pii)
     end
   end
 

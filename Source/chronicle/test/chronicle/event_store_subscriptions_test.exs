@@ -7,12 +7,12 @@ defmodule Chronicle.EventStoreSubscriptionsTest do
   alias Chronicle.EventStoreSubscriptions.DefinitionBuilder
 
   defmodule AccountOpened do
-    use Chronicle.EventType, id: "account-opened", generation: 2
+    use Chronicle.Events.EventType, id: "account-opened", generation: 2
     defstruct [:account_id]
   end
 
   defmodule FundsDeposited do
-    use Chronicle.EventType, id: "funds-deposited"
+    use Chronicle.Events.EventType, id: "funds-deposited"
     defstruct [:account_id, :amount]
   end
 

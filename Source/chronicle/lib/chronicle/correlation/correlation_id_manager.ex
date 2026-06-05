@@ -1,7 +1,7 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.CorrelationIdManager do
+defmodule Chronicle.Correlation.CorrelationIdManager do
   @moduledoc """
   Process-scoped correlation id manager.
 
@@ -9,7 +9,7 @@ defmodule Chronicle.CorrelationIdManager do
   context in other clients by using the process dictionary.
   """
 
-  alias Chronicle.CorrelationId
+  alias Chronicle.Correlation.CorrelationId
 
   @process_key {__MODULE__, :current}
 
@@ -29,7 +29,7 @@ defmodule Chronicle.CorrelationIdManager do
   @doc """
   Sets the current correlation id for the calling process.
 
-  Accepts either a `%Chronicle.CorrelationId{}` or a raw string id.
+  Accepts either a `%Chronicle.Correlation.CorrelationId{}` or a raw string id.
   """
   @spec set_current(CorrelationId.t() | String.t()) :: CorrelationId.t()
   def set_current(%CorrelationId{} = correlation_id) do

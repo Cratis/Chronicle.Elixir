@@ -55,6 +55,8 @@ defmodule Chronicle.Events.ConcurrencyScope do
   """
   @spec new(non_neg_integer(), [option()]) :: t()
   def new(sequence_number, opts \\ [])
+
+  def new(sequence_number, opts)
       when is_integer(sequence_number) and sequence_number >= 0 do
     %__MODULE__{
       sequence_number: sequence_number,

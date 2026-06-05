@@ -5,17 +5,17 @@ defmodule Chronicle.ReactorTest do
   use ExUnit.Case, async: true
 
   defmodule SomeEvent do
-    use Chronicle.EventType, id: "some-event"
+    use Chronicle.Events.EventType, id: "some-event"
     defstruct [:value]
   end
 
   defmodule AnotherEvent do
-    use Chronicle.EventType, id: "another-event"
+    use Chronicle.Events.EventType, id: "another-event"
     defstruct [:count]
   end
 
   defmodule TestReactor do
-    use Chronicle.Reactor
+    use Chronicle.Reactors.Reactor
 
     @handles SomeEvent
     @handles AnotherEvent
@@ -26,7 +26,7 @@ defmodule Chronicle.ReactorTest do
   end
 
   defmodule NamedReactor do
-    use Chronicle.Reactor, id: "my-custom-reactor-id"
+    use Chronicle.Reactors.Reactor, id: "my-custom-reactor-id"
 
     @handles SomeEvent
 
@@ -34,7 +34,7 @@ defmodule Chronicle.ReactorTest do
     def handle(%SomeEvent{}, _context), do: :ok
   end
 
-  describe "use Chronicle.Reactor" do
+  describe "use Chronicle.Reactors.Reactor" do
     test "accumulates @handles event types" do
       handles = TestReactor.__chronicle_reactor__(:handles)
       assert SomeEvent in handles
@@ -49,7 +49,7 @@ defmodule Chronicle.ReactorTest do
       assert NamedReactor.__chronicle_reactor__(:id) == "my-custom-reactor-id"
     end
 
-    test "implements Chronicle.Reactor behaviour" do
+    test "implements Chronicle.Reactors.Reactor behaviour" do
       assert function_exported?(TestReactor, :handle, 2)
     end
   end

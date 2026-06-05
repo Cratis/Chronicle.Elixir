@@ -1,7 +1,7 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.Reducer do
+defmodule Chronicle.Reducers.Reducer do
   @moduledoc """
   Behaviour and macro for defining Chronicle reducers.
 
@@ -11,11 +11,11 @@ defmodule Chronicle.Reducer do
 
   ## Defining a reducer
 
-  Use `Chronicle.Reducer` in a module, declare which events it handles with
+  Use `Chronicle.Reducers.Reducer` in a module, declare which events it handles with
   `@handles`, and implement the `reduce/3` callback.
 
       defmodule MyApp.Reducers.AccountReducer do
-        use Chronicle.Reducer, model: MyApp.ReadModels.Account
+        use Chronicle.Reducers.Reducer, model: MyApp.ReadModels.Account
 
         @handles MyApp.Events.AccountOpened
         @handles MyApp.Events.FundsDeposited
@@ -39,7 +39,7 @@ defmodule Chronicle.Reducer do
         end
       end
 
-  ## Options for `use Chronicle.Reducer`
+  ## Options for `use Chronicle.Reducers.Reducer`
 
     * `:model` — **(required)** the read model module this reducer produces.
     * `:id` — a stable string identifier. Defaults to the module's full name.
@@ -84,14 +84,14 @@ defmodule Chronicle.Reducer do
     model = Keyword.fetch!(opts, :model)
 
     quote bind_quoted: [opts: opts, model: model] do
-      @behaviour Chronicle.Reducer
+      @behaviour Chronicle.Reducers.Reducer
 
       Module.register_attribute(__MODULE__, :handles, accumulate: true)
 
       @chronicle_reducer_model model
       @chronicle_reducer_id Keyword.get(opts, :id, __MODULE__ |> to_string())
 
-      @before_compile Chronicle.Reducer
+      @before_compile Chronicle.Reducers.Reducer
     end
   end
 

@@ -5,17 +5,17 @@ defmodule Chronicle.ReducerTest do
   use ExUnit.Case, async: true
 
   defmodule MyEvent do
-    use Chronicle.EventType, id: "my-event"
+    use Chronicle.Events.EventType, id: "my-event"
     defstruct [:amount]
   end
 
   defmodule MyReadModel do
-    use Chronicle.ReadModel
+    use Chronicle.ReadModels.ReadModel
     defstruct [:total]
   end
 
   defmodule TestReducer do
-    use Chronicle.Reducer, model: MyReadModel
+    use Chronicle.Reducers.Reducer, model: MyReadModel
 
     @handles MyEvent
 
@@ -29,7 +29,7 @@ defmodule Chronicle.ReducerTest do
     end
   end
 
-  describe "use Chronicle.Reducer" do
+  describe "use Chronicle.Reducers.Reducer" do
     test "exposes the model module" do
       assert TestReducer.__chronicle_reducer__(:model) == MyReadModel
     end

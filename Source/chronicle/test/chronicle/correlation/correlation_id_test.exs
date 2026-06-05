@@ -4,7 +4,7 @@
 defmodule Chronicle.CorrelationIdTest do
   use ExUnit.Case, async: true
 
-  alias Chronicle.{CorrelationId, CorrelationIdManager}
+  alias Chronicle.Correlation.{CorrelationId, CorrelationIdManager}
 
   describe "CorrelationId" do
     test "create/0 returns UUID-like id" do

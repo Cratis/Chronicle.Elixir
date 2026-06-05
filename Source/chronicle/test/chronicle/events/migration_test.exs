@@ -7,12 +7,12 @@ defmodule Chronicle.MigrationTest do
   alias Chronicle.Events.{MigrationBuilder, Migrators}
 
   defmodule AccountOpenedV1 do
-    use Chronicle.EventType, id: "account-opened", generation: 1
+    use Chronicle.Events.EventType, id: "account-opened", generation: 1
     defstruct [:account_id, :owner_name, :initial_balance]
   end
 
   defmodule AccountOpened do
-    use Chronicle.EventType, id: "account-opened", generation: 2
+    use Chronicle.Events.EventType, id: "account-opened", generation: 2
     defstruct [:account_id, :full_name, :initial_balance, :account_tier]
   end
 
@@ -110,12 +110,12 @@ defmodule Chronicle.MigrationTest do
 
     Code.compile_string("""
     defmodule Chronicle.MigrationTest.#{name}#{unique}.FromEvent do
-      use Chronicle.EventType, id: #{inspect(from_id)}, generation: #{from_generation}
+      use Chronicle.Events.EventType, id: #{inspect(from_id)}, generation: #{from_generation}
       defstruct []
     end
 
     defmodule Chronicle.MigrationTest.#{name}#{unique}.ToEvent do
-      use Chronicle.EventType, id: #{inspect(to_id)}, generation: #{to_generation}
+      use Chronicle.Events.EventType, id: #{inspect(to_id)}, generation: #{to_generation}
       defstruct []
     end
 
