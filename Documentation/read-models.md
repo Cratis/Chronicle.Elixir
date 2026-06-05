@@ -198,4 +198,4 @@ alias MyApp.ReadModels.Account
 {:ok, definitions} = Chronicle.ReadModels.get_definitions()
 ```
 
-See `Samples/console` for a runnable end-to-end example that exercises the full read-model query surface.
+See `Samples/console` for a runnable end-to-end example that seeds employees, folds employee lifecycle events into the reducer-backed `EmployeeState` read model, and also reads a customer compliance model.

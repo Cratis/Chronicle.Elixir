@@ -3,327 +3,477 @@
 
 defmodule ConsoleSample do
   @moduledoc """
-  Console demo for the Chronicle Elixir client.
-
-  Demonstrates migrations, transaction-aware appends, read models, jobs,
-  webhooks, and event store subscriptions.
+  Interactive employee-focused Chronicle sample.
   """
 
-  require Logger
+  alias ConsoleSample.Employees
+  alias ConsoleSample.Employees.Person
 
-  alias ConsoleSample.Events.{FundsDeposited, FundsWithdrawn, LegacyAccountOpened}
-  alias ConsoleSample.ReadModels.{Account, AccountSummary}
-  alias Chronicle.EventStoreSubscriptions.DefinitionBuilder
-  alias Chronicle.{CausationManager, CorrelationIdManager, Identity}
-  alias Chronicle.Events.ConcurrencyScope
+  alias ConsoleSample.Events.{
+    CustomerAddressUpdated,
+    CustomerRegistered,
+    EmployeeEmailSet,
+    EmployeeMoved,
+    EmployeePromoted
+  }
+
+  alias ConsoleSample.ReadModels.{Customer, EmployeeState}
+  alias Chronicle.ReadModels
   alias Chronicle.Transactions.UnitOfWork
 
-  @doc """
-  Runs the demo scenario:
-  1. Append the legacy `LegacyAccountOpened` generation 1 event
-  2. Let Chronicle upcast it to `AccountOpened` generation 2 through the registered migration
-  3. Read the current tail sequence number
-  4. Buffer deposit and withdrawal events in a unit of work with a concurrency scope
-  5. Commit the unit of work
-  6. Read back the account read model
-  7. Register an imperative event store subscription and remove it again
-  8. Inspect registered webhooks and current jobs
-  """
-  def run_demo do
-    # Give Chronicle time to connect, authenticate, establish the session, and register projections
-    Process.sleep(8_000)
+  @titles [
+    "Software Engineer",
+    "Senior Engineer",
+    "Principal Engineer",
+    "Engineering Manager",
+    "Architect"
+  ]
 
-    account_id = "account-#{:rand.uniform(1_000_000)}"
-    correlation_id = Chronicle.CorrelationId.create()
+  @addresses [
+    %{address: "221B Baker Street", city: "London", zip_code: "NW1 6XE", country: "UK"},
+    %{
+      address: "1600 Amphitheatre Parkway",
+      city: "Mountain View",
+      zip_code: "94043",
+      country: "USA"
+    },
+    %{address: "1 Infinite Loop", city: "Cupertino", zip_code: "95014", country: "USA"},
+    %{address: "5 Wall Street", city: "New York", zip_code: "10005", country: "USA"}
+  ]
 
-    Chronicle.set_correlation_id(correlation_id)
+  @sample_customer %{
+    id: "c0000001-0000-0000-0000-000000000000",
+    full_name: "Eve Jackson",
+    email: "eve.jackson@example.com",
+    phone_number: "+1-202-555-0143",
+    street_address: "742 Evergreen Terrace",
+    city: "Springfield",
+    postal_code: "49007",
+    country: "USA"
+  }
 
-    Chronicle.set_identity(
-      Identity.new("console-sample-user", "Console Sample", "console-sample")
-    )
+  @spec run() :: no_return()
+  def run do
+    Process.sleep(2_000)
+    wait_for_seeded_employees(20)
 
-    CausationManager.define_root(%{application: "console-sample"})
-    CausationManager.add("ConsoleSample.RunDemo", %{account_id: account_id})
+    print_seeded_employee_status()
+    write_instructions()
+    write_selected_employee(0)
 
-    Logger.info("=== Chronicle Elixir Console Sample ===")
-    Logger.info("Using account ID: #{account_id}")
-    Logger.info("Correlation ID: #{correlation_id.value}")
+    status =
+      try do
+        with_terminal_mode(fn -> loop(0) end)
+        0
+      rescue
+        error ->
+          IO.puts("\nUnhandled error: #{Exception.message(error)}")
+          1
+      end
 
-    Logger.info("Appending LegacyAccountOpened generation 1 event...")
+    System.stop(status)
 
-    Logger.info(
-      "Chronicle should upcast it to AccountOpened generation 2 with account_tier=\"standard\"."
-    )
+    receive do
+    after
+      :infinity -> :ok
+    end
+  end
 
-    case Chronicle.append(account_id, %LegacyAccountOpened{
-           account_id: account_id,
-           owner_name: "Alice",
-           initial_balance: 1000
+  defp loop(selected_index) do
+    case read_key() do
+      "\u0003" ->
+        IO.puts("\nExiting...")
+
+      "q" ->
+        IO.puts("\nExiting...")
+
+      "1" ->
+        write_selected_employee(0)
+        loop(0)
+
+      "2" ->
+        write_selected_employee(1)
+        loop(1)
+
+      "3" ->
+        write_selected_employee(2)
+        loop(2)
+
+      "p" ->
+        promote(selected_employee!(selected_index))
+        loop(selected_index)
+
+      "a" ->
+        move(selected_employee!(selected_index))
+        loop(selected_index)
+
+      "e" ->
+        set_email(selected_employee!(selected_index))
+        loop(selected_index)
+
+      "u" ->
+        steal_email(selected_index)
+        loop(selected_index)
+
+      "r" ->
+        show_employee_read_model(selected_employee!(selected_index))
+        loop(selected_index)
+
+      "t" ->
+        transact(selected_index)
+        loop(selected_index)
+
+      "c" ->
+        register_customer_with_pii()
+        loop(selected_index)
+
+      "v" ->
+        show_customer_read_model()
+        loop(selected_index)
+
+      "h" ->
+        write_instructions()
+        loop(selected_index)
+
+      "?" ->
+        write_instructions()
+        loop(selected_index)
+
+      _other ->
+        loop(selected_index)
+    end
+  end
+
+  defp promote(%Person{} = person) do
+    title = random_from(@titles)
+
+    case Chronicle.append(person.id, %EmployeePromoted{new_title: title}) do
+      :ok ->
+        IO.puts(
+          "\n[#{person.id}] Promoted #{full_name(person)} to '#{title}' at sequence #{tail_sequence(person.id)}"
+        )
+
+      {:error, reason} ->
+        IO.puts(
+          "\n[#{person.id}] Could not promote #{full_name(person)}: #{format_reason(reason)}"
+        )
+    end
+  end
+
+  defp move(%Person{} = person) do
+    address = random_from(@addresses)
+
+    case Chronicle.append(person.id, %EmployeeMoved{
+           address: address.address,
+           city: address.city,
+           zip_code: address.zip_code,
+           country: address.country
          }) do
       :ok ->
-        Logger.info("LegacyAccountOpened appended successfully")
-        append_with_concurrency_scope(account_id)
+        IO.puts(
+          "\n[#{person.id}] Moved #{full_name(person)} to #{address.address}, #{address.city} at sequence #{tail_sequence(person.id)}"
+        )
 
       {:error, reason} ->
-        Logger.error("Failed to append LegacyAccountOpened: #{inspect(reason)}")
+        IO.puts("\n[#{person.id}] Could not move #{full_name(person)}: #{format_reason(reason)}")
     end
-
-    # Allow the server-side projection and reactor/reducer to process events
-    Process.sleep(6_000)
-
-    Logger.info("Reading Account read model (projection)...")
-
-    case Chronicle.read_model(Account, account_id) do
-      {:ok, nil} ->
-        Logger.warning("Projection read model not yet available.")
-
-      {:ok, account} ->
-        Logger.info("=== Account (projection) ===")
-        Logger.info("  ID:           #{account.account_id}")
-        Logger.info("  Owner:        #{account.full_name}")
-        Logger.info("  Tier:         #{account.account_tier}")
-        Logger.info("  Balance:      #{account.balance}")
-        Logger.info("  Transactions: #{account.transaction_count}")
-
-      {:error, reason} ->
-        Logger.error("Failed to read projection model: #{inspect(reason)}")
-    end
-
-    showcase_read_models(account_id)
-
-    case Chronicle.has_events_for?(account_id) do
-      {:ok, true} -> Logger.info("Event sequence has events for #{account_id}")
-      {:ok, false} -> Logger.warning("No events found for #{account_id}")
-      {:error, reason} -> Logger.error("Failed checking sequence state: #{inspect(reason)}")
-    end
-
-    case Chronicle.get_tail_sequence_number(account_id) do
-      {:ok, sequence_number} ->
-        Logger.info("Tail sequence number for #{account_id}: #{sequence_number}")
-
-      {:error, reason} ->
-        Logger.error("Failed getting tail sequence number: #{inspect(reason)}")
-    end
-
-    case Chronicle.get_event_stores() do
-      {:ok, stores} -> Logger.info("Event stores: #{inspect(stores)}")
-      {:error, reason} -> Logger.error("Failed getting event stores: #{inspect(reason)}")
-    end
-
-    case Chronicle.get_namespaces() do
-      {:ok, namespaces} -> Logger.info("Namespaces: #{inspect(namespaces)}")
-      {:error, reason} -> Logger.error("Failed getting namespaces: #{inspect(reason)}")
-    end
-
-    Logger.info(
-      "Auto-discovered event store subscriptions are registered during Chronicle.Client startup."
-    )
-
-    demo_event_store_subscription()
-
-    Logger.info("Listing registered webhooks...")
-
-    case Chronicle.get_webhooks() do
-      {:ok, webhooks} when webhooks == [] ->
-        Logger.warning("No webhooks are currently registered.")
-
-      {:ok, webhooks} ->
-        Enum.each(webhooks, fn webhook ->
-          Logger.info(
-            "Webhook #{webhook.id} -> #{webhook.target.url} (#{length(webhook.event_types)} event type(s))"
-          )
-        end)
-
-      {:error, reason} ->
-        Logger.error("Failed getting webhooks: #{inspect(reason)}")
-    end
-
-    Logger.info("Listing Chronicle jobs...")
-
-    case Chronicle.get_jobs() do
-      {:ok, []} ->
-        Logger.info("No jobs are currently active in Chronicle.")
-
-      {:ok, [job | _] = jobs} ->
-        Logger.info("Jobs: #{length(jobs)}")
-        Logger.info("First job #{job.id} is #{job.status}")
-
-        case Chronicle.get_job_steps(job.id) do
-          {:ok, steps} -> Logger.info("First job has #{length(steps)} step(s)")
-          {:error, reason} -> Logger.error("Failed getting job steps: #{inspect(reason)}")
-        end
-
-      {:error, reason} ->
-        Logger.error("Failed getting jobs: #{inspect(reason)}")
-    end
-
-    Logger.info("=== Demo complete ===")
-
-    Chronicle.clear_identity()
-    CorrelationIdManager.clear()
-    CausationManager.clear()
   end
 
-  defp demo_event_store_subscription do
-    subscription_id = "console-sample-default-deposits"
+  defp set_email(%Person{} = person) do
+    email = Employees.email_for(person)
 
-    Logger.info("Registering an imperative event store subscription from the default store...")
-
-    case Chronicle.subscribe_to_event_store(subscription_id, "default", fn builder ->
-           builder
-           |> DefinitionBuilder.with_event_type(FundsDeposited)
-         end) do
+    case Chronicle.append(person.id, %EmployeeEmailSet{email: email}) do
       :ok ->
-        Logger.info("Registered event store subscription #{subscription_id}")
+        IO.puts(
+          "\n[#{person.id}] Set #{full_name(person)}'s email to #{email} at sequence #{tail_sequence(person.id)}"
+        )
 
-        case Chronicle.unsubscribe_from_event_store(subscription_id) do
+      {:error, reason} ->
+        IO.puts("\n[#{person.id}] Could not set email: #{format_reason(reason)}")
+    end
+  end
+
+  defp steal_email(selected_index) do
+    person = selected_employee!(selected_index)
+    victim = selected_employee!(rem(selected_index + 1, length(Employees.all())))
+    email = Employees.email_for(victim)
+
+    case Chronicle.append(person.id, %EmployeeEmailSet{email: email}) do
+      :ok ->
+        IO.puts(
+          "\n[#{person.id}] Unexpectedly took #{email} at sequence #{tail_sequence(person.id)}"
+        )
+
+      {:error, reason} ->
+        IO.puts(
+          "\n[#{person.id}] Rejected taking #{victim.first_name}'s email (#{email}): #{format_reason(reason)}"
+        )
+    end
+  end
+
+  defp transact(selected_index) do
+    selected = selected_employee!(selected_index)
+    also_update = selected_employee!(rem(selected_index + 1, length(Employees.all())))
+    selected_title = random_from(@titles)
+    selected_address = random_from(@addresses)
+    second_title = random_from(@titles)
+    unit_of_work = Chronicle.begin_unit_of_work()
+
+    try do
+      :ok = Chronicle.append(selected.id, %EmployeePromoted{new_title: selected_title})
+
+      :ok =
+        Chronicle.append_many(selected.id, [
+          %EmployeeMoved{
+            address: selected_address.address,
+            city: selected_address.city,
+            zip_code: selected_address.zip_code,
+            country: selected_address.country
+          }
+        ])
+
+      :ok = Chronicle.append(also_update.id, %EmployeePromoted{new_title: second_title})
+
+      case UnitOfWork.commit(unit_of_work) do
+        :ok ->
+          IO.puts(
+            "\n[transaction] Committed staged events for #{full_name(selected)} and #{full_name(also_update)}"
+          )
+
+        {:error, reason} ->
+          IO.puts("\n[transaction] Failed committing staged events: #{format_reason(reason)}")
+      end
+    after
+      if not UnitOfWork.is_completed?(unit_of_work) do
+        UnitOfWork.rollback(unit_of_work)
+      end
+    end
+  end
+
+  defp show_employee_read_model(%Person{} = person) do
+    case ReadModels.get_instance_by_id(EmployeeState, person.id) do
+      {:ok, nil} ->
+        IO.puts("\n[read-model] No EmployeeState found for #{full_name(person)}")
+
+      {:ok, state} ->
+        IO.puts(
+          "\n[read-model] #{full_name(person)}: #{state.title} <#{blank_as(state.email, "no email yet")}> @ #{blank_as(state.address, "no address yet")}"
+        )
+
+      {:error, reason} ->
+        IO.puts("\n[read-model] Could not read #{full_name(person)}: #{format_reason(reason)}")
+    end
+  end
+
+  defp register_customer_with_pii do
+    case Chronicle.has_events_for?(@sample_customer.id) do
+      {:ok, true} ->
+        IO.puts("\n[pii] #{@sample_customer.full_name} is already registered.")
+
+      {:ok, false} ->
+        events = [
+          %CustomerRegistered{
+            customer_id: @sample_customer.id,
+            full_name: @sample_customer.full_name,
+            email: @sample_customer.email,
+            phone_number: @sample_customer.phone_number
+          },
+          %CustomerAddressUpdated{
+            customer_id: @sample_customer.id,
+            street_address: @sample_customer.street_address,
+            city: @sample_customer.city,
+            postal_code: @sample_customer.postal_code,
+            country: @sample_customer.country
+          }
+        ]
+
+        case Chronicle.append_many(@sample_customer.id, events) do
           :ok ->
-            Logger.info("Removed event store subscription #{subscription_id}")
+            IO.puts(
+              "\n[pii] Registered #{@sample_customer.full_name} (#{@sample_customer.id}) with customer data events up to sequence #{tail_sequence(@sample_customer.id)}"
+            )
 
           {:error, reason} ->
-            Logger.error("Failed removing event store subscription: #{inspect(reason)}")
+            IO.puts(
+              "\n[pii] Could not register #{@sample_customer.full_name}: #{format_reason(reason)}"
+            )
         end
 
       {:error, reason} ->
-        Logger.error("Failed registering event store subscription: #{inspect(reason)}")
+        IO.puts("\n[pii] Could not check customer state: #{format_reason(reason)}")
     end
   end
 
-  defp showcase_read_models(account_id) do
-    Logger.info("Showcasing Chronicle.ReadModels query APIs...")
-
-    session_id = "console-sample-session-#{account_id}"
-
-    case Chronicle.ReadModels.get_instance_by_id(Account, account_id, session_id: session_id) do
-      {:ok, account} when not is_nil(account) ->
-        Logger.info(
-          "ReadModels.get_instance_by_id/3 returned #{account.account_id} with balance #{account.balance}"
-        )
-
+  defp show_customer_read_model do
+    case ReadModels.get_instance_by_id(Customer, @sample_customer.id) do
       {:ok, nil} ->
-        Logger.warning("ReadModels.get_instance_by_id/3 returned nil")
-
-      {:error, reason} ->
-        Logger.error("ReadModels.get_instance_by_id/3 failed: #{inspect(reason)}")
-    end
-
-    case Chronicle.ReadModels.get(AccountSummary, account_id) do
-      {:ok, summary} when not is_nil(summary) ->
-        Logger.info(
-          "ReadModels.get/3 returned reducer-backed AccountSummary with #{summary.transaction_count} transaction(s)"
+        IO.puts(
+          "\n[pii] No Customer read model found for #{@sample_customer.id}. Append the customer events first."
         )
 
-      {:ok, nil} ->
-        Logger.warning("ReadModels.get/3 returned no AccountSummary yet")
+      {:ok, customer} ->
+        IO.puts("\nCustomer read model for #{customer.id}:")
+        IO.puts(format_customer_field("Full name", customer.full_name, true))
+        IO.puts(format_customer_field("Email", customer.email, true))
+        IO.puts(format_customer_field("Phone number", customer.phone_number, true))
+        IO.puts(format_customer_field("Street address", customer.street_address, true))
+        IO.puts(format_customer_field("City", customer.city, true))
+        IO.puts(format_customer_field("Postal code", customer.postal_code, true))
+        IO.puts(format_customer_field("Country", customer.country, false))
+        IO.puts(format_customer_field("Customer number", customer.customer_number, false))
+        IO.puts(format_customer_field("Account status", customer.account_status, false))
+        IO.puts(format_customer_field("Total orders", customer.total_orders, false))
 
-      {:error, reason} ->
-        Logger.error("ReadModels.get/3 for AccountSummary failed: #{inspect(reason)}")
-    end
-
-    case Chronicle.ReadModels.get_instances(Account, event_count: 100) do
-      {:ok, accounts} ->
-        Logger.info("ReadModels.get_instances/2 replayed #{length(accounts)} Account instance(s)")
-
-      {:error, reason} ->
-        Logger.error("ReadModels.get_instances/2 failed: #{inspect(reason)}")
-    end
-
-    case Chronicle.ReadModels.all(AccountSummary) do
-      {:ok, summaries} ->
-        Logger.info("ReadModels.all/2 replayed #{length(summaries)} AccountSummary instance(s)")
-
-      {:error, reason} ->
-        Logger.error("ReadModels.all/2 failed: #{inspect(reason)}")
-    end
-
-    case Chronicle.ReadModels.query(Account, page: 1, page_size: 10) do
-      {:ok, result} ->
-        Logger.info(
-          "ReadModels.query/2 returned page #{result.page} with #{length(result.instances)} item(s) out of #{result.total_count}"
+        IO.puts(
+          "  PII fields are marked above so you can identify which values need extra protection."
         )
 
       {:error, reason} ->
-        Logger.error("ReadModels.query/2 failed: #{inspect(reason)}")
-    end
-
-    case Chronicle.ReadModels.get_snapshots_by_id(Account, account_id) do
-      {:ok, snapshots} ->
-        latest_snapshot = List.last(snapshots)
-
-        Logger.info(
-          "ReadModels.get_snapshots_by_id/3 returned #{length(snapshots)} snapshot(s)#{format_latest_snapshot(latest_snapshot)}"
-        )
-
-      {:error, reason} ->
-        Logger.error("ReadModels.get_snapshots_by_id/3 failed: #{inspect(reason)}")
-    end
-
-    case Chronicle.ReadModels.occurrences(Account) do
-      {:ok, occurrences} ->
-        Logger.info("ReadModels.occurrences/2 returned #{length(occurrences)} occurrence(s)")
-
-      {:error, reason} ->
-        Logger.error("ReadModels.occurrences/2 failed: #{inspect(reason)}")
-    end
-
-    case Chronicle.ReadModels.definitions() do
-      {:ok, definitions} ->
-        matching_definitions =
-          Enum.filter(definitions, fn definition ->
-            definition.identifier in [
-              Account.__chronicle_read_model__(:id),
-              AccountSummary.__chronicle_read_model__(:id)
-            ]
-          end)
-
-        Logger.info(
-          "ReadModels.definitions/1 returned #{length(definitions)} definition(s); sample models: #{inspect(Enum.map(matching_definitions, &{&1.identifier, &1.observer_type}))}"
-        )
-
-      {:error, reason} ->
-        Logger.error("ReadModels.definitions/1 failed: #{inspect(reason)}")
+        IO.puts("\n[pii] Could not read the customer model: #{format_reason(reason)}")
     end
   end
 
-  defp format_latest_snapshot(nil), do: ""
-
-  defp format_latest_snapshot(snapshot) do
-    " (latest balance #{snapshot.read_model && snapshot.read_model.balance}, events #{length(snapshot.events)})"
-  end
-
-  defp append_with_concurrency_scope(account_id) do
-    case Chronicle.get_tail_sequence_number(account_id) do
-      {:ok, sequence_number} ->
-        Logger.info("Building concurrency scope from tail sequence number #{sequence_number}...")
-
-        scope = ConcurrencyScope.for_event_source(sequence_number)
-        unit_of_work = UnitOfWork.begin()
-
-        Logger.info("Buffering FundsDeposited and FundsWithdrawn in a unit of work...")
-
-        :ok =
-          Chronicle.append(account_id, %FundsDeposited{account_id: account_id, amount: 500},
-            concurrency_scope: scope
-          )
-
-        :ok =
-          Chronicle.append(account_id, %FundsWithdrawn{account_id: account_id, amount: 200},
-            concurrency_scope: scope
-          )
-
-        Logger.info(
-          "Committing unit of work #{UnitOfWork.correlation_id(unit_of_work).value} with buffered events..."
-        )
-
-        case UnitOfWork.commit(unit_of_work) do
-          :ok -> Logger.info("Transactional commit succeeded")
-          {:error, reason} -> Logger.error("Transactional commit failed: #{inspect(reason)}")
+  defp print_seeded_employee_status do
+    Enum.each(Employees.all(), fn employee ->
+      status =
+        case Chronicle.has_events_for?(employee.id) do
+          {:ok, true} -> "seeded"
+          {:ok, false} -> "missing"
+          {:error, reason} -> "error: #{format_reason(reason)}"
         end
 
-      {:error, reason} ->
-        Logger.error(
-          "Failed getting tail sequence number for concurrency scope: #{inspect(reason)}"
-        )
+      IO.puts("Seeder status for #{full_name(employee)} (#{employee.id}): #{status}")
+    end)
+  end
+
+  defp wait_for_seeded_employees(0), do: :ok
+
+  defp wait_for_seeded_employees(attempts_left) do
+    if Enum.all?(Employees.all(), fn employee ->
+         match?({:ok, true}, Chronicle.has_events_for?(employee.id))
+       end) do
+      :ok
+    else
+      Process.sleep(500)
+      wait_for_seeded_employees(attempts_left - 1)
     end
+  end
+
+  defp write_instructions do
+    IO.puts(
+      [
+        "",
+        "Use 1-3 to select an employee. Then:",
+        "  P = Promote          A = Move (change address)",
+        "  E = Set email        U = Try to take the next employee's email (constraint violation)",
+        "  R = Read model       T = Transactional update",
+        "  C = Register customer with PII   V = View customer PII read model",
+        "  H or ? = Show this menu          Q = Quit",
+        ""
+      ]
+      |> Enum.join("\n")
+    )
+  end
+
+  defp write_selected_employee(index) do
+    person = selected_employee!(index)
+    IO.puts("Selected [#{index + 1}] #{full_name(person)} (#{person.id})")
+  end
+
+  defp with_terminal_mode(fun) do
+    stty = System.find_executable("stty")
+
+    original_mode =
+      case stty do
+        nil ->
+          nil
+
+        _ ->
+          case System.cmd(stty, ["-g"], stderr_to_stdout: true) do
+            {settings, 0} ->
+              System.cmd(stty, ["raw", "-echo"], stderr_to_stdout: true)
+              String.trim(settings)
+
+            _ ->
+              nil
+          end
+      end
+
+    try do
+      fun.()
+    after
+      restore_terminal_mode(stty, original_mode)
+    end
+  end
+
+  defp restore_terminal_mode(nil, _original_mode), do: :ok
+
+  defp restore_terminal_mode(stty, original_mode)
+       when is_binary(original_mode) and original_mode != "" do
+    System.cmd(stty, [original_mode], stderr_to_stdout: true)
+    :ok
+  end
+
+  defp restore_terminal_mode(stty, _original_mode) do
+    System.cmd(stty, ["sane"], stderr_to_stdout: true)
+    :ok
+  end
+
+  defp read_key do
+    case IO.binread(:stdio, 1) do
+      :eof -> "q"
+      {:error, _reason} -> "q"
+      key when is_binary(key) -> String.downcase(key)
+    end
+  end
+
+  defp selected_employee!(index) do
+    Employees.at(index) || raise ArgumentError, "unknown employee index #{index}"
+  end
+
+  defp random_from(items), do: Enum.at(items, :rand.uniform(length(items)) - 1)
+
+  defp tail_sequence(event_source_id) do
+    case Chronicle.get_tail_sequence_number(event_source_id) do
+      {:ok, sequence_number} -> sequence_number
+      _ -> 0
+    end
+  end
+
+  defp full_name(%Person{} = person), do: "#{person.first_name} #{person.last_name}"
+
+  defp blank_as(value, fallback) when value in [nil, ""], do: fallback
+  defp blank_as(value, _fallback), do: value
+
+  defp format_reason({:constraint_violations, violations}) when is_list(violations) do
+    violations
+    |> Enum.map(&violation_message/1)
+    |> Enum.join("; ")
+  end
+
+  defp format_reason({:append_errors, errors}) when is_list(errors) do
+    errors
+    |> Enum.map(&violation_message/1)
+    |> Enum.join("; ")
+  end
+
+  defp format_reason(reason), do: inspect(reason)
+
+  defp violation_message(value) when is_binary(value), do: value
+
+  defp violation_message(value) when is_map(value) do
+    Map.get(value, :Message) || Map.get(value, :message) || inspect(value)
+  end
+
+  defp violation_message(value), do: inspect(value)
+
+  defp format_customer_field(label, value, pii?) do
+    display =
+      value
+      |> to_string()
+      |> blank_as("(empty)")
+
+    suffix = if pii?, do: "   [PII]", else: ""
+    "  #{String.pad_trailing(label, 15)}: #{display}#{suffix}"
   end
 end

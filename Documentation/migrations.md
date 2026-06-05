@@ -145,4 +145,4 @@ Chronicle.Elixir raises at compile time when:
 
 ## Sample
 
-See `Samples/console` for a complete working example. The sample appends a legacy `LegacyAccountOpened` generation 1 event and registers a migration to the generation 2 `AccountOpened` event.
+See `Source/chronicle/test/chronicle/migration_test.exs` for a focused migration example that evolves `AccountOpened` from generation 1 to generation 2 and validates the generated upcast/downcast definition.

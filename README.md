@@ -396,6 +396,7 @@ Chronicle.read_model(Account, "account-1", client: :bank)
 ## Running the Console Sample
 
 A working example is in the [`Samples/console`](Samples/console) directory.
+It mirrors the interactive TypeScript sample with seeded employees (Ada Lovelace, Grace Hopper, and Alan Turing), keyboard-driven employee updates, transaction demos, constraint violations, and a customer compliance / PII walkthrough.
 
 **Prerequisites:** A Chronicle kernel running locally on port 35000.
 
@@ -456,6 +457,14 @@ For detailed information on specific features, see the [guides](Documentation/in
 - **[Context Management](Documentation/context.md)** — Correlation IDs, identity tracking, and causation chains
 - **[Event Sequences](Documentation/event-sequences.md)** — Organizing events into separate logical streams
 - **[Event Store Discovery](Documentation/event-stores.md)** — Discovering event stores and namespaces
+- **[Seeding](Documentation/seeding/index.md)** — Populating event stores with baseline events during startup
+- **[Event Migrations](Documentation/migrations.md)** — Evolving event generations safely
+- **[Transactions](Documentation/transactions.md)** — Buffering and committing multi-event units of work
+- **[Concurrency Scope](Documentation/concurrency.md)** — Guarding appends with optimistic concurrency checks
+- **[Event Store Subscriptions](Documentation/event-store-subscriptions.md)** — Importing events across stores
+- **[Jobs](Documentation/jobs.md)** — Inspecting and controlling Chronicle jobs
+- **[WebHooks](Documentation/webhooks.md)** — Registering event webhooks
+- **[Read Models](Documentation/read-models.md)** — Querying read models, snapshots, and definitions
 
 ## Package structure
 

@@ -50,11 +50,6 @@ defmodule Chronicle.MixProject do
         lib
         mix.exs
         README.md
-        READMODELS.md
-        TRANSACTIONS.md
-        JOBS.md
-        WEBHOOKS.md
-        EVENT_STORE_SUBSCRIPTIONS.md
         VERSION
         .formatter.exs
       )
@@ -65,12 +60,7 @@ defmodule Chronicle.MixProject do
     [
       main: "Chronicle",
       extras: [
-        "README.md",
-        "READMODELS.md",
-        "TRANSACTIONS.md",
-        "JOBS.md",
-        "WEBHOOKS.md",
-        "EVENT_STORE_SUBSCRIPTIONS.md"
+        "README.md"
       ],
       groups_for_modules: [
         Connections: [Chronicle.Connections.ConnectionString, Chronicle.Connections.Connection],

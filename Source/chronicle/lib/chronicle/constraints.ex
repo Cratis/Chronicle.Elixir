@@ -100,6 +100,7 @@ defmodule Chronicle.Constraints do
         %{
           type: :unique,
           name: name,
+          ignore_casing: Enum.any?(definitions, &Map.get(&1, :ignore_casing, false)),
           event_definitions:
             Enum.map(definitions, fn definition ->
               %{event_type: definition.event_type, on: definition.on}
@@ -147,7 +148,7 @@ defmodule Chronicle.Constraints do
         Value0:
           struct(UniqueConstraintDefinition,
             EventDefinitions: Enum.map(event_definitions, &build_unique_event_definition/1),
-            IgnoreCasing: false
+            IgnoreCasing: Map.get(constraint, :ignore_casing, false)
           )
       )
 
@@ -221,7 +222,12 @@ defmodule Chronicle.Constraints do
     constraint_name =
       Keyword.get(opts, :name, default_constraint_name_for_fields(event_type, normalized_fields))
 
-    build_normalized_unique(constraint_name, event_type, normalized_fields)
+    build_normalized_unique(
+      constraint_name,
+      event_type,
+      normalized_fields,
+      Keyword.get(opts, :ignore_casing, false)
+    )
   end
 
   defp normalize_unique_declaration(opts, event_type) when is_list(opts) do
@@ -231,7 +237,12 @@ defmodule Chronicle.Constraints do
     constraint_name =
       Keyword.get(opts, :name, default_constraint_name_for_fields(event_type, normalized_fields))
 
-    build_normalized_unique(constraint_name, event_type, normalized_fields)
+    build_normalized_unique(
+      constraint_name,
+      event_type,
+      normalized_fields,
+      Keyword.get(opts, :ignore_casing, false)
+    )
   end
 
   defp normalize_unique_declaration(fields, event_type) do
@@ -240,7 +251,8 @@ defmodule Chronicle.Constraints do
     build_normalized_unique(
       default_constraint_name_for_fields(event_type, normalized_fields),
       event_type,
-      normalized_fields
+      normalized_fields,
+      false
     )
   end
 
@@ -275,8 +287,13 @@ defmodule Chronicle.Constraints do
     end
   end
 
-  defp build_normalized_unique(name, event_type, normalized_fields) do
-    %{name: normalize_constraint_name(name), event_type: event_type, on: normalized_fields}
+  defp build_normalized_unique(name, event_type, normalized_fields, ignore_casing) do
+    %{
+      name: normalize_constraint_name(name),
+      event_type: event_type,
+      on: normalized_fields,
+      ignore_casing: ignore_casing
+    }
   end
 
   defp with_removed_with_event_type(definition, nil), do: definition
