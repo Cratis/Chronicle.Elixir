@@ -90,7 +90,10 @@ defmodule Chronicle.Client do
     * `:reactors` — list of reactor modules to start (each `use Chronicle.Reactors.Reactor`).
     * `:reducers` — list of reducer modules to start (each `use Chronicle.Reducers.Reducer`).
     * `:read_models` — list of read model modules (each `use Chronicle.ReadModels.ReadModel`).
-      Modules that contain `from/2` declarations are registered as projections.
+      Modules that contain `from/2` declarations are registered as model-bound projections.
+    * `:projections` — list of declarative projection modules (each
+      `use Chronicle.Projections.Projection`). These are standalone projection definitions
+      that reference a separate read model module.
     * `:seeders` — list of seeder modules (each `use Chronicle.Seeding.Seeder`). Seeders
       populate the event store with initial events during client startup.
     * `:webhooks` — list of discoverable webhook modules (each
@@ -159,6 +162,7 @@ defmodule Chronicle.Client do
           reactors: [],
           reducers: [],
           read_models: [],
+          projections: [],
           seeders: [],
           webhooks: [],
           event_store_subscriptions: []
@@ -170,6 +174,7 @@ defmodule Chronicle.Client do
     reactors = Enum.uniq(Keyword.get(opts, :reactors, []) ++ discovered.reactors)
     reducers = Enum.uniq(Keyword.get(opts, :reducers, []) ++ discovered.reducers)
     read_models = Enum.uniq(Keyword.get(opts, :read_models, []) ++ discovered.read_models)
+    projections = Enum.uniq(Keyword.get(opts, :projections, []) ++ discovered.projections)
     seeders = Enum.uniq(Keyword.get(opts, :seeders, []) ++ discovered.seeders)
     webhooks = Enum.uniq(Keyword.get(opts, :webhooks, []) ++ discovered.webhooks)
 
@@ -268,7 +273,8 @@ defmodule Chronicle.Client do
            event_types: event_types,
            migrations: migrations,
            read_models: read_models,
-           reducers: reducers
+           reducers: reducers,
+           projections: projections
          )}
       ] ++
         reactor_children ++
