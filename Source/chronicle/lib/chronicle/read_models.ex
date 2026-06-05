@@ -184,6 +184,7 @@ defmodule Chronicle.ReadModels do
   }
 
   alias Chronicle.Connections.Connection
+  alias Chronicle.ReadModels.Resilience
 
   @event_log_id "event-log"
   @unlimited_event_count 18_446_744_073_709_551_615
@@ -232,7 +233,7 @@ defmodule Chronicle.ReadModels do
           SessionId: session_id
         )
 
-      case ReadModels.Stub.get_instance_by_key(channel, request) do
+      case call_resilient(config, fn -> ReadModels.Stub.get_instance_by_key(channel, request) end) do
         {:ok, response} ->
           case Map.get(response, :ReadModel, "") do
             "" -> {:ok, nil}
@@ -285,7 +286,7 @@ defmodule Chronicle.ReadModels do
           EventCount: event_count
         )
 
-      case ReadModels.Stub.get_all_instances(channel, request) do
+      case call_resilient(config, fn -> ReadModels.Stub.get_all_instances(channel, request) end) do
         {:ok, response} -> {:ok, decode_models(model_module, Map.get(response, :Instances, []))}
         {:error, reason} -> {:error, reason}
       end
@@ -325,7 +326,7 @@ defmodule Chronicle.ReadModels do
           PageSize: page_size
         )
 
-      case ReadModels.Stub.get_instances(channel, request) do
+      case call_resilient(config, fn -> ReadModels.Stub.get_instances(channel, request) end) do
         {:ok, response} ->
           {:ok,
            %QueryResult{
@@ -379,7 +380,7 @@ defmodule Chronicle.ReadModels do
           ReadModelKey: key
         )
 
-      case ReadModels.Stub.get_snapshots_by_key(channel, request) do
+      case call_resilient(config, fn -> ReadModels.Stub.get_snapshots_by_key(channel, request) end) do
         {:ok, response} ->
           snapshots =
             Map.get(response, :Snapshots, [])
@@ -486,6 +487,12 @@ defmodule Chronicle.ReadModels do
         {:error, :no_client}
     end
   end
+
+  # Runs a read-model retrieval with connection-aware resilience: it waits for the
+  # connection to be registered and transparently retries the transient
+  # "reducer is not connected" error the kernel returns during the brief
+  # post-connect settle window.
+  defp call_resilient(config, fun), do: Resilience.call(Map.get(config, :lifecycle), fun)
 
   defp read_model_id(model_module), do: model_module.__chronicle_read_model__(:id)
 

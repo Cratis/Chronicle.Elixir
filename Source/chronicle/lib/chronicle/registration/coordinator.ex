@@ -72,6 +72,7 @@ defmodule Chronicle.Registration.Coordinator do
       migrations: Keyword.get(opts, :migrations, []),
       read_models: Keyword.get(opts, :read_models, []),
       reducers: Keyword.get(opts, :reducers, []),
+      projections: Keyword.get(opts, :projections, []),
       register_fun: Keyword.get(opts, :register_fun, &default_register/1),
       retry_timer: nil,
       registered_done?: false
@@ -144,8 +145,22 @@ defmodule Chronicle.Registration.Coordinator do
       state.reducers
       |> Enum.flat_map(fn r -> r.__chronicle_reducer__(:handles) end)
 
+    # Collect event types from declarative projections
+    declarative_projection_event_types =
+      state.projections
+      |> Enum.flat_map(fn proj ->
+        (proj.__chronicle_projection__(:from) |> Enum.map(&elem(&1, 0))) ++
+          (proj.__chronicle_projection__(:join) |> Enum.map(&elem(&1, 0))) ++
+          (proj.__chronicle_projection__(:removed_with) |> Enum.map(&elem(&1, 0)))
+      end)
+
     all_event_types =
-      Enum.uniq(state.event_types ++ read_model_event_types ++ reducer_event_types)
+      Enum.uniq(
+        state.event_types ++
+          read_model_event_types ++
+          reducer_event_types ++
+          declarative_projection_event_types
+      )
 
     with :ok <- ensure_event_store(channel, state.event_store),
          :ok <- ensure_namespace(channel, state.event_store, state.namespace),
@@ -232,7 +247,31 @@ defmodule Chronicle.Registration.Coordinator do
         )
       end)
 
-    all_definitions = projection_definitions ++ reducer_definitions
+    declarative_projection_definitions =
+      state.projections
+      |> Enum.map(fn proj ->
+        projection_id = proj.__chronicle_projection__(:id)
+        model_module = proj.__chronicle_projection__(:model)
+        model_id = model_module.__chronicle_read_model__(:id)
+
+        struct(ReadModelDefinition,
+          Type: struct(ReadModelType, Identifier: model_id, Generation: 1),
+          ContainerName: model_id,
+          DisplayName: model_id,
+          Sink:
+            struct(SinkDefinition,
+              ConfigurationId: struct(BclGuid),
+              TypeId: mongodb_sink_type_id()
+            ),
+          Schema: generate_read_model_schema(model_module),
+          ObserverType: 2,
+          ObserverIdentifier: projection_id,
+          Owner: 2,
+          Source: 1
+        )
+      end)
+
+    all_definitions = projection_definitions ++ reducer_definitions ++ declarative_projection_definitions
 
     if Enum.empty?(all_definitions) do
       :ok
@@ -277,17 +316,22 @@ defmodule Chronicle.Registration.Coordinator do
     JsonSchemaGenerator.generate(module, key_transform: :identity)
   end
 
-  defp register_projections(_channel, %{read_models: []}), do: :ok
+  defp register_projections(_channel, %{read_models: [], projections: []}), do: :ok
 
   defp register_projections(channel, state) do
-    projection_read_models =
-      Enum.filter(state.read_models, & &1.__chronicle_read_model__(:has_projection?))
+    model_bound_definitions =
+      state.read_models
+      |> Enum.filter(& &1.__chronicle_read_model__(:has_projection?))
+      |> Enum.map(&build_projection_definition/1)
 
-    if Enum.empty?(projection_read_models) do
+    declarative_definitions =
+      Enum.map(state.projections, &build_declarative_projection_definition/1)
+
+    definitions = model_bound_definitions ++ declarative_definitions
+
+    if Enum.empty?(definitions) do
       :ok
     else
-      definitions = Enum.map(projection_read_models, &build_projection_definition(&1))
-
       request =
         struct(RegisterRequest,
           EventStore: state.event_store,
@@ -381,6 +425,85 @@ defmodule Chronicle.Registration.Coordinator do
       RemovedWith: removed_with_entries,
       All: from_every,
       InitialModelState: initial_model_state(read_model_module)
+    )
+  end
+
+  defp build_declarative_projection_definition(projection_module) do
+    projection_id = projection_module.__chronicle_projection__(:id)
+    model_module = projection_module.__chronicle_projection__(:model)
+    model_id = model_module.__chronicle_read_model__(:id)
+
+    from_entries =
+      projection_module.__chronicle_projection__(:from)
+      |> Enum.map(fn {event_module, opts} ->
+        properties = build_properties(opts)
+        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
+        parent_key = Keyword.get(opts, :parent_key, "")
+
+        struct(KeyValuePair_EventType_FromDefinition,
+          Key: proto_event_type(event_module),
+          Value:
+            struct(FromDefinition,
+              Key: key,
+              Properties: properties,
+              ParentKey: parent_key
+            )
+        )
+      end)
+
+    join_entries =
+      projection_module.__chronicle_projection__(:join)
+      |> Enum.map(fn {event_module, opts} ->
+        properties = build_properties(opts)
+        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
+        on = opts |> Keyword.fetch!(:on) |> to_string()
+
+        struct(KeyValuePair_EventType_JoinDefinition,
+          Key: proto_event_type(event_module),
+          Value:
+            struct(JoinDefinition,
+              On: on,
+              Key: key,
+              Properties: properties
+            )
+        )
+      end)
+
+    removed_with_entries =
+      projection_module.__chronicle_projection__(:removed_with)
+      |> Enum.map(fn {event_module, opts} ->
+        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
+        parent_key = Keyword.get(opts, :parent_key, "")
+
+        struct(KeyValuePair_EventType_RemovedWithDefinition,
+          Key: proto_event_type(event_module),
+          Value: struct(RemovedWithDefinition, Key: key, ParentKey: parent_key)
+        )
+      end)
+
+    from_every =
+      case projection_module.__chronicle_projection__(:from_every) do
+        [] ->
+          nil
+
+        [opts | _] ->
+          struct(FromEveryDefinition,
+            Properties: build_properties(opts),
+            IncludeChildren: Keyword.get(opts, :include_children, false)
+          )
+      end
+
+    struct(ProjectionDefinition,
+      Identifier: projection_id,
+      ReadModel: model_id,
+      EventSequenceId: "event-log",
+      IsActive: true,
+      IsRewindable: true,
+      From: from_entries,
+      Join: join_entries,
+      RemovedWith: removed_with_entries,
+      All: from_every,
+      InitialModelState: initial_model_state(model_module)
     )
   end
 
