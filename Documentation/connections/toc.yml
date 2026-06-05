@@ -1,0 +1,6 @@
+- name: Connections
+  href: index.md
+- name: Resilience and the Connection Lifecycle
+  href: resilience.md
+- name: Connection Strings
+  href: connection-strings.md

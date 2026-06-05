@@ -4,6 +4,11 @@ Comprehensive guides for using Chronicle Elixir.
 
 ## Guides
 
+- [Get Started](get-started.md) — Install the client, define an event, start `Chronicle.Client`, and append and read your first events
+- [Connections](connections/index.md) — Connection strings, authentication, and how the client stays resilient across kernel restarts and network interruptions by reconnecting and re-registering observers in order
+- [Event Types](events.md) — Defining immutable event facts with stable identifiers and generations; naming, shape, and registration
+- [Reactors](reactors.md) — Observing events to produce side effects; `handle/2`, idempotency, and lifecycle re-registration
+- [Reducers](reducers.md) — Folding events into read models in plain Elixir with `reduce/3`; registration ordering and when to prefer a reducer over a projection
 - [Model-Bound Constraints](constraints.md) — Declaring unique and unique-event-type constraints directly on event types via `@unique`, `@unique_event_type`, and `@remove_constraint` attributes; automatic registration at client startup
 - [Context Management](context.md) — Process-scoped correlation IDs, identity tracking, and causation chains; typical web handler patterns; async process considerations
 - [Event Sequences](event-sequences.md) — Organizing events into named sequences (default `"event-log"`); querying and checking sequence state; multi-sequence patterns
