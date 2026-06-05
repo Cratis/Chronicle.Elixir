@@ -408,12 +408,12 @@ open doc/index.html
 
 ## Comprehensive Guides
 
-For detailed information on specific features, see:
+For detailed information on specific features, see the [guides](Documentation/index.md):
 
-- **[constraints.md](constraints.md)** — Model-bound unique constraints and constraint removal
-- **[context.md](context.md)** — Correlation IDs, identity tracking, and causation chains
-- **[event-sequences.md](event-sequences.md)** — Organizing events into separate logical streams
-- **[event-stores.md](event-stores.md)** — Discovering event stores and namespaces
+- **[Model-Bound Constraints](Documentation/constraints.md)** — Declaring unique and unique-event-type constraints on event types
+- **[Context Management](Documentation/context.md)** — Correlation IDs, identity tracking, and causation chains
+- **[Event Sequences](Documentation/event-sequences.md)** — Organizing events into separate logical streams
+- **[Event Store Discovery](Documentation/event-stores.md)** — Discovering event stores and namespaces
 
 ## Package structure
 

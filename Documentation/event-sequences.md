@@ -200,4 +200,4 @@ end
 - `Chronicle.EventLog` — append and query events
 - `Chronicle` — high-level API with convenience functions
 - `README.md` — quick start guide
-- `CONTEXT.md` — correlation, identity, and causation context
+- [Context Management](context.md) — correlation, identity, and causation context
