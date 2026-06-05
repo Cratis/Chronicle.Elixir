@@ -17,7 +17,8 @@ defmodule ConsoleSample do
     EmployeePromoted
   }
 
-  alias ConsoleSample.ReadModels.{Customer, EmployeeState}
+  alias ConsoleSample.Projections.EmployeeDetails
+  alias ConsoleSample.ReadModels.{Customer, EmployeeList, EmployeeState}
   alias Chronicle.ReadModels
   alias Chronicle.Transactions.UnitOfWork
 
@@ -54,8 +55,14 @@ defmodule ConsoleSample do
 
   @spec run() :: no_return()
   def run do
-    Process.sleep(2_000)
-    wait_for_seeded_employees(20)
+    config = Chronicle.Client.config()
+
+    case Chronicle.Connections.Lifecycle.wait_until(config.lifecycle, :registered, 30_000) do
+      :ok -> :ok
+      {:error, :timeout} -> IO.puts("[warn] Chronicle not yet registered — proceeding anyway")
+    end
+
+    wait_for_seeded_employees(40)
 
     print_seeded_employee_status()
     write_instructions()
@@ -117,6 +124,14 @@ defmodule ConsoleSample do
 
       "r" ->
         show_employee_read_model(selected_employee!(selected_index))
+        loop(selected_index)
+
+      "j" ->
+        show_employee_model_bound_projection(selected_employee!(selected_index))
+        loop(selected_index)
+
+      "k" ->
+        show_employee_list_projection(selected_employee!(selected_index))
         loop(selected_index)
 
       "t" ->
@@ -265,6 +280,40 @@ defmodule ConsoleSample do
     end
   end
 
+  defp show_employee_model_bound_projection(%Person{} = person) do
+    case ReadModels.get_instance_by_id(EmployeeDetails, person.id) do
+      {:ok, nil} ->
+        IO.puts("\n[projection:model-bound] No EmployeeDetails found for #{full_name(person)}")
+
+      {:ok, state} ->
+        IO.puts(
+          "\n[projection:model-bound] #{full_name(person)}: #{state.title} @ #{blank_as(state.address, "no address yet")}"
+        )
+
+      {:error, reason} ->
+        IO.puts(
+          "\n[projection:model-bound] Could not read #{full_name(person)}: #{format_reason(reason)}"
+        )
+    end
+  end
+
+  defp show_employee_list_projection(%Person{} = person) do
+    case ReadModels.get_instance_by_id(EmployeeList, person.id) do
+      {:ok, nil} ->
+        IO.puts("\n[projection:declarative] No EmployeeList entry found for #{full_name(person)}")
+
+      {:ok, entry} ->
+        IO.puts(
+          "\n[projection:declarative] #{entry.first_name} #{entry.last_name} — #{entry.title}"
+        )
+
+      {:error, reason} ->
+        IO.puts(
+          "\n[projection:declarative] Could not read #{full_name(person)}: #{format_reason(reason)}"
+        )
+    end
+  end
+
   defp register_customer_with_pii do
     case Chronicle.has_events_for?(@sample_customer.id) do
       {:ok, true} ->
@@ -351,14 +400,18 @@ defmodule ConsoleSample do
   defp wait_for_seeded_employees(0), do: :ok
 
   defp wait_for_seeded_employees(attempts_left) do
-    if Enum.all?(Employees.all(), fn employee ->
-         match?({:ok, true}, Chronicle.has_events_for?(employee.id))
-       end) do
+    if Enum.all?(Employees.all(), &employee_seeded?/1) do
       :ok
     else
       Process.sleep(500)
       wait_for_seeded_employees(attempts_left - 1)
     end
+  end
+
+  defp employee_seeded?(%Person{id: id}) do
+    match?({:ok, true}, Chronicle.has_events_for?(id))
+  rescue
+    _ -> false
   end
 
   defp write_instructions do
@@ -369,6 +422,7 @@ defmodule ConsoleSample do
         "  P = Promote          A = Move (change address)",
         "  E = Set email        U = Try to take the next employee's email (constraint violation)",
         "  R = Read model       T = Transactional update",
+        "  J = Model-bound projection       K = Declarative projection",
         "  C = Register customer with PII   V = View customer PII read model",
         "  H or ? = Show this menu          Q = Quit",
         ""
@@ -383,17 +437,17 @@ defmodule ConsoleSample do
   end
 
   defp with_terminal_mode(fun) do
-    stty = System.find_executable("stty")
-
+    # Use `sh -c "... < /dev/tty"` so stty operates on the controlling terminal
+    # rather than on the Erlang port that System.cmd connects as stdin by default.
     original_mode =
-      case stty do
+      case System.find_executable("sh") do
         nil ->
           nil
 
         _ ->
-          case System.cmd(stty, ["-g"], stderr_to_stdout: true) do
+          case System.cmd("sh", ["-c", "stty -g < /dev/tty"], stderr_to_stdout: true) do
             {settings, 0} ->
-              System.cmd(stty, ["raw", "-echo"], stderr_to_stdout: true)
+              System.cmd("sh", ["-c", "stty raw -echo < /dev/tty"], stderr_to_stdout: true)
               String.trim(settings)
 
             _ ->
@@ -401,31 +455,52 @@ defmodule ConsoleSample do
           end
       end
 
+    # Open /dev/tty directly so reads bypass Erlang's buffered stdin port.
+    # Without this, IO.binread blocks until the user presses Enter even in raw mode.
+    tty_fd =
+      case :file.open(~c"/dev/tty", [:read, :binary, :raw]) do
+        {:ok, fd} -> fd
+        {:error, _} -> nil
+      end
+
+    Process.put(:tty_fd, tty_fd)
+
     try do
       fun.()
     after
-      restore_terminal_mode(stty, original_mode)
+      if tty_fd, do: :file.close(tty_fd)
+      Process.delete(:tty_fd)
+      restore_terminal_mode(original_mode)
     end
   end
 
-  defp restore_terminal_mode(nil, _original_mode), do: :ok
+  defp restore_terminal_mode(nil), do: :ok
 
-  defp restore_terminal_mode(stty, original_mode)
-       when is_binary(original_mode) and original_mode != "" do
-    System.cmd(stty, [original_mode], stderr_to_stdout: true)
+  defp restore_terminal_mode(settings) when is_binary(settings) and settings != "" do
+    System.cmd("sh", ["-c", "stty #{settings} < /dev/tty"], stderr_to_stdout: true)
     :ok
   end
 
-  defp restore_terminal_mode(stty, _original_mode) do
-    System.cmd(stty, ["sane"], stderr_to_stdout: true)
+  defp restore_terminal_mode(_settings) do
+    System.cmd("sh", ["-c", "stty sane < /dev/tty"], stderr_to_stdout: true)
     :ok
   end
 
   defp read_key do
-    case IO.binread(:stdio, 1) do
-      :eof -> "q"
-      {:error, _reason} -> "q"
-      key when is_binary(key) -> String.downcase(key)
+    case Process.get(:tty_fd) do
+      nil ->
+        case IO.binread(:stdio, 1) do
+          :eof -> "q"
+          {:error, _reason} -> "q"
+          key when is_binary(key) -> String.downcase(key)
+        end
+
+      tty_fd ->
+        case :file.read(tty_fd, 1) do
+          {:ok, key} -> String.downcase(key)
+          :eof -> "q"
+          {:error, _reason} -> "q"
+        end
     end
   end
 
