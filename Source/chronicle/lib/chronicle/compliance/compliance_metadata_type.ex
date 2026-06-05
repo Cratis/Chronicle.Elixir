@@ -8,17 +8,17 @@ defmodule Chronicle.Compliance.ComplianceMetadataType do
 
   The Chronicle kernel matches the `metadataType` value carried in a schema's
   `compliance` array against its registered compliance handlers. The value is a
-  GUID; for personally identifiable information it is the well-known PII type id
-  (the same value the C# and TypeScript clients use).
+  string; for personally identifiable information it is the well-known `"PII"`
+  string (the same value the C# and TypeScript clients use).
   """
 
-  @pii "cae5580e-83d6-44dc-9d7a-a72e8a2f17d7"
+  @pii "PII"
 
   @doc """
-  The compliance metadata type id for Personally Identifiable Information (PII)
+  The compliance metadata type for Personally Identifiable Information (PII)
   according to the definition of personal data in GDPR.
 
-  Returns the GUID the Chronicle kernel uses to select its PII (GDPR) compliance
+  Returns the string the Chronicle kernel uses to select its PII (GDPR) compliance
   handler, which encrypts the adorned values.
   """
   @spec pii() :: String.t()
