@@ -183,8 +183,14 @@ defmodule Chronicle.ReadModels do
     ReadModels
   }
 
+  alias Cratis.Chronicle.Contracts.Compliance.{
+    ReleaseRequest,
+    Compliance
+  }
+
   alias Chronicle.Connections.Connection
   alias Chronicle.ReadModels.Resilience
+  alias Chronicle.Schemas.JsonSchemaGenerator
 
   @event_log_id "event-log"
   @unlimited_event_count 18_446_744_073_709_551_615
@@ -236,10 +242,23 @@ defmodule Chronicle.ReadModels do
       case call_resilient(config, fn -> ReadModels.Stub.get_instance_by_key(channel, request) end) do
         {:ok, response} ->
           case Map.get(response, :ReadModel, "") do
-            "" -> {:ok, nil}
-            nil -> {:ok, nil}
-            "null" -> {:ok, nil}
-            json -> {:ok, decode_model(model_module, json)}
+            "" ->
+              {:ok, nil}
+
+            nil ->
+              {:ok, nil}
+
+            "null" ->
+              {:ok, nil}
+
+            json ->
+              instance = decode_model(model_module, json)
+
+              if reducer_backed?(model_module, config) do
+                {:ok, release_instance(instance, model_module, channel, config.event_store, namespace)}
+              else
+                {:ok, instance}
+              end
           end
 
         {:error, reason} ->
@@ -287,8 +306,20 @@ defmodule Chronicle.ReadModels do
         )
 
       case call_resilient(config, fn -> ReadModels.Stub.get_all_instances(channel, request) end) do
-        {:ok, response} -> {:ok, decode_models(model_module, Map.get(response, :Instances, []))}
-        {:error, reason} -> {:error, reason}
+        {:ok, response} ->
+          instances = decode_models(model_module, Map.get(response, :Instances, []))
+
+          if reducer_backed?(model_module, config) do
+            {:ok,
+             Enum.map(instances, fn i ->
+               release_instance(i, model_module, channel, config.event_store, namespace)
+             end)}
+          else
+            {:ok, instances}
+          end
+
+        {:error, reason} ->
+          {:error, reason}
       end
     end
   end
@@ -328,9 +359,20 @@ defmodule Chronicle.ReadModels do
 
       case call_resilient(config, fn -> ReadModels.Stub.get_instances(channel, request) end) do
         {:ok, response} ->
+          instances = decode_models(model_module, Map.get(response, :Instances, []))
+
+          released =
+            if reducer_backed?(model_module, config) do
+              Enum.map(instances, fn i ->
+                release_instance(i, model_module, channel, config.event_store, namespace)
+              end)
+            else
+              instances
+            end
+
           {:ok,
            %QueryResult{
-             instances: decode_models(model_module, Map.get(response, :Instances, [])),
+             instances: released,
              total_count: Map.get(response, :TotalCount, 0),
              page: Map.get(response, :Page, page),
              page_size: Map.get(response, :PageSize, page_size)
@@ -386,7 +428,25 @@ defmodule Chronicle.ReadModels do
             Map.get(response, :Snapshots, [])
             |> Enum.map(&decode_snapshot(model_module, &1))
 
-          {:ok, snapshots}
+          released_snapshots =
+            if reducer_backed?(model_module, config) do
+              Enum.map(snapshots, fn snapshot ->
+                released_model =
+                  release_instance(
+                    snapshot.read_model,
+                    model_module,
+                    channel,
+                    config.event_store,
+                    namespace
+                  )
+
+                %{snapshot | read_model: released_model}
+              end)
+            else
+              snapshots
+            end
+
+          {:ok, released_snapshots}
 
         {:error, reason} ->
           {:error, reason}
@@ -610,6 +670,82 @@ defmodule Chronicle.ReadModels do
       value ->
         raise ArgumentError,
               "expected #{inspect(key)} to be a positive integer, got: #{inspect(value)}"
+    end
+  end
+
+  # Returns true when the given read model module is owned by a registered reducer.
+  # Only reducer-backed read models require client-side compliance release — for
+  # projection-backed models the server applies compliance rules before returning data.
+  defp reducer_backed?(model_module, config) do
+    config
+    |> Map.get(:reducers, [])
+    |> Enum.any?(fn reducer ->
+      function_exported?(reducer, :__chronicle_reducer__, 1) and
+        reducer.__chronicle_reducer__(:model) == model_module
+    end)
+  end
+
+  # Returns true when the model module declares at least one PII field.
+  defp has_pii?(model_module) do
+    function_exported?(model_module, :__chronicle_pii__, 0) and
+      not Enum.empty?(model_module.__chronicle_pii__())
+  end
+
+  # Resolves the data subject identifier from a read model instance.
+  # Checks the explicit @chronicle_subject field first, then falls back to :id.
+  # Returns nil when no usable subject value is found.
+  defp resolve_subject(instance, model_module) do
+    field =
+      if function_exported?(model_module, :__chronicle_read_model__, 1) do
+        model_module.__chronicle_read_model__(:subject) || :id
+      else
+        :id
+      end
+
+    case Map.get(instance, field) do
+      nil -> nil
+      "" -> nil
+      value -> to_string(value)
+    end
+  end
+
+  # Calls the Chronicle compliance Release endpoint to decrypt PII fields in a
+  # single read model instance. Returns the original instance on any error.
+  defp release_instance(nil, _model_module, _channel, _event_store, _namespace), do: nil
+
+  defp release_instance(instance, model_module, channel, event_store, namespace) do
+    if has_pii?(model_module) do
+      case resolve_subject(instance, model_module) do
+        nil ->
+          instance
+
+        subject ->
+          schema = JsonSchemaGenerator.generate(model_module, key_transform: :identity)
+          payload = instance |> Map.from_struct() |> Jason.encode!()
+
+          request =
+            struct(ReleaseRequest,
+              EventStore: event_store,
+              Namespace: namespace,
+              Subject: subject,
+              Schema: schema,
+              Payload: payload
+            )
+
+          case Compliance.Stub.release(channel, request) do
+            {:ok, response} ->
+              if Map.get(response, :HasError, false) do
+                instance
+              else
+                decode_model(model_module, Map.get(response, :Payload, "")) || instance
+              end
+
+            {:error, _} ->
+              instance
+          end
+      end
+    else
+      instance
     end
   end
 end
