@@ -126,13 +126,14 @@ defmodule Chronicle.ReadModels.ReadModel do
       Module.register_attribute(__MODULE__, :chronicle_projection_removed_with, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_from_every, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_pii, accumulate: true)
+      Module.register_attribute(__MODULE__, :chronicle_subject, [])
 
       @chronicle_read_model_id Keyword.get(opts, :id, __MODULE__ |> Module.split() |> List.last())
 
       import Chronicle.ReadModels.ReadModel,
         only: [from: 1, from: 2, join: 2, removed_with: 2, from_every: 1]
 
-      import Chronicle.Compliance, only: [pii: 1, pii: 2]
+      import Chronicle.Compliance, only: [pii: 1, pii: 2, subject: 1]
 
       @before_compile Chronicle.ReadModels.ReadModel
     end
@@ -203,6 +204,8 @@ defmodule Chronicle.ReadModels.ReadModel do
         do: not Enum.empty?(@chronicle_projection_from)
 
       def __chronicle_read_model__(:pii), do: Enum.reverse(@chronicle_pii)
+
+      def __chronicle_read_model__(:subject), do: @chronicle_subject
 
       @doc false
       def __chronicle_pii__, do: Enum.reverse(@chronicle_pii)

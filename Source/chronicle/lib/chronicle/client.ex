@@ -192,6 +192,7 @@ defmodule Chronicle.Client do
       event_store: event_store,
       namespace: namespace,
       event_types: event_types,
+      reducers: reducers,
       seeders: seeders,
       webhooks: webhooks,
       event_store_subscriptions: event_store_subscriptions

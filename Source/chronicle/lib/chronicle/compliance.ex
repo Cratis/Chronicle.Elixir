@@ -38,4 +38,33 @@ defmodule Chronicle.Compliance do
       @chronicle_pii {unquote(field), unquote(details)}
     end
   end
+
+  @doc """
+  Marks a struct field as the data subject identifier for GDPR compliance.
+
+  The subject field identifies the natural person whose data is encrypted in
+  PII fields. Chronicle uses this value as the key when calling the compliance
+  `Release` endpoint to decrypt PII fields on read model retrieval.
+
+  When no `subject/1` declaration is present, Chronicle falls back to the
+  field named `:id` as the subject identifier.
+
+  Only one subject field may be declared per module. A second call overwrites
+  the first.
+
+      defmodule MyApp.ReadModels.Customer do
+        use Chronicle.ReadModels.ReadModel
+
+        defstruct customer_id: nil, email: "", full_name: ""
+
+        subject :customer_id
+        pii :email
+        pii :full_name
+      end
+  """
+  defmacro subject(field) do
+    quote do
+      @chronicle_subject unquote(field)
+    end
+  end
 end
