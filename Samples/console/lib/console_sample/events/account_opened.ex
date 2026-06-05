@@ -2,17 +2,24 @@
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 defmodule ConsoleSample.Events.AccountOpened do
-  @moduledoc "Emitted when a new bank account is opened."
+  @moduledoc """
+  Current generation of the account-opened event.
 
-  use Chronicle.EventType, id: "account-opened"
+  Generation 2 adds `account_tier`. The console sample still appends the legacy
+  generation 1 event to demonstrate Chronicle upcasting it through the
+  registered migration.
+  """
+
+  use Chronicle.EventType, id: "account-opened", generation: 2
 
   unique_event_type()
 
-  defstruct account_id: nil, owner_name: nil, initial_balance: 0
+  defstruct account_id: nil, full_name: nil, initial_balance: 0, account_tier: "standard"
 
   @type t :: %__MODULE__{
           account_id: String.t(),
-          owner_name: String.t(),
-          initial_balance: number()
+          full_name: String.t(),
+          initial_balance: number(),
+          account_tier: String.t()
         }
 end

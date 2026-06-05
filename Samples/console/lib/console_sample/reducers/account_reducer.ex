@@ -29,13 +29,14 @@ defmodule ConsoleSample.Reducers.AccountReducer do
   def reduce(%AccountOpened{} = event, _model, _context) do
     summary = %AccountSummary{
       account_id: event.account_id,
-      owner_name: event.owner_name,
+      full_name: event.full_name,
+      account_tier: event.account_tier,
       balance: event.initial_balance,
       transaction_count: 0
     }
 
     Logger.info(
-      "[Reducer] AccountOpened → balance=#{summary.balance}, owner=#{summary.owner_name}"
+      "[Reducer] AccountOpened → balance=#{summary.balance}, owner=#{summary.full_name}, tier=#{summary.account_tier}"
     )
 
     summary

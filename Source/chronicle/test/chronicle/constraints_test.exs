@@ -15,7 +15,7 @@ defmodule Chronicle.ConstraintsTest do
     use Chronicle.EventType, id: "account-created-v1"
     defstruct [:email, :tenant_id]
 
-    unique [:email, :tenant_id], name: "email_per_tenant"
+    unique([:email, :tenant_id], name: "email_per_tenant")
   end
 
   defmodule UserDeleted do
@@ -70,11 +70,11 @@ defmodule Chronicle.ConstraintsTest do
       constraints = Chronicle.Constraints.from_event_types([AccountOpened])
 
       assert constraints == [
-              %{
-                type: :unique_event_type,
-                name: "account-opened-v1",
-                event_type_id: "account-opened-v1"
-              }
+               %{
+                 type: :unique_event_type,
+                 name: "account-opened-v1",
+                 event_type_id: "account-opened-v1"
+               }
              ]
     end
   end

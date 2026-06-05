@@ -12,6 +12,9 @@ defmodule Chronicle.Artifacts do
     * `__chronicle_reactor__/1`
     * `__chronicle_reducer__/1`
     * `__chronicle_read_model__/1`
+    * `__chronicle_webhook__/1`
+    * `__chronicle_event_store_subscription__/1`
+    * `__chronicle_migration__/1`
 
   The returned map can be fed directly into `Chronicle.Client` options.
   """
@@ -21,7 +24,10 @@ defmodule Chronicle.Artifacts do
           reactors: [module()],
           reducers: [module()],
           read_models: [module()],
-          seeders: [module()]
+          seeders: [module()],
+          webhooks: [module()],
+          event_store_subscriptions: [module()],
+          migrations: [module()]
         }
 
   @doc """
@@ -39,7 +45,16 @@ defmodule Chronicle.Artifacts do
 
     Enum.reduce(
       modules,
-      %{event_types: [], reactors: [], reducers: [], read_models: [], seeders: []},
+      %{
+        event_types: [],
+        reactors: [],
+        reducers: [],
+        read_models: [],
+        seeders: [],
+        webhooks: [],
+        event_store_subscriptions: [],
+        migrations: []
+      },
       fn module, acc ->
         if Code.ensure_loaded?(module) do
           acc
@@ -56,6 +71,17 @@ defmodule Chronicle.Artifacts do
             function_exported?(module, :__chronicle_read_model__, 1)
           )
           |> maybe_put(:seeders, module, function_exported?(module, :__chronicle_seeder__, 1))
+          |> maybe_put(:webhooks, module, function_exported?(module, :__chronicle_webhook__, 1))
+          |> maybe_put(
+            :event_store_subscriptions,
+            module,
+            function_exported?(module, :__chronicle_event_store_subscription__, 1)
+          )
+          |> maybe_put(
+            :migrations,
+            module,
+            function_exported?(module, :__chronicle_migration__, 1)
+          )
         else
           acc
         end
@@ -78,7 +104,16 @@ defmodule Chronicle.Artifacts do
 
     Enum.reduce(
       modules,
-      %{event_types: [], reactors: [], reducers: [], read_models: [], seeders: []},
+      %{
+        event_types: [],
+        reactors: [],
+        reducers: [],
+        read_models: [],
+        seeders: [],
+        webhooks: [],
+        event_store_subscriptions: [],
+        migrations: []
+      },
       fn module, acc ->
         acc
         |> maybe_put(
@@ -94,6 +129,17 @@ defmodule Chronicle.Artifacts do
           function_exported?(module, :__chronicle_read_model__, 1)
         )
         |> maybe_put(:seeders, module, function_exported?(module, :__chronicle_seeder__, 1))
+        |> maybe_put(:webhooks, module, function_exported?(module, :__chronicle_webhook__, 1))
+        |> maybe_put(
+          :event_store_subscriptions,
+          module,
+          function_exported?(module, :__chronicle_event_store_subscription__, 1)
+        )
+        |> maybe_put(
+          :migrations,
+          module,
+          function_exported?(module, :__chronicle_migration__, 1)
+        )
       end
     )
     |> Enum.map(fn {key, value} -> {key, Enum.reverse(value)} end)

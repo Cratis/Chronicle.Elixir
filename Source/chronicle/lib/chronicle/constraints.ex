@@ -139,7 +139,9 @@ defmodule Chronicle.Constraints do
     })
   end
 
-  defp build_constraint(%{type: :unique, name: name, event_definitions: event_definitions} = constraint) do
+  defp build_constraint(
+         %{type: :unique, name: name, event_definitions: event_definitions} = constraint
+       ) do
     definition =
       struct(OneOf_UniqueConstraintDefinition_UniqueEventTypeConstraintDefinition,
         Value0:
@@ -157,7 +159,9 @@ defmodule Chronicle.Constraints do
     )
   end
 
-  defp build_constraint(%{type: :unique_event_type, name: name, event_type_id: event_type_id} = constraint) do
+  defp build_constraint(
+         %{type: :unique_event_type, name: name, event_type_id: event_type_id} = constraint
+       ) do
     definition =
       struct(OneOf_UniqueConstraintDefinition_UniqueEventTypeConstraintDefinition,
         Value1: %{EventTypeId: event_type_id}
@@ -213,24 +217,39 @@ defmodule Chronicle.Constraints do
 
   defp normalize_unique_declaration({fields, opts}, event_type) when is_list(opts) do
     normalized_fields = normalize_fields(fields)
-    constraint_name = Keyword.get(opts, :name, default_constraint_name_for_fields(event_type, normalized_fields))
+
+    constraint_name =
+      Keyword.get(opts, :name, default_constraint_name_for_fields(event_type, normalized_fields))
+
     build_normalized_unique(constraint_name, event_type, normalized_fields)
   end
 
   defp normalize_unique_declaration(opts, event_type) when is_list(opts) do
     fields = Keyword.get(opts, :on, Keyword.get(opts, :field, []))
     normalized_fields = normalize_fields(fields)
-    constraint_name = Keyword.get(opts, :name, default_constraint_name_for_fields(event_type, normalized_fields))
+
+    constraint_name =
+      Keyword.get(opts, :name, default_constraint_name_for_fields(event_type, normalized_fields))
+
     build_normalized_unique(constraint_name, event_type, normalized_fields)
   end
 
   defp normalize_unique_declaration(fields, event_type) do
     normalized_fields = normalize_fields(fields)
-    build_normalized_unique(default_constraint_name_for_fields(event_type, normalized_fields), event_type, normalized_fields)
+
+    build_normalized_unique(
+      default_constraint_name_for_fields(event_type, normalized_fields),
+      event_type,
+      normalized_fields
+    )
   end
 
   defp normalize_unique_event_type_declaration(opts, event_type) when is_list(opts) do
-    name = normalize_constraint_name(Keyword.get(opts, :name, event_type.__chronicle_event_type__(:id)))
+    name =
+      normalize_constraint_name(
+        Keyword.get(opts, :name, event_type.__chronicle_event_type__(:id))
+      )
+
     %{name: name, event_type_id: event_type.__chronicle_event_type__(:id)}
   end
 
@@ -266,7 +285,8 @@ defmodule Chronicle.Constraints do
     Map.put(definition, :removed_with_event_type, event_type)
   end
 
-  defp removed_with_event_type_id(%{removed_with_event_type: event_type}) when not is_nil(event_type) do
+  defp removed_with_event_type_id(%{removed_with_event_type: event_type})
+       when not is_nil(event_type) do
     event_type.__chronicle_event_type__(:id)
   end
 

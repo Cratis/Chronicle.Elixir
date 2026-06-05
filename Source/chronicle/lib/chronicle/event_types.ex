@@ -11,39 +11,53 @@ defmodule Chronicle.EventTypes do
   ## Example
 
       {:ok, channel} = Chronicle.Connections.Connection.channel(:my_conn)
-      :ok = Chronicle.EventTypes.register(channel, "my-store", [MyApp.Events.AccountOpened])
+
+      :ok =
+        Chronicle.EventTypes.register(
+          channel,
+          "my-store",
+          [MyApp.Events.AccountOpened],
+          [MyApp.Migrations.AccountOpenedV2Migration]
+        )
   """
+
+  alias Chronicle.Events.Migrators
 
   alias Cratis.Chronicle.Contracts.Events.{
     EventTypes,
     RegisterEventTypesRequest,
     EventTypeRegistration,
-    EventType
+    EventType,
+    EventTypeGenerationDefinition,
+    EventTypeMigrationDefinition
   }
 
-  @doc """
-  Registers a list of event type modules with Chronicle.
+  @unknown_generation_schema "{}"
 
-  Each module must `use Chronicle.EventType`. Generates a minimal JSON schema
-  for each event type based on its struct fields.
+  @doc """
+  Registers event type modules and their migrations with Chronicle.
+
+  Each event type module must `use Chronicle.EventType`. Chronicle groups all
+  known generations of the same event type into a single registration, includes
+  schemas for each known generation, and attaches any registered migrations.
 
   Returns `:ok` on success or `{:error, reason}` on failure.
   """
-  @spec register(term(), String.t(), [module()]) :: :ok | {:error, term()}
-  def register(_channel, _event_store, []), do: :ok
+  @spec register(term(), String.t(), [module()], [module()]) :: :ok | {:error, term()}
+  def register(channel, event_store, event_type_modules, migration_modules \\ [])
 
-  def register(channel, event_store, event_type_modules) when is_list(event_type_modules) do
+  def register(_channel, _event_store, [], _migration_modules), do: :ok
+
+  def register(channel, event_store, event_type_modules, migration_modules)
+      when is_list(event_type_modules) and is_list(migration_modules) do
+    migrators = Migrators.new(migration_modules)
+
     registrations =
-      Enum.map(event_type_modules, fn module ->
-        struct(EventTypeRegistration,
-          Type:
-            struct(EventType,
-              Id: module.__chronicle_event_type__(:id),
-              Generation: module.__chronicle_event_type__(:generation)
-            ),
-          Schema: generate_schema(module),
-          EventStore: event_store
-        )
+      event_type_modules
+      |> Enum.uniq()
+      |> Enum.group_by(& &1.__chronicle_event_type__(:id))
+      |> Enum.map(fn {_event_type_id, modules} ->
+        build_registration(modules, event_store, migrators)
       end)
 
     request =
@@ -56,6 +70,74 @@ defmodule Chronicle.EventTypes do
     case EventTypes.Stub.register(channel, request) do
       {:ok, _} -> :ok
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp build_registration(modules, event_store, migrators) do
+    sorted_modules = Enum.sort_by(modules, & &1.__chronicle_event_type__(:generation))
+    latest_module = List.last(sorted_modules)
+    event_type_id = latest_module.__chronicle_event_type__(:id)
+    latest_generation = latest_module.__chronicle_event_type__(:generation)
+
+    generation_definitions =
+      sorted_modules
+      |> Enum.map(fn module ->
+        struct(EventTypeGenerationDefinition,
+          Generation: module.__chronicle_event_type__(:generation),
+          Schema: generate_schema(module)
+        )
+      end)
+      |> append_unknown_generations(Migrators.generations_for(migrators, event_type_id))
+
+    migration_definitions =
+      migrators
+      |> Migrators.for_event_type(event_type_id)
+      |> Enum.map(fn migration_module ->
+        definition = Migrators.definition_for(migration_module)
+
+        struct(EventTypeMigrationDefinition,
+          FromGeneration: definition.from_generation,
+          ToGeneration: definition.to_generation,
+          UpcastJmesPath: definition.upcast_jmes_path,
+          DowncastJmesPath: definition.downcast_jmes_path
+        )
+      end)
+
+    struct(EventTypeRegistration,
+      Type:
+        struct(EventType,
+          Id: event_type_id,
+          Generation: latest_generation
+        ),
+      Schema: generate_schema(latest_module),
+      Generations: generation_definitions,
+      Migrations: migration_definitions,
+      EventStore: event_store
+    )
+  end
+
+  defp append_unknown_generations(generation_definitions, generations) do
+    generation_definitions ++
+      Enum.flat_map(generations, fn generation ->
+        case Enum.any?(generation_definitions, &generation_definition_matches?(&1, generation)) do
+          true ->
+            []
+
+          false ->
+            [
+              struct(EventTypeGenerationDefinition,
+                Generation: generation,
+                Schema: @unknown_generation_schema
+              )
+            ]
+        end
+      end)
+  end
+
+  defp generation_definition_matches?(definition, generation) do
+    case Map.get(definition, :Generation, Map.get(definition, :generation)) do
+      ^generation -> true
+      _ -> false
     end
   end
 

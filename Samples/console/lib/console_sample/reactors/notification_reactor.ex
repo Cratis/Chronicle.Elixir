@@ -20,8 +20,8 @@ defmodule ConsoleSample.Reactors.NotificationReactor do
   @impl true
   def handle(%ConsoleSample.Events.AccountOpened{} = event, context) do
     Logger.info(
-      "[Reactor] Account opened: #{event.account_id} for #{event.owner_name} " <>
-        "with initial balance #{event.initial_balance} " <>
+      "[Reactor] Account opened: #{event.account_id} for #{event.full_name} " <>
+        "with initial balance #{event.initial_balance} and tier #{event.account_tier} " <>
         "(seq=#{context.sequence_number})"
     )
 

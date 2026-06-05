@@ -14,11 +14,12 @@ defmodule ConsoleSample.ReadModels.Account do
 
   alias ConsoleSample.Events.{AccountOpened, FundsDeposited, FundsWithdrawn}
 
-  defstruct account_id: nil, owner_name: nil, balance: 0, transaction_count: 0
+  defstruct account_id: nil, full_name: nil, account_tier: nil, balance: 0, transaction_count: 0
 
   @type t :: %__MODULE__{
           account_id: String.t() | nil,
-          owner_name: String.t() | nil,
+          full_name: String.t() | nil,
+          account_tier: String.t() | nil,
           balance: number(),
           transaction_count: non_neg_integer()
         }
@@ -26,7 +27,8 @@ defmodule ConsoleSample.ReadModels.Account do
   from(AccountOpened,
     set: [
       account_id: :event_source_id,
-      owner_name: :owner_name,
+      full_name: :full_name,
+      account_tier: :account_tier,
       balance: :initial_balance
     ]
   )
