@@ -72,9 +72,9 @@ defmodule Chronicle.Connections.ConnectionTest do
       conn = start(connect_fun: connect_fun, auto_connect: true)
 
       assert Connection.connect(conn, 2_000) == :ok
-      assert_received {:attempt, 0}
-      assert_received {:attempt, 1}
-      assert_received {:attempt, 2}
+      assert_receive {:attempt, 0}, 1_000
+      assert_receive {:attempt, 1}, 1_000
+      assert_receive {:attempt, 2}, 1_000
     end
   end
 
@@ -107,7 +107,7 @@ defmodule Chronicle.Connections.ConnectionTest do
         start(connect_fun: connect_fun, disconnect_fun: fn _ch -> :ok end, auto_connect: true)
 
       assert Connection.connect(conn, 1_000) == :ok
-      assert_received :connected
+      assert_receive :connected, 1_000
 
       send(conn, {:gun_down, conn_pid, :http, :closed})
 

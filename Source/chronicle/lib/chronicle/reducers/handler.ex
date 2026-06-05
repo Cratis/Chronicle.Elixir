@@ -373,6 +373,8 @@ defmodule Chronicle.Reducers.Handler do
       GRPC.Stub.end_stream(stream)
     rescue
       _ -> :ok
+    catch
+      _, _ -> :ok
     end
   end
 

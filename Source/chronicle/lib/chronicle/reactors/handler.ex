@@ -322,6 +322,8 @@ defmodule Chronicle.Reactors.Handler do
       GRPC.Stub.end_stream(stream)
     rescue
       _ -> :ok
+    catch
+      _, _ -> :ok
     end
   end
 
