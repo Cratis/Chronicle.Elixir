@@ -1,7 +1,7 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.Session do
+defmodule Chronicle.Connections.Session do
   @moduledoc false
 
   # Establishes and maintains a Chronicle client session via
@@ -17,7 +17,7 @@ defmodule Chronicle.Session do
 
   require Logger
 
-  alias Chronicle.Connections.Connection
+  alias Chronicle.Connections.{Connection, Lifecycle}
 
   alias Cratis.Chronicle.Contracts.Clients.{
     ConnectionService,
@@ -70,12 +70,13 @@ defmodule Chronicle.Session do
   def init(opts) do
     state = %{
       connection: Keyword.fetch!(opts, :connection),
+      lifecycle: Keyword.get(opts, :lifecycle),
       connection_id: generate_connection_id(),
       keepalive_task: nil,
       ready?: false
     }
 
-    send(self(), :connect)
+    if Keyword.get(opts, :auto_connect, true), do: send(self(), :connect)
     {:ok, state}
   end
 
@@ -109,12 +110,16 @@ defmodule Chronicle.Session do
     end
   end
 
-  def handle_info(:keepalive_received, state) do
+  def handle_info(:keepalive_received, %{ready?: false} = state) do
+    notify_connected(state)
     {:noreply, %{state | ready?: true}}
   end
 
+  def handle_info(:keepalive_received, state), do: {:noreply, state}
+
   def handle_info({:session_down, reason}, state) do
     Logger.warning("Chronicle session dropped: #{inspect(reason)}, reconnecting...")
+    notify_disconnected(state)
     {:noreply, schedule_reconnect(%{state | keepalive_task: nil, ready?: false})}
   end
 
@@ -123,6 +128,7 @@ defmodule Chronicle.Session do
         %{keepalive_task: %Task{pid: pid}} = state
       ) do
     Logger.warning("Chronicle session task exited: #{inspect(reason)}")
+    notify_disconnected(state)
     {:noreply, schedule_reconnect(%{state | keepalive_task: nil, ready?: false})}
   end
 
@@ -130,9 +136,13 @@ defmodule Chronicle.Session do
 
   defp start_session(channel, state) do
     try do
+      # The lifecycle owns the connection id and rotates it on every disconnect,
+      # so read the current id at connect time to use a fresh one after a drop.
+      connection_id = current_connection_id(state)
+
       request =
         struct(ConnectRequest,
-          ConnectionId: state.connection_id,
+          ConnectionId: connection_id,
           ClientVersion: "1.0.0",
           IsRunningWithDebugger: false
         )
@@ -141,7 +151,7 @@ defmodule Chronicle.Session do
         {:ok, reply_stream} ->
           handler = self()
           task = Task.async(fn -> keepalive_loop(handler, reply_stream) end)
-          {:ok, %{state | keepalive_task: task}}
+          {:ok, %{state | keepalive_task: task, connection_id: connection_id}}
 
         {:error, reason} ->
           {:error, reason}
@@ -150,6 +160,18 @@ defmodule Chronicle.Session do
       e -> {:error, e}
     end
   end
+
+  defp current_connection_id(%{lifecycle: nil, connection_id: connection_id}), do: connection_id
+  defp current_connection_id(%{lifecycle: lifecycle}), do: Lifecycle.connection_id(lifecycle)
+
+  defp notify_connected(%{lifecycle: nil}), do: :ok
+
+  defp notify_connected(%{lifecycle: lifecycle, connection_id: connection_id}) do
+    Lifecycle.connected(lifecycle, connection_id)
+  end
+
+  defp notify_disconnected(%{lifecycle: nil}), do: :ok
+  defp notify_disconnected(%{lifecycle: lifecycle}), do: Lifecycle.disconnected(lifecycle)
 
   defp keepalive_loop(handler, reply_stream) do
     Enum.each(reply_stream, fn

@@ -1,20 +1,28 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.Projections.Registrar do
+defmodule Chronicle.Registration.Coordinator do
   @moduledoc false
 
-  # GenServer that ensures the event store and namespace exist, then registers
-  # event types and model-bound projections (defined via `use Chronicle.ReadModel`
-  # with `from/2`, `join/2`, etc.) with Chronicle on startup.
+  # Drives the ordered registration of base artifacts on every (re)connect,
+  # mirroring the C# client's EventStore.RegisterAll. It subscribes to the
+  # connection lifecycle and, on the `:connected` phase, ensures the event store
+  # and namespace exist and registers event types, constraints, read models
+  # (including reducer read-model/observer definitions) and projections. Only
+  # after this base registration succeeds does it advance the lifecycle to the
+  # `:registered` phase — the signal that lets reactors, reducers, seeders and
+  # the webhook/subscription registrars safely register. This ordering is what
+  # prevents observers from registering their observation streams before their
+  # server-side definitions exist.
 
   use GenServer, restart: :permanent
 
   require Logger
 
-  alias Chronicle.Connections.Connection
-  alias Chronicle.Constraints
-  alias Chronicle.EventTypes
+  alias Chronicle.Connections.{Connection, Lifecycle}
+  alias Chronicle.Events.Constraints
+  alias Chronicle.Events.EventTypes
+  alias Chronicle.Schemas.JsonSchemaGenerator
 
   alias Cratis.Chronicle.Contracts.{EventStores, Namespaces, EnsureEventStore, EnsureNamespace}
 
@@ -57,42 +65,69 @@ defmodule Chronicle.Projections.Registrar do
   def init(opts) do
     state = %{
       connection: Keyword.fetch!(opts, :connection),
+      lifecycle: Keyword.get(opts, :lifecycle),
       event_store: Keyword.fetch!(opts, :event_store),
       namespace: Keyword.get(opts, :namespace, "Default"),
       event_types: Keyword.get(opts, :event_types, []),
       migrations: Keyword.get(opts, :migrations, []),
       read_models: Keyword.get(opts, :read_models, []),
-      reducers: Keyword.get(opts, :reducers, [])
+      reducers: Keyword.get(opts, :reducers, []),
+      register_fun: Keyword.get(opts, :register_fun, &default_register/1),
+      retry_timer: nil,
+      registered_done?: false
     }
 
-    send(self(), :register)
+    if state.lifecycle do
+      Lifecycle.subscribe(state.lifecycle)
+    else
+      # Standalone (no lifecycle): register immediately, as before.
+      send(self(), :register)
+    end
+
     {:ok, state}
   end
 
   @impl true
+  def handle_info({:chronicle_lifecycle, :connected, _connection_id}, state) do
+    cancel_timer(state.retry_timer)
+    send(self(), :register)
+    {:noreply, %{state | retry_timer: nil, registered_done?: false}}
+  end
+
+  def handle_info({:chronicle_lifecycle, :disconnected, _connection_id}, state) do
+    cancel_timer(state.retry_timer)
+    {:noreply, %{state | retry_timer: nil, registered_done?: false}}
+  end
+
+  def handle_info({:chronicle_lifecycle, :registered, _connection_id}, state) do
+    # We are the source of this transition — nothing to do.
+    {:noreply, state}
+  end
+
   def handle_info(:register, state) do
-    case Connection.channel(state.connection) do
-      {:ok, channel} ->
-        case register_all(channel, state) do
-          :ok ->
-            {:noreply, state}
+    case state.register_fun.(state) do
+      :ok ->
+        if state.lifecycle, do: Lifecycle.registered(state.lifecycle)
+        {:noreply, %{state | registered_done?: true, retry_timer: nil}}
 
-          {:error, reason} ->
-            Logger.warning(
-              "Chronicle registration failed: #{inspect(reason)}, retrying in #{@retry_delay}ms"
-            )
+      {:error, reason} ->
+        Logger.warning(
+          "Chronicle registration failed: #{inspect(reason)}, retrying in #{@retry_delay}ms"
+        )
 
-            Process.send_after(self(), :register, @retry_delay)
-            {:noreply, state}
-        end
-
-      {:error, _} ->
-        Process.send_after(self(), :register, @retry_delay)
-        {:noreply, state}
+        timer = Process.send_after(self(), :register, @retry_delay)
+        {:noreply, %{state | retry_timer: timer}}
     end
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
+
+  defp default_register(state) do
+    case Connection.channel(state.connection) do
+      {:ok, channel} -> register_all(channel, state)
+      {:error, _} = error -> error
+    end
+  end
 
   defp register_all(channel, state) do
     # Collect event types from projection read models
@@ -235,27 +270,12 @@ defmodule Chronicle.Projections.Registrar do
     end
   end
 
+  # Read model state is stored with its struct field names (snake_case), so the
+  # schema uses identity key transform. PII-adorned fields carry compliance
+  # metadata into the schema.
   defp generate_read_model_schema(module) do
-    fields =
-      if function_exported?(module, :__struct__, 0) do
-        module.__struct__()
-        |> Map.to_list()
-        |> Enum.reject(fn {k, _} -> k == :__struct__ end)
-        |> Enum.map(fn {key, default_val} ->
-          {Atom.to_string(key), read_model_property_schema(default_val)}
-        end)
-        |> Map.new()
-      else
-        %{}
-      end
-
-    Jason.encode!(%{"type" => "object", "properties" => fields})
+    JsonSchemaGenerator.generate(module, key_transform: :identity)
   end
-
-  defp read_model_property_schema(v) when is_integer(v), do: %{"type" => "number"}
-  defp read_model_property_schema(v) when is_float(v), do: %{"type" => "number"}
-  defp read_model_property_schema(v) when is_boolean(v), do: %{"type" => "boolean"}
-  defp read_model_property_schema(_), do: %{"type" => "string"}
 
   defp register_projections(_channel, %{read_models: []}), do: :ok
 
@@ -418,4 +438,7 @@ defmodule Chronicle.Projections.Registrar do
       Generation: event_module.__chronicle_event_type__(:generation)
     )
   end
+
+  defp cancel_timer(nil), do: :ok
+  defp cancel_timer(timer), do: Process.cancel_timer(timer)
 end

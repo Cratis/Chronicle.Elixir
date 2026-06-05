@@ -15,7 +15,7 @@ defmodule Chronicle.Reactors.Handler do
 
   require Logger
 
-  alias Chronicle.Connections.Connection
+  alias Chronicle.Connections.{Connection, Lifecycle}
 
   alias Cratis.Chronicle.Contracts.Observation.Reactors.{
     Reactors,
@@ -32,8 +32,8 @@ defmodule Chronicle.Reactors.Handler do
   alias Cratis.Chronicle.Contracts.Observation.Reactors.OneOf_RegisterReactor_ReactorResult,
     as: OneOf
 
-  @reconnect_base_delay 1_000
-  @reconnect_max_delay 30_000
+  # Stream-level reconnect delay (matches the C# client's per-stream retry).
+  @stream_reconnect_delay 2_000
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts)
@@ -52,38 +52,44 @@ defmodule Chronicle.Reactors.Handler do
     state = %{
       module: module,
       connection: Keyword.fetch!(opts, :connection),
-      session: Keyword.get(opts, :session),
+      lifecycle: Keyword.get(opts, :lifecycle),
       event_store: Keyword.fetch!(opts, :event_store),
       namespace: Keyword.fetch!(opts, :namespace),
       event_type_map: event_type_map,
+      establish_fun: Keyword.get(opts, :establish_fun, &default_establish/2),
+      connection_id: nil,
       stream: nil,
       receiver_task: nil,
-      reconnect_attempt: 0,
       reconnect_timer: nil
     }
 
-    send(self(), :connect)
+    if state.lifecycle, do: Lifecycle.subscribe(state.lifecycle)
+
     {:ok, state}
   end
 
   @impl true
-  def handle_info(:connect, state) do
+  def handle_info({:chronicle_lifecycle, :registered, connection_id}, state) do
+    state = teardown(%{state | connection_id: connection_id})
+    {:noreply, establish(state)}
+  end
+
+  def handle_info({:chronicle_lifecycle, :connected, _connection_id}, state) do
+    # Connected but not yet registered — wait for :registered before observing.
+    {:noreply, state}
+  end
+
+  def handle_info({:chronicle_lifecycle, :disconnected, _connection_id}, state) do
+    {:noreply, teardown(state)}
+  end
+
+  def handle_info(:reopen, state) do
     state = %{state | reconnect_timer: nil}
 
-    with :ok <- wait_for_session(state),
-         {:ok, channel} <- Connection.channel(state.connection),
-         {:ok, new_state} <- start_stream(channel, state) do
-      {:noreply, new_state}
+    if registered?(state) do
+      {:noreply, establish(teardown(state))}
     else
-      {:error, :session_timeout} ->
-        Logger.warning("Reactor #{state.module} timed out waiting for session, retrying...")
-        {:noreply, schedule_reconnect(state)}
-
-      {:error, _reason} ->
-        {:noreply, schedule_reconnect(state)}
-
-      :error ->
-        {:noreply, schedule_reconnect(state)}
+      {:noreply, state}
     end
   end
 
@@ -126,40 +132,49 @@ defmodule Chronicle.Reactors.Handler do
 
   def handle_info({:stream_down, reason}, state) do
     Logger.warning("Reactor #{state.module} stream disconnected: #{inspect(reason)}")
-    cleanup_stream(state)
-    {:noreply, schedule_reconnect(%{state | stream: nil, receiver_task: nil})}
+    {:noreply, schedule_stream_reconnect(teardown(state))}
   end
 
   def handle_info({:DOWN, _ref, :process, pid, reason}, %{receiver_task: %Task{pid: pid}} = state) do
     Logger.warning("Reactor #{state.module} receiver task exited: #{inspect(reason)}")
-    {:noreply, schedule_reconnect(%{state | stream: nil, receiver_task: nil})}
+    {:noreply, schedule_stream_reconnect(%{state | stream: nil, receiver_task: nil})}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
 
-  defp wait_for_session(%{session: nil}), do: :ok
+  # Opens the observation stream for the current connection id, returning the
+  # updated state. On failure it schedules a stream-level reconnect.
+  defp establish(state) do
+    case state.establish_fun.(state, state.connection_id) do
+      {:ok, stream, task} ->
+        %{state | stream: stream, receiver_task: task, reconnect_timer: nil}
 
-  defp wait_for_session(%{session: session_name}) do
-    case Chronicle.Session.wait_until_ready(session_name, 10_000) do
-      :ok -> :ok
-      {:error, :timeout} -> {:error, :session_timeout}
+      {:error, reason} ->
+        Logger.warning("Reactor #{state.module} failed to register: #{inspect(reason)}")
+        schedule_stream_reconnect(state)
     end
   end
 
-  defp start_stream(channel, state) do
-    try do
-      stream = Reactors.Stub.observe(channel)
-      registration = build_registration(state)
-      GRPC.Stub.send_request(stream, registration)
+  defp default_establish(state, connection_id) do
+    case Connection.channel(state.connection) do
+      {:ok, channel} ->
+        stream = Reactors.Stub.observe(channel)
+        registration = build_registration(state, connection_id)
+        GRPC.Stub.send_request(stream, registration)
 
-      handler = self()
-      task = Task.async(fn -> receive_loop(handler, stream) end)
+        handler = self()
+        task = Task.async(fn -> receive_loop(handler, stream) end)
+        {:ok, stream, task}
 
-      {:ok, %{state | stream: stream, receiver_task: task, reconnect_attempt: 0}}
-    rescue
-      e -> {:error, e}
+      {:error, _} = error ->
+        error
     end
+  rescue
+    e -> {:error, e}
   end
+
+  defp registered?(%{lifecycle: nil}), do: true
+  defp registered?(%{lifecycle: lifecycle}), do: Lifecycle.phase(lifecycle) == :registered
 
   defp receive_loop(handler, stream) do
     case GRPC.Stub.recv(stream) do
@@ -177,7 +192,7 @@ defmodule Chronicle.Reactors.Handler do
     end
   end
 
-  defp build_registration(state) do
+  defp build_registration(state, conn_id) do
     event_types =
       Enum.map(state.event_type_map, fn {id, module} ->
         struct(EventTypeWithKeyExpression,
@@ -191,11 +206,6 @@ defmodule Chronicle.Reactors.Handler do
       end)
 
     reactor_id = state.module.__chronicle_reactor__(:id)
-
-    conn_id =
-      if state.session,
-        do: Chronicle.Session.connection_id(state.session),
-        else: generate_connection_id()
 
     struct(ReactorMessage,
       Content:
@@ -288,14 +298,21 @@ defmodule Chronicle.Reactors.Handler do
     }
   end
 
-  defp schedule_reconnect(state) do
-    delay =
-      @reconnect_base_delay
-      |> Kernel.*(Integer.pow(2, state.reconnect_attempt))
-      |> min(@reconnect_max_delay)
+  defp schedule_stream_reconnect(%{reconnect_timer: timer} = state) when not is_nil(timer),
+    do: state
 
-    timer = Process.send_after(self(), :connect, delay)
-    %{state | reconnect_attempt: state.reconnect_attempt + 1, reconnect_timer: timer}
+  defp schedule_stream_reconnect(state) do
+    timer = Process.send_after(self(), :reopen, @stream_reconnect_delay)
+    %{state | reconnect_timer: timer}
+  end
+
+  # Tears down the current observation stream and receiver task, returning a
+  # clean state ready to (re)establish.
+  defp teardown(state) do
+    cleanup_stream(state)
+    shutdown_task(state.receiver_task)
+    cancel_timer(state.reconnect_timer)
+    %{state | stream: nil, receiver_task: nil, reconnect_timer: nil}
   end
 
   defp cleanup_stream(%{stream: nil}), do: :ok
@@ -308,14 +325,17 @@ defmodule Chronicle.Reactors.Handler do
     end
   end
 
+  defp shutdown_task(nil), do: :ok
+  defp shutdown_task(%Task{} = task), do: Task.shutdown(task, :brutal_kill)
+  defp shutdown_task(_), do: :ok
+
+  defp cancel_timer(nil), do: :ok
+  defp cancel_timer(timer), do: Process.cancel_timer(timer)
+
   # ObservationState enum: Success = 1, Failed = 2
   defp encode_observation_state(:success), do: 1
   defp encode_observation_state(:failed), do: 2
 
   defp format_stack_trace(%{__exception__: true} = exception), do: Exception.message(exception)
   defp format_stack_trace(reason), do: inspect(reason)
-
-  defp generate_connection_id do
-    :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
-  end
 end
