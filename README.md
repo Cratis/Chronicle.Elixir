@@ -406,6 +406,15 @@ mix docs
 open doc/index.html
 ```
 
+## Comprehensive Guides
+
+For detailed information on specific features, see:
+
+- **[CONSTRAINTS.md](CONSTRAINTS.md)** — Model-bound unique constraints and constraint removal
+- **[CONTEXT.md](CONTEXT.md)** — Correlation IDs, identity tracking, and causation chains
+- **[EVENT_SEQUENCES.md](EVENT_SEQUENCES.md)** — Organizing events into separate logical streams
+- **[EVENT_STORES.md](EVENT_STORES.md)** — Discovering event stores and namespaces
+
 ## Package structure
 
 ```
@@ -419,14 +428,21 @@ Source/
           connection.ex
         client.ex         # Supervisor entry point
         artifacts.ex      # Artifact auto-discovery helpers
-        event_type.ex     # use Chronicle.EventType macro
+        event_type.ex     # use Chronicle.EventType macro with constraints
         reactor.ex        # use Chronicle.Reactor behaviour
         reducer.ex        # use Chronicle.Reducer behaviour
         read_model.ex     # use Chronicle.ReadModel macro
-        event_log.ex      # Append and query events
+        event_log.ex      # Append and query events with context
         event_types.ex    # Register event types with Chronicle
-        constraints.ex    # Register event constraints
+        constraints.ex    # Constraint discovery and registration
+        event_stores.ex   # Event store and namespace discovery
         read_models.ex    # Query read model instances
+        correlation_id.ex # Correlation ID values
+        correlation_id_manager.ex  # Process-scoped correlation
+        identity.ex       # Identity values
+        identity_provider.ex       # Process-scoped identity
+        causation_entry.ex         # Causation chain entries
+        causation_manager.ex       # Process-scoped causation building
         reactors/
           handler.ex      # gRPC streaming reactor handler
         reducers/
