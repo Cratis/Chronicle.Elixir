@@ -94,11 +94,15 @@ defmodule Chronicle do
   ## Modules
 
     * `Chronicle.Client` — the main supervisor; start it in your supervision tree
+    * `Chronicle.CorrelationId` / `Chronicle.CorrelationIdManager` — correlate operations
+    * `Chronicle.Identity` / `Chronicle.IdentityProvider` — track who caused state changes
+    * `Chronicle.CausationType`, `Chronicle.CausationEntry`, `Chronicle.CausationManager` — audit causation chains
     * `Chronicle.EventType` — macro for defining event types
     * `Chronicle.Reactor` — behaviour for event reactors
     * `Chronicle.Reducer` — behaviour for read model reducers
     * `Chronicle.ReadModel` — macro for read model structs with embedded projection DSL
     * `Chronicle.EventLog` — append and query events
+    * `Chronicle.EventStores` — list event stores and namespaces
     * `Chronicle.ReadModels` — query read model instances
     * `Chronicle.Connections.ConnectionString` — parse and format connection strings
     * `Chronicle.Connections.Connection` — resilient gRPC channel management
@@ -113,8 +117,12 @@ defmodule Chronicle do
 
     * `:client` — the client name (default: `Chronicle.Client`)
     * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence id (default: `"event-log"`)
     * `:tags` — list of tag strings
     * `:subject` — the identity subject string
+    * `:correlation_id` — `Chronicle.CorrelationId` (or id string) override
+    * `:identity` — `Chronicle.Identity` override
+    * `:causation` — list of `Chronicle.CausationEntry` overrides
   """
   @spec append(String.t(), struct(), keyword()) :: :ok | {:error, term()}
   defdelegate append(event_source_id, event, opts \\ []), to: Chronicle.EventLog
@@ -144,4 +152,67 @@ defmodule Chronicle do
   """
   @spec all(module(), keyword()) :: {:ok, [struct()]} | {:error, term()}
   defdelegate all(model_module, opts \\ []), to: Chronicle.ReadModels
+
+  @doc """
+  Returns all event store names.
+  """
+  @spec get_event_stores(keyword()) :: {:ok, [String.t()]} | {:error, term()}
+  defdelegate get_event_stores(opts \\ []), to: Chronicle.EventStores, as: :get_all
+
+  @doc """
+  Returns all namespaces for an event store.
+
+  Uses the configured client event store by default.
+  """
+  @spec get_namespaces(keyword()) :: {:ok, [String.t()]} | {:error, term()}
+  defdelegate get_namespaces(opts \\ []), to: Chronicle.EventStores
+
+  @doc """
+  Gets the tail sequence number for an event sequence.
+  """
+  @spec get_tail_sequence_number(String.t() | nil, keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  defdelegate get_tail_sequence_number(event_source_id \\ nil, opts \\ []), to: Chronicle.EventLog
+
+  @doc """
+  Checks whether there are events for an event source id in an event sequence.
+  """
+  @spec has_events_for?(String.t(), keyword()) :: {:ok, boolean()} | {:error, term()}
+  defdelegate has_events_for?(event_source_id, opts \\ []), to: Chronicle.EventLog
+
+  @doc """
+  Gets the current process correlation id.
+  """
+  @spec current_correlation_id() :: Chronicle.CorrelationId.t()
+  defdelegate current_correlation_id(), to: Chronicle.CorrelationIdManager, as: :current
+
+  @doc """
+  Sets the current process correlation id.
+  """
+  @spec set_correlation_id(Chronicle.CorrelationId.t() | String.t()) :: Chronicle.CorrelationId.t()
+  defdelegate set_correlation_id(correlation_id), to: Chronicle.CorrelationIdManager, as: :set_current
+
+  @doc """
+  Clears the current process correlation id.
+  """
+  @spec clear_correlation_id() :: Chronicle.CorrelationId.t()
+  defdelegate clear_correlation_id(), to: Chronicle.CorrelationIdManager, as: :clear
+
+  @doc """
+  Gets the current process identity.
+  """
+  @spec current_identity() :: Chronicle.Identity.t()
+  defdelegate current_identity(), to: Chronicle.IdentityProvider, as: :get_current
+
+  @doc """
+  Sets the current process identity.
+  """
+  @spec set_identity(Chronicle.Identity.t()) :: Chronicle.Identity.t()
+  defdelegate set_identity(identity), to: Chronicle.IdentityProvider, as: :set_current_identity
+
+  @doc """
+  Clears the current process identity.
+  """
+  @spec clear_identity() :: :ok
+  defdelegate clear_identity(), to: Chronicle.IdentityProvider, as: :clear_current_identity
 end

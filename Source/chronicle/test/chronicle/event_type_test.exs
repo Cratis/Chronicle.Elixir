@@ -14,6 +14,15 @@ defmodule Chronicle.EventTypeTest do
     defstruct [:data]
   end
 
+  defmodule TestEventWithConstraints do
+    use Chronicle.EventType, id: "test-event-constraints"
+    defstruct [:email]
+
+    @unique :email
+    unique_event_type()
+    @remove_constraint :email
+  end
+
   describe "use Chronicle.EventType" do
     test "exposes event type id" do
       assert TestEvent.__chronicle_event_type__(:id) == "test-event-v1"
@@ -29,6 +38,14 @@ defmodule Chronicle.EventTypeTest do
 
     test "implements Chronicle.EventType behaviour" do
       assert function_exported?(TestEvent, :__chronicle_event_type__, 1)
+    end
+
+    test "exposes declared constraints" do
+      assert TestEventWithConstraints.__chronicle_event_type__(:constraints) == %{
+               unique: [:email],
+               unique_event_type: [[]],
+               remove_constraint: [:email]
+             }
     end
   end
 end

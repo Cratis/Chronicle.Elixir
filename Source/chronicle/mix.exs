@@ -58,7 +58,21 @@ defmodule Chronicle.MixProject do
       extras: ["README.md"],
       groups_for_modules: [
         Connections: [Chronicle.Connections.ConnectionString, Chronicle.Connections.Connection],
-        "Event Sourcing": [Chronicle.EventType, Chronicle.EventLog, Chronicle.EventTypes],
+        Context: [
+          Chronicle.CorrelationId,
+          Chronicle.CorrelationIdManager,
+          Chronicle.Identity,
+          Chronicle.IdentityProvider,
+          Chronicle.CausationType,
+          Chronicle.CausationEntry,
+          Chronicle.CausationManager
+        ],
+        "Event Sourcing": [
+          Chronicle.EventType,
+          Chronicle.EventLog,
+          Chronicle.EventTypes,
+          Chronicle.EventStores
+        ],
         Observers: [Chronicle.Reactor, Chronicle.Reducer],
         "Read Models": [Chronicle.ReadModel, Chronicle.ReadModels],
         Constraints: [Chronicle.Constraints]

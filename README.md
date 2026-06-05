@@ -12,6 +12,8 @@ Key features:
 - **`use Chronicle.Reactor`** — react to events with side effects
 - **`use Chronicle.Reducer`** — build read models by folding events into state
 - **`use Chronicle.ReadModel`** — define read models with model-bound projections
+- **Model-bound constraints** — declare unique and unique-event-type constraints on event types
+- **Context-aware appends** — process-scoped identity, correlation, and causation metadata
 - **Resilient connection** — automatic reconnection with exponential backoff
 - **OTP-native** — fits naturally in your supervision tree
 
@@ -66,6 +68,29 @@ defmodule MyApp.ReadModels.Account do
     add: [balance: :amount]
 end
 ```
+
+### Constraints (model-bound)
+
+Declare constraints directly on event types:
+
+```elixir
+defmodule MyApp.Events.UserRegistered do
+  use Chronicle.EventType, id: "user-registered-v1"
+  defstruct [:email, :tenant_id]
+
+  @unique [:email, :tenant_id]
+  unique_event_type()
+end
+
+defmodule MyApp.Events.UserDeleted do
+  use Chronicle.EventType, id: "user-deleted-v1"
+  defstruct [:email]
+
+  @remove_constraint "email"
+end
+```
+
+Constraints declared this way are discovered and registered automatically during `Chronicle.Client` startup.
 
 ### 3. Define projection mappings (recommended)
 
@@ -150,6 +175,54 @@ IO.inspect(account)
 
 # Get all instances
 {:ok, accounts} = Chronicle.all(MyApp.ReadModels.Account)
+```
+
+You can also inspect event-store metadata and event-sequence state:
+
+```elixir
+{:ok, stores} = Chronicle.get_event_stores()
+{:ok, namespaces} = Chronicle.get_namespaces()
+
+{:ok, has_events?} = Chronicle.has_events_for?("account-42")
+{:ok, tail_sequence_number} = Chronicle.get_tail_sequence_number("account-42")
+```
+
+### Correlation, identity, and causation
+
+You can set process-scoped correlation, identity, and causation context.
+`Chronicle.append/3` automatically includes this metadata on append requests.
+
+```elixir
+alias Chronicle.{CausationManager, CorrelationId, Identity}
+
+Chronicle.set_correlation_id(CorrelationId.create())
+Chronicle.set_identity(Identity.new("user-42", "Alice", "alice"))
+
+CausationManager.define_root(%{application: "banking-api"})
+CausationManager.add("Banking.Commands.OpenAccount", %{account_id: "account-42"})
+
+:ok = Chronicle.append("account-42", %MyApp.Events.AccountOpened{...})
+
+Chronicle.clear_identity()
+Chronicle.clear_correlation_id()
+CausationManager.clear()
+```
+
+For one-off overrides, pass explicit metadata as options:
+
+```elixir
+:ok =
+  Chronicle.append("account-42", event,
+    correlation_id: "92a130f7-16e2-44f7-a8e3-79e76f5df3e1",
+    identity: Chronicle.Identity.new("service-1", "Billing Service", "billing")
+  )
+```
+
+To append/query a non-default event sequence, pass `:event_sequence_id`:
+
+```elixir
+:ok = Chronicle.append("account-42", event, event_sequence_id: "audit-sequence")
+{:ok, events} = Chronicle.EventLog.get_for_event_source("account-42", event_sequence_id: "audit-sequence")
 ```
 
 ## Quick Start (Reducer Alternative)

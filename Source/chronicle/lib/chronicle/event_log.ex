@@ -42,6 +42,15 @@ defmodule Chronicle.EventLog do
     GetForEventSourceIdAndEventTypesRequest
   }
 
+  alias Chronicle.{
+    CausationEntry,
+    CausationManager,
+    CausationType,
+    CorrelationId,
+    CorrelationIdManager,
+    IdentityProvider
+  }
+
   alias Chronicle.Connections.Connection
 
   # Bcl.Guid used for CorrelationId in AppendRequest
@@ -56,11 +65,15 @@ defmodule Chronicle.EventLog do
 
     * `:client` — the client name (default: `Chronicle.Client`)
     * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence id (default: `"event-log"`)
     * `:event_source_type` — the event source type (default: `""`)
     * `:event_stream_type` — the event stream type (default: `""`)
     * `:event_stream_id` — the event stream ID (default: `""`)
     * `:tags` — list of tag strings
     * `:subject` — the identity subject string
+    * `:correlation_id` — correlation id override (`Chronicle.CorrelationId` or string)
+    * `:identity` — identity override (`Chronicle.Identity`)
+    * `:causation` — causation chain override (list of `Chronicle.CausationEntry`)
 
   Returns `:ok` on success or `{:error, reason}` on failure.
   """
@@ -68,14 +81,15 @@ defmodule Chronicle.EventLog do
   def append(event_source_id, event, opts \\ []) do
     with {:ok, channel, config} <- resolve_channel(opts) do
       namespace = Keyword.get(opts, :namespace, config.namespace)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
       event_module = event.__struct__
 
       request =
         struct(AppendRequest,
-          CorrelationId: struct(BclGuid),
+          CorrelationId: build_correlation_id(opts),
           EventStore: config.event_store,
           Namespace: namespace,
-          EventSequenceId: @event_log_id,
+          EventSequenceId: event_sequence_id,
           EventSourceType: Keyword.get(opts, :event_source_type, "Default"),
           EventSourceId: event_source_id,
           EventStreamType: Keyword.get(opts, :event_stream_type, "All"),
@@ -86,13 +100,8 @@ defmodule Chronicle.EventLog do
               Generation: event_module.__chronicle_event_type__(:generation)
             ),
           Content: encode_event(event),
-          Causation: [client_causation()],
-          CausedBy:
-            struct(Identity,
-              Subject: "elixir-client",
-              Name: "Chronicle Elixir Client",
-              UserName: "chronicle"
-            ),
+          Causation: build_causation_chain(opts, :append),
+          CausedBy: build_identity(opts),
           ConcurrencyScope: struct(ConcurrencyScope, SequenceNumber: 18_446_744_073_709_551_615),
           Occurred: current_datetime_offset(),
           Tags: Keyword.get(opts, :tags, []),
@@ -124,12 +133,13 @@ defmodule Chronicle.EventLog do
 
   ## Options
 
-  Same as `append/3`.
+  Same as `append/3`, including `:event_sequence_id`.
   """
   @spec append_many(String.t(), [struct()], keyword()) :: :ok | {:error, term()}
   def append_many(event_source_id, events, opts \\ []) when is_list(events) do
     with {:ok, channel, config} <- resolve_channel(opts) do
       namespace = Keyword.get(opts, :namespace, config.namespace)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
 
       event_entries =
         Enum.map(events, fn event ->
@@ -154,7 +164,7 @@ defmodule Chronicle.EventLog do
         struct(AppendManyRequest,
           EventStore: config.event_store,
           Namespace: namespace,
-          EventSequenceId: @event_log_id,
+          EventSequenceId: event_sequence_id,
           Events: event_entries
         )
 
@@ -182,6 +192,7 @@ defmodule Chronicle.EventLog do
 
     * `:client` — the client name (default: `Chronicle.Client`)
     * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence id (default: `"event-log"`)
     * `:event_types` — list of event type modules to filter by (default: all)
 
   Returns `{:ok, [appended_event]}` or `{:error, reason}`.
@@ -190,6 +201,7 @@ defmodule Chronicle.EventLog do
   def get_for_event_source(event_source_id, opts \\ []) do
     with {:ok, channel, config} <- resolve_channel(opts) do
       namespace = Keyword.get(opts, :namespace, config.namespace)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
       event_type_modules = Keyword.get(opts, :event_types, [])
 
       event_types =
@@ -204,7 +216,7 @@ defmodule Chronicle.EventLog do
         struct(GetForEventSourceIdAndEventTypesRequest,
           EventStore: config.event_store,
           Namespace: namespace,
-          EventSequenceId: @event_log_id,
+          EventSequenceId: event_sequence_id,
           EventSourceId: event_source_id,
           EventTypes: event_types
         )
@@ -212,6 +224,76 @@ defmodule Chronicle.EventLog do
       case EventSequences.Stub.get_for_event_source_id_and_event_types(channel, request) do
         {:ok, response} -> {:ok, Map.get(response, :Events, [])}
         {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Returns the tail sequence number for an event sequence.
+
+  ## Options
+
+    * `:client` — the client name (default: `Chronicle.Client`)
+    * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence id (default: `"event-log"`)
+  """
+  @spec get_tail_sequence_number(String.t() | nil, keyword()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def get_tail_sequence_number(event_source_id \\ nil, opts \\ []) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      namespace = Keyword.get(opts, :namespace, config.namespace)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+
+      request = %{
+        EventStore: config.event_store,
+        Namespace: namespace,
+        EventSequenceId: event_sequence_id,
+        EventSourceId: event_source_id || "",
+        EventTypes: [],
+        EventSourceType: "Default",
+        EventStreamId: "",
+        EventStreamType: "Default"
+      }
+
+      case EventSequences.Stub.get_tail_sequence_number(channel, request) do
+        {:ok, response} ->
+          sequence_number = Map.get(response, :SequenceNumber, Map.get(response, :sequence_number, 0))
+          {:ok, normalize_sequence_number(sequence_number)}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Checks whether an event sequence has events for an event source id.
+
+  ## Options
+
+    * `:client` — the client name (default: `Chronicle.Client`)
+    * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence id (default: `"event-log"`)
+  """
+  @spec has_events_for?(String.t(), keyword()) :: {:ok, boolean()} | {:error, term()}
+  def has_events_for?(event_source_id, opts \\ []) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      namespace = Keyword.get(opts, :namespace, config.namespace)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+
+      request = %{
+        EventStore: config.event_store,
+        Namespace: namespace,
+        EventSequenceId: event_sequence_id,
+        EventSourceId: event_source_id
+      }
+
+      case EventSequences.Stub.has_events_for_event_source_id(channel, request) do
+        {:ok, response} ->
+          has_events = Map.get(response, :HasEvents, Map.get(response, :has_events, false))
+          {:ok, has_events}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     end
   end
@@ -244,9 +326,88 @@ defmodule Chronicle.EventLog do
     head <> Enum.map_join(tail, &String.capitalize/1)
   end
 
-  defp client_causation do
+  defp build_correlation_id(opts) do
+    correlation_id =
+      case Keyword.get(opts, :correlation_id) do
+        %CorrelationId{} = id -> id
+        id when is_binary(id) -> CorrelationId.new(id)
+        _ -> CorrelationIdManager.current()
+      end
+
+    guid = struct(BclGuid)
+
+    cond do
+      Map.has_key?(guid, :Value) -> Map.put(guid, :Value, correlation_id.value)
+      Map.has_key?(guid, :value) -> Map.put(guid, :value, correlation_id.value)
+      true -> guid
+    end
+  end
+
+  defp build_identity(opts) do
+    identity = Keyword.get(opts, :identity, IdentityProvider.get_current())
+    identity_to_proto(identity)
+  end
+
+  defp identity_to_proto(identity) do
+    proto =
+      struct(Identity,
+        Subject: identity.subject,
+        Name: identity.name,
+        UserName: identity.user_name
+      )
+
+    cond do
+      Map.has_key?(proto, :OnBehalfOf) and not is_nil(identity.on_behalf_of) ->
+        Map.put(proto, :OnBehalfOf, identity_to_proto(identity.on_behalf_of))
+
+      Map.has_key?(proto, :on_behalf_of) and not is_nil(identity.on_behalf_of) ->
+        Map.put(proto, :on_behalf_of, identity_to_proto(identity.on_behalf_of))
+
+      true ->
+        proto
+    end
+  end
+
+  defp build_causation_chain(opts, mode) do
+    entries =
+      case Keyword.get(opts, :causation) do
+        entries when is_list(entries) and entries != [] -> entries
+        _ -> CausationManager.get_current_chain()
+      end
+
+    entries =
+      case entries do
+        [] ->
+          [client_causation_for_mode(mode)]
+
+        _ ->
+          entries ++ [client_causation_for_mode(mode)]
+      end
+
+    Enum.map(entries, &causation_to_proto/1)
+  end
+
+  defp client_causation_for_mode(:append), do: CausationEntry.new(CausationType.append_event())
+  defp client_causation_for_mode(:append_many), do: CausationEntry.new(CausationType.append_many_events())
+
+  defp causation_to_proto(%CausationEntry{} = entry) do
     struct(Causation,
-      Type: "Elixir.Chronicle.Client",
+      Type: entry.type.value,
+      Occurred: struct(SerializableDateTimeOffset, Value: DateTime.to_iso8601(entry.occurred))
+    )
+  end
+
+  defp causation_to_proto(entry) when is_map(entry) do
+    type =
+      case Map.get(entry, :type) do
+        %CausationType{value: value} -> value
+        value when is_binary(value) -> value
+        value when is_atom(value) -> Atom.to_string(value)
+        _ -> "Unknown"
+      end
+
+    struct(Causation,
+      Type: type,
       Occurred: current_datetime_offset()
     )
   end
@@ -254,4 +415,8 @@ defmodule Chronicle.EventLog do
   defp current_datetime_offset do
     struct(SerializableDateTimeOffset, Value: DateTime.utc_now() |> DateTime.to_iso8601())
   end
+
+  defp normalize_sequence_number(18_446_744_073_709_551_615), do: 0
+  defp normalize_sequence_number(value) when is_integer(value) and value >= 0, do: value
+  defp normalize_sequence_number(_), do: 0
 end

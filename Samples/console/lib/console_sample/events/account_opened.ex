@@ -6,6 +6,8 @@ defmodule ConsoleSample.Events.AccountOpened do
 
   use Chronicle.EventType, id: "account-opened"
 
+  unique_event_type()
+
   defstruct account_id: nil, owner_name: nil, initial_balance: 0
 
   @type t :: %__MODULE__{

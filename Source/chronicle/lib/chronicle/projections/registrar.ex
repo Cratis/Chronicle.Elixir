@@ -13,6 +13,7 @@ defmodule Chronicle.Projections.Registrar do
   require Logger
 
   alias Chronicle.Connections.Connection
+  alias Chronicle.Constraints
   alias Chronicle.EventTypes
 
   alias Cratis.Chronicle.Contracts.{EventStores, Namespaces, EnsureEventStore, EnsureNamespace}
@@ -113,6 +114,7 @@ defmodule Chronicle.Projections.Registrar do
     with :ok <- ensure_event_store(channel, state.event_store),
          :ok <- ensure_namespace(channel, state.event_store, state.namespace),
          :ok <- EventTypes.register(channel, state.event_store, all_event_types),
+         :ok <- register_constraints(channel, state, all_event_types),
          :ok <- register_read_models(channel, state),
          :ok <- register_projections(channel, state) do
       :ok
@@ -133,6 +135,15 @@ defmodule Chronicle.Projections.Registrar do
          ) do
       {:ok, _} -> :ok
       {:error, reason} -> {:error, {:ensure_namespace, reason}}
+    end
+  end
+
+  defp register_constraints(channel, state, event_types) do
+    constraints = Constraints.from_event_types(event_types)
+
+    case Constraints.register(channel, state.event_store, constraints) do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:register_constraints, reason}}
     end
   end
 
