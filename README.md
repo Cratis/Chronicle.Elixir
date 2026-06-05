@@ -429,6 +429,8 @@ Source/
         client.ex         # Supervisor entry point
         artifacts.ex      # Artifact auto-discovery helpers
         event_type.ex     # use Chronicle.EventType macro with constraints
+        seeder.ex         # use Chronicle.Seeder behaviour
+        seeding.ex        # Event seeding builder API
         reactor.ex        # use Chronicle.Reactor behaviour
         reducer.ex        # use Chronicle.Reducer behaviour
         read_model.ex     # use Chronicle.ReadModel macro

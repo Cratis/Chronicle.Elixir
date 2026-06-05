@@ -27,7 +27,8 @@ defmodule Chronicle do
               event_store: "my-app",
               event_types: [MyApp.Events.AccountOpened, MyApp.Events.FundsDeposited],
               reactors: [MyApp.Reactors.NotificationReactor],
-              reducers: [MyApp.Reducers.AccountReducer]}
+              reducers: [MyApp.Reducers.AccountReducer],
+              seeders: [MyApp.Seeders.InitialDataSeeder]}
           ]
 
           Supervisor.start_link(children, strategy: :one_for_one)
@@ -91,6 +92,26 @@ defmodule Chronicle do
         end
       end
 
+  ## Defining Seeders
+
+      defmodule MyApp.Seeders.InitialDataSeeder do
+        use Chronicle.Seeder
+
+        @impl true
+        def seed(builder) do
+          builder
+          |> Chronicle.Seeding.for(
+            MyApp.Events.AccountOpened,
+            "seed-account-1",
+            [%MyApp.Events.AccountOpened{
+              account_id: "seed-account-1",
+              owner_name: "Initial User",
+              initial_balance: 10_000
+            }]
+          )
+        end
+      end
+
   ## Modules
 
     * `Chronicle.Client` — the main supervisor; start it in your supervision tree
@@ -100,6 +121,7 @@ defmodule Chronicle do
     * `Chronicle.EventType` — macro for defining event types
     * `Chronicle.Reactor` — behaviour for event reactors
     * `Chronicle.Reducer` — behaviour for read model reducers
+    * `Chronicle.Seeder` — behaviour for event seeders
     * `Chronicle.ReadModel` — macro for read model structs with embedded projection DSL
     * `Chronicle.EventLog` — append and query events
     * `Chronicle.EventStores` — list event stores and namespaces

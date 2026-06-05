@@ -8,3 +8,5 @@
   href: event-sequences.md
 - name: Event Store Discovery
   href: event-stores.md
+- name: Seeding
+  href: seeding/toc.yml
