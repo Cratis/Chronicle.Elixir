@@ -23,6 +23,6 @@ defmodule ConsoleSample.Application do
 
   defp connection_string do
     System.get_env("CHRONICLE_CONNECTION_STRING") ||
-      "chronicle://localhost:35000?disableTls=true"
+      "chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000?disableTls=true"
   end
 end

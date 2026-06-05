@@ -27,7 +27,11 @@ defmodule Chronicle.EventSequences.EventSequence do
   """
   @spec append(t(), String.t(), struct(), keyword()) :: :ok | {:error, term()}
   def append(%__MODULE__{} = event_sequence, event_source_id, event, opts \\ []) do
-    Chronicle.EventLog.append(event_source_id, event, merge_opts(event_sequence, opts))
+    Chronicle.EventSequences.EventLog.append(
+      event_source_id,
+      event,
+      merge_opts(event_sequence, opts)
+    )
   end
 
   @doc """
@@ -35,7 +39,11 @@ defmodule Chronicle.EventSequences.EventSequence do
   """
   @spec append_many(t(), String.t(), [struct()], keyword()) :: :ok | {:error, term()}
   def append_many(%__MODULE__{} = event_sequence, event_source_id, events, opts \\ []) do
-    Chronicle.EventLog.append_many(event_source_id, events, merge_opts(event_sequence, opts))
+    Chronicle.EventSequences.EventLog.append_many(
+      event_source_id,
+      events,
+      merge_opts(event_sequence, opts)
+    )
   end
 
   @doc """
@@ -43,7 +51,10 @@ defmodule Chronicle.EventSequences.EventSequence do
   """
   @spec get_for_event_source(t(), String.t(), keyword()) :: {:ok, list()} | {:error, term()}
   def get_for_event_source(%__MODULE__{} = event_sequence, event_source_id, opts \\ []) do
-    Chronicle.EventLog.get_for_event_source(event_source_id, merge_opts(event_sequence, opts))
+    Chronicle.EventSequences.EventLog.get_for_event_source(
+      event_source_id,
+      merge_opts(event_sequence, opts)
+    )
   end
 
   @doc """
@@ -52,7 +63,10 @@ defmodule Chronicle.EventSequences.EventSequence do
   @spec get_tail_sequence_number(t(), String.t() | nil, keyword()) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def get_tail_sequence_number(%__MODULE__{} = event_sequence, event_source_id \\ nil, opts \\ []) do
-    Chronicle.EventLog.get_tail_sequence_number(event_source_id, merge_opts(event_sequence, opts))
+    Chronicle.EventSequences.EventLog.get_tail_sequence_number(
+      event_source_id,
+      merge_opts(event_sequence, opts)
+    )
   end
 
   @doc """
@@ -60,7 +74,10 @@ defmodule Chronicle.EventSequences.EventSequence do
   """
   @spec has_events_for?(t(), String.t(), keyword()) :: {:ok, boolean()} | {:error, term()}
   def has_events_for?(%__MODULE__{} = event_sequence, event_source_id, opts \\ []) do
-    Chronicle.EventLog.has_events_for?(event_source_id, merge_opts(event_sequence, opts))
+    Chronicle.EventSequences.EventLog.has_events_for?(
+      event_source_id,
+      merge_opts(event_sequence, opts)
+    )
   end
 
   @doc """

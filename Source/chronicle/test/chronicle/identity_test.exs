@@ -4,7 +4,8 @@
 defmodule Chronicle.IdentityTest do
   use ExUnit.Case, async: true
 
-  alias Chronicle.{Identity, IdentityProvider}
+  alias Chronicle.Identity
+  alias Chronicle.Identity.IdentityProvider
 
   describe "Identity" do
     test "new/4 builds identity" do

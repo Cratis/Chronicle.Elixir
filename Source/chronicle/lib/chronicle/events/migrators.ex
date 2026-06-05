@@ -5,7 +5,7 @@ defmodule Chronicle.Events.Migrators do
   @moduledoc """
   Discovers, groups, and materializes event type migrations.
 
-  `Chronicle.EventTypes` uses this module while registering event types so each
+  `Chronicle.Events.EventTypes` uses this module while registering event types so each
   event type registration includes its known generations and migration chain.
   """
 

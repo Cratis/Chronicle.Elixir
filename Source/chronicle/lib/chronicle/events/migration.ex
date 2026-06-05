@@ -147,12 +147,12 @@ defmodule Chronicle.Events.Migration do
 
       unless function_exported?(@chronicle_migration_from_module, :__chronicle_event_type__, 1) do
         raise ArgumentError,
-              "#{inspect(@chronicle_migration_from_module)} must use Chronicle.EventType"
+              "#{inspect(@chronicle_migration_from_module)} must use Chronicle.Events.EventType"
       end
 
       unless function_exported?(@chronicle_migration_to_module, :__chronicle_event_type__, 1) do
         raise ArgumentError,
-              "#{inspect(@chronicle_migration_to_module)} must use Chronicle.EventType"
+              "#{inspect(@chronicle_migration_to_module)} must use Chronicle.Events.EventType"
       end
 
       from_id = @chronicle_migration_from_module.__chronicle_event_type__(:id)

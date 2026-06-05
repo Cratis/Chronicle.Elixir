@@ -4,7 +4,7 @@
 defmodule Chronicle.Transactions.UnitOfWorkManager do
   @moduledoc false
 
-  alias Chronicle.CorrelationId
+  alias Chronicle.Correlation.CorrelationId
   alias Chronicle.Transactions.{NoUnitOfWorkStarted, UnitOfWork}
 
   @process_key {__MODULE__, :current}

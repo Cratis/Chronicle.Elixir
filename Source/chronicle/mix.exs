@@ -65,37 +65,37 @@ defmodule Chronicle.MixProject do
       groups_for_modules: [
         Connections: [Chronicle.Connections.ConnectionString, Chronicle.Connections.Connection],
         Context: [
-          Chronicle.CorrelationId,
-          Chronicle.CorrelationIdManager,
+          Chronicle.Correlation.CorrelationId,
+          Chronicle.Correlation.CorrelationIdManager,
           Chronicle.Identity,
-          Chronicle.IdentityProvider,
-          Chronicle.CausationType,
-          Chronicle.CausationEntry,
-          Chronicle.CausationManager
+          Chronicle.Identity.IdentityProvider,
+          Chronicle.Auditing.CausationType,
+          Chronicle.Auditing.CausationEntry,
+          Chronicle.Auditing.CausationManager
         ],
         "Event Sourcing": [
-          Chronicle.EventType,
+          Chronicle.Events.EventType,
           Chronicle.Events.Migration,
           Chronicle.Events.MigrationBuilder,
           Chronicle.Events.Migrators,
-          Chronicle.EventLog,
+          Chronicle.EventSequences.EventLog,
           Chronicle.EventSequences.EventSequence,
           Chronicle.EventSequences.TransactionalEventSequence,
           Chronicle.Events.ConcurrencyScope,
-          Chronicle.EventTypes,
+          Chronicle.Events.EventTypes,
           Chronicle.EventStores
         ],
         Transactions: [Chronicle.Transactions.UnitOfWork],
         Observers: [
-          Chronicle.Reactor,
-          Chronicle.Reducer,
+          Chronicle.Reactors.Reactor,
+          Chronicle.Reducers.Reducer,
           Chronicle.EventStoreSubscriptions,
           Chronicle.EventStoreSubscriptions.Subscription,
           Chronicle.EventStoreSubscriptions.Definition,
           Chronicle.EventStoreSubscriptions.DefinitionBuilder,
           Chronicle.EventStoreSubscriptions.EventType
         ],
-        "Read Models": [Chronicle.ReadModel, Chronicle.ReadModels],
+        "Read Models": [Chronicle.ReadModels.ReadModel, Chronicle.ReadModels],
         Jobs: [
           Chronicle.Jobs,
           Chronicle.Jobs.Job,
@@ -113,7 +113,7 @@ defmodule Chronicle.MixProject do
           Chronicle.WebHooks.Target,
           Chronicle.WebHooks.Webhook
         ],
-        Constraints: [Chronicle.Constraints]
+        Constraints: [Chronicle.Events.Constraints]
       ]
     ]
   end

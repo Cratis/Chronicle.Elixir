@@ -10,7 +10,7 @@ defmodule Chronicle.Seeding do
 
   ## Usage
 
-  Typically used within a `Chronicle.Seeder.seed/1` callback:
+  Typically used within a `Chronicle.Seeding.Seeder.seed/1` callback:
 
       def seed(builder) do
         builder
@@ -28,8 +28,6 @@ defmodule Chronicle.Seeding do
     * Global vs. namespaced
     * Event type and event source (dual organization for server efficiency)
   """
-
-  alias Chronicle.EventTypes
 
   @type event_source_id :: String.t()
   @type namespace :: String.t()
@@ -104,7 +102,7 @@ defmodule Chronicle.Seeding do
   ## Parameters
 
     * `builder` — the seeding builder
-    * `event_type` — the event type module (must `use Chronicle.EventType`)
+    * `event_type` — the event type module (must `use Chronicle.Events.EventType`)
     * `event_source_id` — the event source (aggregate) ID
     * `events` — list of event structs
 
@@ -118,7 +116,7 @@ defmodule Chronicle.Seeding do
   @spec for(t(), module(), event_source_id(), [struct()]) :: t()
   def for(%__MODULE__{} = builder, event_type, event_source_id, events)
       when is_atom(event_type) and is_binary(event_source_id) and is_list(events) do
-    event_type_id = EventTypes.get_event_type_id(event_type)
+    event_type_id = event_type.__chronicle_event_type__(:id)
 
     entries =
       Enum.map(events, fn event ->
@@ -160,7 +158,7 @@ defmodule Chronicle.Seeding do
     entries =
       Enum.map(events, fn event ->
         event_type = event.__struct__
-        event_type_id = EventTypes.get_event_type_id(event_type)
+        event_type_id = event_type.__chronicle_event_type__(:id)
         tags = extract_tags(event)
 
         %{
@@ -219,7 +217,7 @@ defmodule Chronicle.Seeding do
   This is typically called automatically by `Chronicle.Client` during startup.
   """
   @spec register(t()) :: :ok | {:error, term()}
-  def register(%__MODULE__{entries: entries} = builder) when length(entries) == 0 do
+  def register(%__MODULE__{entries: entries} = _builder) when length(entries) == 0 do
     require Logger
     Logger.debug("No seed events to register")
     :ok
@@ -282,14 +280,5 @@ defmodule Chronicle.Seeding do
   defp append_many(%__MODULE__{append_many: fun}) when is_function(fun, 3), do: fun
   defp append_many(_builder), do: &Chronicle.append_many/3
 
-  defp extract_tags(%{__struct__: module} = _event) do
-    if function_exported?(module, :__chronicle_event_type__, 1) do
-      case module.__chronicle_event_type__(:tags) do
-        tags when is_list(tags) -> Enum.map(tags, &to_string/1)
-        _ -> []
-      end
-    else
-      []
-    end
-  end
+  defp extract_tags(%{__struct__: _module} = _event), do: []
 end

@@ -4,7 +4,7 @@
 defmodule ConsoleSample.Events.EmployeeMoved do
   @moduledoc "An employee has relocated to a new address."
 
-  use Chronicle.EventType, id: "employee-moved"
+  use Chronicle.Events.EventType, id: "employee-moved"
 
   defstruct [:address, :city, :zip_code, :country]
 end

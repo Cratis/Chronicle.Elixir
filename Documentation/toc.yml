@@ -1,5 +1,11 @@
 - name: Chronicle Elixir Guides
   href: index.md
+- name: Get Started
+  href: get-started.md
+- name: Connections
+  href: connections/toc.yml
+- name: Event Types
+  href: events.md
 - name: Model-Bound Constraints
   href: constraints.md
 - name: Context Management
@@ -12,6 +18,10 @@
   href: seeding/toc.yml
 - name: Event Migrations
   href: migrations.md
+- name: Reactors
+  href: reactors.md
+- name: Reducers
+  href: reducers.md
 - name: Transactions and Unit of Work
   href: transactions.md
 - name: Concurrency Scope

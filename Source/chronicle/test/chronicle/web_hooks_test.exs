@@ -7,12 +7,12 @@ defmodule Chronicle.WebHooksTest do
   alias Chronicle.WebHooks.{DefinitionBuilder, Webhook}
 
   defmodule AccountOpened do
-    use Chronicle.EventType, id: "account-opened-v1"
+    use Chronicle.Events.EventType, id: "account-opened-v1"
     defstruct [:account_id]
   end
 
   defmodule FundsDeposited do
-    use Chronicle.EventType, id: "funds-deposited-v1"
+    use Chronicle.Events.EventType, id: "funds-deposited-v1"
     defstruct [:account_id, :amount]
   end
 

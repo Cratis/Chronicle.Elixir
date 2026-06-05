@@ -27,7 +27,7 @@ defmodule Chronicle.EventSequences.TransactionalEventSequence do
   """
   @spec append(t(), String.t(), struct(), keyword()) :: :ok
   def append(%__MODULE__{event_sequence: event_sequence}, event_source_id, event, opts \\ []) do
-    Chronicle.EventLog.buffer_append(
+    Chronicle.EventSequences.EventLog.buffer_append(
       event_sequence.id,
       event_source_id,
       event,

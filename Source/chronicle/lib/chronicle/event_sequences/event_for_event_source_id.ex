@@ -6,7 +6,8 @@ defmodule Chronicle.EventSequences.EventForEventSourceId do
   Represents an event buffered for a specific event source within an event sequence.
   """
 
-  alias Chronicle.{CausationEntry, Identity}
+  alias Chronicle.Auditing.CausationEntry
+  alias Chronicle.Identity
   alias Chronicle.Events.ConcurrencyScope
 
   @enforce_keys [:event_source_id, :event]
