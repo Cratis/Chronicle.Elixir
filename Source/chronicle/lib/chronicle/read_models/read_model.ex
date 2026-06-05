@@ -130,7 +130,7 @@ defmodule Chronicle.ReadModels.ReadModel do
       @chronicle_read_model_id Keyword.get(opts, :id, __MODULE__ |> Module.split() |> List.last())
 
       import Chronicle.ReadModels.ReadModel,
-        only: [from: 2, join: 2, removed_with: 2, from_every: 1]
+        only: [from: 1, from: 2, join: 2, removed_with: 2, from_every: 1]
 
       import Chronicle.Compliance, only: [pii: 1, pii: 2]
 
@@ -143,7 +143,7 @@ defmodule Chronicle.ReadModels.ReadModel do
 
   See the `Chronicle.ReadModels.ReadModel` module documentation for full options.
   """
-  defmacro from(event_module, opts) do
+  defmacro from(event_module, opts \\ []) do
     quote do
       @chronicle_projection_from {unquote(event_module), unquote(opts)}
     end
