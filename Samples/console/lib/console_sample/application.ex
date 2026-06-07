@@ -10,7 +10,7 @@ defmodule ConsoleSample.Application do
   def start(_type, _args) do
     children = [
       {Chronicle.Client,
-       connection_string: connection_string(), event_store: "TestStore", otp_app: :console_sample}
+       connection_string: connection_string(), event_store: "TestStoreElixir", otp_app: :console_sample}
     ]
 
     opts = [strategy: :one_for_one, name: ConsoleSample.Supervisor]
