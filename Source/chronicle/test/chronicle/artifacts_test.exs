@@ -61,6 +61,7 @@ defmodule Chronicle.ArtifactsTest do
                  :event_store_subscriptions,
                  :event_types,
                  :migrations,
+                 :projections,
                  :reactors,
                  :read_models,
                  :reducers,
