@@ -96,6 +96,7 @@ defmodule Chronicle.MixProject do
           Chronicle.EventStoreSubscriptions.EventType
         ],
         "Read Models": [Chronicle.ReadModels.ReadModel, Chronicle.ReadModels],
+        Sinks: [Chronicle.Sinks.WellKnownSinkTypes],
         Jobs: [
           Chronicle.Jobs,
           Chronicle.Jobs.Job,

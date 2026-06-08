@@ -102,6 +102,10 @@ defmodule Chronicle.Client do
       subscription modules (each
       `use Chronicle.EventStoreSubscriptions.Subscription`). These are
       registered on startup.
+    * `:default_sink_type_id` — the default sink type used when registering
+      projections and reducers. Accepts an atom (`:mongodb`, `:sql`,
+      `:in_memory`, `:not_set`) or a raw sink type string. Defaults to
+      `:mongodb`. See `Chronicle.Sinks.WellKnownSinkTypes`.
 
   ## Convenience functions
 
@@ -120,6 +124,7 @@ defmodule Chronicle.Client do
 
   alias Chronicle.Artifacts
   alias Chronicle.Connections.Connection
+  alias Chronicle.Sinks.WellKnownSinkTypes
 
   @doc """
   Starts a Chronicle client supervisor linked to the current process.
@@ -148,6 +153,7 @@ defmodule Chronicle.Client do
     event_store = Keyword.get(opts, :event_store, "default")
     namespace = Keyword.get(opts, :namespace, "Default")
     discover? = Keyword.get(opts, :discover, true)
+    default_sink_type_id = opts |> Keyword.get(:default_sink_type_id, :mongodb) |> WellKnownSinkTypes.resolve()
 
     discovered =
       if discover? do
@@ -214,7 +220,8 @@ defmodule Chronicle.Client do
       connection: conn_name,
       lifecycle: lifecycle_name,
       event_store: event_store,
-      namespace: namespace
+      namespace: namespace,
+      default_sink_type_id: default_sink_type_id
     ]
 
     reactor_children =

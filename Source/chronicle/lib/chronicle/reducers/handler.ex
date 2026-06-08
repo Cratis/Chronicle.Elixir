@@ -32,11 +32,6 @@ defmodule Chronicle.Reducers.Handler do
   alias Cratis.Chronicle.Contracts.Observation.Reducers.OneOf_RegisterReducer_ReducerResult,
     as: OneOf
 
-  alias Bcl.Guid, as: BclGuid
-
-  # MongoDB sink type ID: "22202c41-2be1-4547-9c00-f0b1f797fd75"
-  defp mongodb_sink_type_id, do: struct(BclGuid, lo: 0x45472BE122202C41, hi: 0x75FD97F7B1F0009C)
-
   # Stream-level reconnect delay (matches the C# client's per-stream retry).
   @stream_reconnect_delay 2_000
 
@@ -62,6 +57,7 @@ defmodule Chronicle.Reducers.Handler do
       namespace: Keyword.fetch!(opts, :namespace),
       event_type_map: event_type_map,
       model_module: module.__chronicle_reducer__(:model),
+      default_sink_type_id: Keyword.get(opts, :default_sink_type_id, "MongoDB"),
       establish_fun: Keyword.get(opts, :establish_fun, &default_establish/2),
       connection_id: nil,
       stream: nil,
@@ -246,7 +242,7 @@ defmodule Chronicle.Reducers.Handler do
                   EventTypes: event_types,
                   ReadModel: model_id,
                   IsActive: true,
-                  Sink: struct(SinkDefinition, TypeId: mongodb_sink_type_id()),
+                  Sink: struct(SinkDefinition, TypeId: state.default_sink_type_id),
                   Tags: [],
                   Filters: struct(ObserverFilters)
                 )
