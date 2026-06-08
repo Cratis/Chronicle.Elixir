@@ -34,3 +34,5 @@
   href: webhooks.md
 - name: Read Models
   href: read-models.md
+- name: Sinks
+  href: sinks.md
