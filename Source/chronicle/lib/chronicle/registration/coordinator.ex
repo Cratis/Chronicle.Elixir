@@ -51,10 +51,6 @@ defmodule Chronicle.Registration.Coordinator do
 
   alias Bcl.Guid, as: BclGuid
 
-  # MongoDB sink type ID: "22202c41-2be1-4547-9c00-f0b1f797fd75"
-  # Computed from .NET Guid.ToByteArray() split into lo/hi fixed64 little-endian
-  defp mongodb_sink_type_id, do: struct(BclGuid, lo: 0x45472BE122202C41, hi: 0x75FD97F7B1F0009C)
-
   @retry_delay 5_000
 
   def start_link(opts) do
@@ -73,6 +69,7 @@ defmodule Chronicle.Registration.Coordinator do
       read_models: Keyword.get(opts, :read_models, []),
       reducers: Keyword.get(opts, :reducers, []),
       projections: Keyword.get(opts, :projections, []),
+      default_sink_type_id: Keyword.get(opts, :default_sink_type_id, "MongoDB"),
       register_fun: Keyword.get(opts, :register_fun, &default_register/1),
       retry_timer: nil,
       registered_done?: false
@@ -213,7 +210,7 @@ defmodule Chronicle.Registration.Coordinator do
           Sink:
             struct(SinkDefinition,
               ConfigurationId: struct(BclGuid),
-              TypeId: mongodb_sink_type_id()
+              TypeId: state.default_sink_type_id
             ),
           Schema: generate_read_model_schema(rm),
           ObserverType: 2,
@@ -237,7 +234,7 @@ defmodule Chronicle.Registration.Coordinator do
           Sink:
             struct(SinkDefinition,
               ConfigurationId: struct(BclGuid),
-              TypeId: mongodb_sink_type_id()
+              TypeId: state.default_sink_type_id
             ),
           Schema: generate_read_model_schema(model_module),
           ObserverType: 1,
@@ -261,7 +258,7 @@ defmodule Chronicle.Registration.Coordinator do
           Sink:
             struct(SinkDefinition,
               ConfigurationId: struct(BclGuid),
-              TypeId: mongodb_sink_type_id()
+              TypeId: state.default_sink_type_id
             ),
           Schema: generate_read_model_schema(model_module),
           ObserverType: 2,
