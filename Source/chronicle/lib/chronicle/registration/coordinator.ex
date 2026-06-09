@@ -23,6 +23,7 @@ defmodule Chronicle.Registration.Coordinator do
   alias Chronicle.Events.Constraints
   alias Chronicle.Events.EventTypes
   alias Chronicle.Schemas.JsonSchemaGenerator
+  alias Chronicle.Sinks.WellKnownSinkTypes
 
   alias Cratis.Chronicle.Contracts.{EventStores, Namespaces, EnsureEventStore, EnsureNamespace}
 
@@ -210,7 +211,7 @@ defmodule Chronicle.Registration.Coordinator do
           Sink:
             struct(SinkDefinition,
               ConfigurationId: struct(BclGuid),
-              TypeId: state.default_sink_type_id
+              TypeId: sink_type_id(state, rm.__chronicle_read_model__(:passive?))
             ),
           Schema: generate_read_model_schema(rm),
           ObserverType: 2,
@@ -258,7 +259,7 @@ defmodule Chronicle.Registration.Coordinator do
           Sink:
             struct(SinkDefinition,
               ConfigurationId: struct(BclGuid),
-              TypeId: state.default_sink_type_id
+              TypeId: sink_type_id(state, proj.__chronicle_projection__(:passive?))
             ),
           Schema: generate_read_model_schema(model_module),
           ObserverType: 2,
@@ -312,6 +313,12 @@ defmodule Chronicle.Registration.Coordinator do
   defp generate_read_model_schema(module) do
     JsonSchemaGenerator.generate(module, key_transform: :identity)
   end
+
+  # Passive projections never write to a materialized sink, so they register with the None sink.
+  # This lets the kernel fall through to immediate projection when resolving the instance by key
+  # instead of reading an empty sink and returning null.
+  defp sink_type_id(_state, true), do: WellKnownSinkTypes.none()
+  defp sink_type_id(state, false), do: state.default_sink_type_id
 
   defp register_projections(_channel, %{read_models: [], projections: []}), do: :ok
 
@@ -415,7 +422,7 @@ defmodule Chronicle.Registration.Coordinator do
       Identifier: identifier,
       ReadModel: model_name,
       EventSequenceId: "event-log",
-      IsActive: true,
+      IsActive: not read_model_module.__chronicle_read_model__(:passive?),
       IsRewindable: true,
       From: from_entries,
       Join: join_entries,
@@ -494,7 +501,7 @@ defmodule Chronicle.Registration.Coordinator do
       Identifier: projection_id,
       ReadModel: model_id,
       EventSequenceId: "event-log",
-      IsActive: true,
+      IsActive: not projection_module.__chronicle_projection__(:passive?),
       IsRewindable: true,
       From: from_entries,
       Join: join_entries,

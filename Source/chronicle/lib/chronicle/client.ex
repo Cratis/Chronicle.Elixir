@@ -104,7 +104,7 @@ defmodule Chronicle.Client do
       registered on startup.
     * `:default_sink_type_id` — the default sink type used when registering
       projections and reducers. Accepts an atom (`:mongodb`, `:sql`,
-      `:in_memory`, `:not_set`) or a raw sink type string. Defaults to
+      `:in_memory`, `:none`) or a raw sink type string. Defaults to
       `:mongodb`. See `Chronicle.Sinks.WellKnownSinkTypes`.
 
   ## Convenience functions

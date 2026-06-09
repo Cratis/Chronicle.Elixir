@@ -13,7 +13,7 @@ defmodule Chronicle.Sinks.WellKnownSinkTypes do
     * `:mongodb` — persists read models into MongoDB (default)
     * `:sql` — persists read models into a SQL database
     * `:in_memory` — persists read models in memory only
-    * `:not_set` — no sink configured
+    * `:none` — no sink configured (used by passive projections)
 
   ## Example
 
@@ -27,7 +27,7 @@ defmodule Chronicle.Sinks.WellKnownSinkTypes do
   @mongodb "MongoDB"
   @sql "SQL"
   @in_memory "InMemory"
-  @not_set "NotSet"
+  @none "None"
 
   @doc "Sink type identifier for MongoDB."
   @spec mongodb() :: String.t()
@@ -41,26 +41,26 @@ defmodule Chronicle.Sinks.WellKnownSinkTypes do
   @spec in_memory() :: String.t()
   def in_memory, do: @in_memory
 
-  @doc "Sink type identifier for NotSet (no sink)."
-  @spec not_set() :: String.t()
-  def not_set, do: @not_set
+  @doc "Sink type identifier for None (no sink)."
+  @spec none() :: String.t()
+  def none, do: @none
 
   @doc """
   Resolves an atom sink type name to its string identifier.
 
-  Accepts `:mongodb`, `:sql`, `:in_memory`, or `:not_set`.
+  Accepts `:mongodb`, `:sql`, `:in_memory`, or `:none`.
   Raises `ArgumentError` for unknown values.
   """
   @spec resolve(atom() | String.t()) :: String.t()
   def resolve(:mongodb), do: @mongodb
   def resolve(:sql), do: @sql
   def resolve(:in_memory), do: @in_memory
-  def resolve(:not_set), do: @not_set
+  def resolve(:none), do: @none
   def resolve(value) when is_binary(value), do: value
 
   def resolve(other) do
     raise ArgumentError,
           "Unknown sink type: #{inspect(other)}. " <>
-            "Use :mongodb, :sql, :in_memory, or :not_set, or pass a string identifier directly."
+            "Use :mongodb, :sql, :in_memory, or :none, or pass a string identifier directly."
   end
 end
