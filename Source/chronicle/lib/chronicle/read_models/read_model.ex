@@ -116,6 +116,23 @@ defmodule Chronicle.ReadModels.ReadModel do
       MyApp.ReadModels.Account.__chronicle_read_model__(:removed_with)
       MyApp.ReadModels.Account.__chronicle_read_model__(:from_every)
       MyApp.ReadModels.Account.__chronicle_read_model__(:has_projection?)
+      MyApp.ReadModels.Account.__chronicle_read_model__(:passive?)
+
+  ## Passive Read Models
+
+  Pass `passive: true` to mark a read model as passive. A passive projection does not
+  actively observe events and never writes to a materialized sink — its instances are
+  resolved on demand via immediate projection when looked up by id. This is useful for
+  read models that only need to be queried by key (for example, from within a reactor).
+
+      defmodule MyApp.ReadModels.Application do
+        use Chronicle.ReadModels.ReadModel, passive: true
+
+        defstruct id: nil, name: nil
+
+        from MyApp.Events.ApplicationCreated,
+          set: [id: :event_source_id, name: :name]
+      end
   """
 
   @doc false
@@ -129,6 +146,7 @@ defmodule Chronicle.ReadModels.ReadModel do
       Module.register_attribute(__MODULE__, :chronicle_subject, [])
 
       @chronicle_read_model_id Keyword.get(opts, :id, __MODULE__ |> Module.split() |> List.last())
+      @chronicle_read_model_passive Keyword.get(opts, :passive, false)
 
       import Chronicle.ReadModels.ReadModel,
         only: [from: 1, from: 2, join: 2, removed_with: 2, from_every: 1]
@@ -202,6 +220,8 @@ defmodule Chronicle.ReadModels.ReadModel do
 
       def __chronicle_read_model__(:has_projection?),
         do: not Enum.empty?(@chronicle_projection_from)
+
+      def __chronicle_read_model__(:passive?), do: @chronicle_read_model_passive
 
       def __chronicle_read_model__(:pii), do: Enum.reverse(@chronicle_pii)
 

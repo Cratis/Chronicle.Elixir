@@ -37,6 +37,9 @@ defmodule Chronicle.Projections.Projection do
     * `:model` — **(required)** the read model module this projection writes into.
     * `:id` — identifier string for this projection. Defaults to the last segment
       of the module name (e.g. `"AccountSummaryProjection"`).
+    * `:passive` — when `true`, the projection does not actively observe events and
+      never writes to a materialized sink; its read model is resolved on demand via
+      immediate projection when looked up by id. Defaults to `false`.
 
   ## Projection Macros
 
@@ -77,6 +80,7 @@ defmodule Chronicle.Projections.Projection do
 
       @chronicle_projection_model Keyword.fetch!(opts, :model)
       @chronicle_projection_id Keyword.get(opts, :id, __MODULE__ |> Module.split() |> List.last())
+      @chronicle_projection_passive Keyword.get(opts, :passive, false)
 
       import Chronicle.Projections.Projection,
         only: [from: 1, from: 2, join: 2, removed_with: 2, from_every: 1]
@@ -136,6 +140,9 @@ defmodule Chronicle.Projections.Projection do
 
       @doc false
       def __chronicle_projection__(:model), do: @chronicle_projection_model
+
+      @doc false
+      def __chronicle_projection__(:passive?), do: @chronicle_projection_passive
 
       def __chronicle_projection__(:from),
         do: @chronicle_projection_from |> Enum.reverse()
