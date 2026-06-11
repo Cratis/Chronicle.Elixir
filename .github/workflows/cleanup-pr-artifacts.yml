@@ -4,11 +4,6 @@ on:
   pull_request:
     types: [closed]
 
-permissions:
-  actions: write
-  contents: read
-  pull-requests: write
-
 jobs:
   cleanup:
     uses: Cratis/Workflows/.github/workflows/cleanup-pr-artifacts.yml@main
