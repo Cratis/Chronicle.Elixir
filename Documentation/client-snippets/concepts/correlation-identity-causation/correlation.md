@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.CorrelationIdentityCausationCorrelation do
-  alias Chronicle.CorrelationId
+  alias Chronicle.Correlation.CorrelationId
 
   def get_current do
     Chronicle.current_correlation_id()

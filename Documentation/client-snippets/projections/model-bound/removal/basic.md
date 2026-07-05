@@ -21,6 +21,6 @@ defmodule MyApp.ReadModels.RemovalAccount do
   from RemovalAccountOpened,
     set: [id: :event_source_id, name: :name, balance: :balance]
 
-  removed_with RemovalAccountClosed
+  removed_with RemovalAccountClosed, []
 end
 ```

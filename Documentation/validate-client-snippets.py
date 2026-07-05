@@ -25,6 +25,12 @@ BODY_SNIPPETS = {
         "",
         "",
     ],
+    "tutorial/first-event/append": [
+        "",
+    ],
+    "tutorial/reacting/explicit-append": [
+        "",
+    ],
     "events/appending/schema-validation": [
         """
         event_source_id = "order-123"
