@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.EcCqsBookCreated do
-  use Chronicle.Events.EventType
+  use Chronicle.Events.EventType, id: "ec-cqs-book-created"
 
   defstruct [:title]
 end

@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.ArchitectureModelBoundItemAdded do
-  use Chronicle.Events.EventType
+  use Chronicle.Events.EventType, id: "architecture-model-bound-item-added"
 
   defstruct [:category]
 end

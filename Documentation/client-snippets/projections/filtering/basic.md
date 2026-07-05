@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.FilteringOrderPlaced do
-  use Chronicle.Events.EventType
+  use Chronicle.Events.EventType, id: "filtering-order-placed"
 
   defstruct [:customer_id, :total_amount]
 end
 
 defmodule MyApp.Events.FilteringOrderShipped do
-  use Chronicle.Events.EventType
+  use Chronicle.Events.EventType, id: "filtering-order-shipped"
 
   defstruct [:shipped_at]
 end

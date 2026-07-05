@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.ArchitectureDeclarativeItemAdded do
-  use Chronicle.Events.EventType
+  use Chronicle.Events.EventType, id: "architecture-declarative-item-added"
 
   defstruct [:category]
 end
