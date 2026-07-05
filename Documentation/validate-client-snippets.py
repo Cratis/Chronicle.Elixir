@@ -21,6 +21,10 @@ BODY_SNIPPETS = {
         "",
         "",
     ],
+    "get-started/console/connect": [
+        "",
+        "",
+    ],
     "events/appending/schema-validation": [
         """
         event_source_id = "order-123"
