@@ -1,14 +1,6 @@
 # Context Management: Correlation, Identity, and Causation
 
-Chronicle Elixir provides process-scoped context management for tracking correlation, identity, and causation information as you append events. This enables full auditability of every state change in your event-sourced system — Chronicle stores who caused an event, which operation triggered it, and how it relates to other events across services.
-
-## Overview
-
-Context information includes:
-
-- **Correlation ID** — links related operations together across processes and services
-- **Identity** — identifies who caused each state change and is recorded with every appended event
-- **Causation** — tracks the chain of operations that led to an event, creating a navigable audit trail
+Chronicle Elixir provides process-scoped context management for tracking correlation, identity, and causation information as you append events. See [Correlation, identity, and causation](/chronicle/concepts/correlation-identity-causation/) for what these three mean and why Chronicle tracks them. This page covers the Elixir-specific API in depth.
 
 All three are process-scoped: set them once at the start of a request or operation and every subsequent `append` call in the same process will include them automatically. You can always override on a per-call basis.
 

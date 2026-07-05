@@ -85,6 +85,13 @@ connection drops. See
 
 - [Reducers](reducers.md) and [Reactors](reactors.md) to build read models and
   side effects from your events.
-- [Read Models](read-models.md) to query projected state.
+- [Read Models](read-models.md) and [Projections](projections.md) to query and
+  shape projected state.
+- [Constraints](constraints.md) for uniqueness and append-time invariants.
+- [Event Sequences](event-sequences.md) and [Concurrency](concurrency.md) for
+  the event log and optimistic concurrency.
+- [Transactions](transactions.md) for unit-of-work semantics across appends.
+- [Migrations](migrations.md) for evolving event schemas over time.
+- [Compliance](compliance.md) for PII handling and GDPR erasure.
 - [Connections](connections/index.md) to understand connection strings and
   resilience.
