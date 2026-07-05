@@ -31,6 +31,57 @@ BODY_SNIPPETS = {
     "tutorial/reacting/explicit-append": [
         "",
     ],
+    "tutorial/reacting/reading-state": [
+        "",
+    ],
+    "tutorial/reacting/waitlist-notifier": [
+        "",
+    ],
+    "get-started/common/append": [
+        "",
+    ],
+    "get-started/common/materialized-paging": [
+        "",
+    ],
+    "get-started/common/query-read-models": [
+        "",
+    ],
+    "get-started/common/reactor": [
+        "",
+    ],
+    "get-started/test-projection": [
+        "",
+    ],
+    "get-started/test-reactor": [
+        "",
+    ],
+    "projections/declarative/simple-projection/projection": [
+        "",
+    ],
+    "projections/model-bound/index/automap-model-bound": [
+        "",
+    ],
+    "projections/model-bound/index/explicit-mapping-model-bound": [
+        "",
+    ],
+    "reactors/getting-started/reactor": [
+        "",
+    ],
+    "reactors/getting-started/stable-id": [
+        "",
+    ],
+    "read-models/materialized-pagination/basic-usage": [
+        "",
+    ],
+    "read-models/materialized-pagination/pagination": [
+        "",
+    ],
+    "reducers/getting-started/retrieving-state": [
+        "",
+    ],
+    "scenarios/react-to-an-event/reading-state": [
+        "",
+    ],
     "events/appending/schema-validation": [
         """
         event_source_id = "order-123"
