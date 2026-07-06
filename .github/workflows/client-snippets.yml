@@ -1,0 +1,68 @@
+name: Client Snippet Verification
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+
+  pull_request:
+    branches:
+      - "**"
+    paths:
+      - "Documentation/client-snippets/**"
+      - "Documentation/validate-client-snippets.py"
+      - "Source/**"
+      - ".github/workflows/client-snippets.yml"
+
+  push:
+    branches: ["main"]
+    paths:
+      - "Documentation/client-snippets/**"
+      - "Documentation/validate-client-snippets.py"
+      - "Source/**"
+      - ".github/workflows/client-snippets.yml"
+
+permissions:
+  contents: read
+
+env:
+  ELIXIR_VERSION: "1.19.5"
+  OTP_VERSION: "28.5"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Elixir and Erlang
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Cache Mix dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            Source/chronicle/deps
+            Source/chronicle/_build
+          key: ${{ runner.os }}-mix-${{ hashFiles('Source/chronicle/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Install Hex and Rebar
+        working-directory: ./Source/chronicle
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+
+      - name: Install dependencies
+        working-directory: ./Source/chronicle
+        run: mix deps.get
+
+      - name: Compile client snippets
+        run: python3 Documentation/validate-client-snippets.py

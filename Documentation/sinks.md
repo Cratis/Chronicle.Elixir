@@ -1,8 +1,6 @@
 # Sinks
 
-A sink is where Chronicle writes the materialized state of a projection or reducer.
-Every read model registration carries a sink type that tells the Chronicle kernel
-which storage backend to target.
+See [Sinks](/chronicle/sinks/) for what a sink is and the storage backends Chronicle ships with. This page covers Elixir-specific configuration: setting the default sink per client, running multiple clients with different sinks, and the `Chronicle.Sinks.WellKnownSinkTypes` reference.
 
 ## Default sink
 

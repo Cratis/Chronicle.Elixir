@@ -2,7 +2,7 @@
 
 Chronicle.Elixir supports event store subscriptions for importing events from one event store into another event store.
 
-This is useful when you want one Chronicle event store to consume selected events from another store's outbox without writing a reactor or webhook.
+This is useful when you want one Chronicle event store to consume selected events from another store's outbox without writing a reactor or webhook. See [Explicit event store subscriptions](/chronicle/subscriptions/explicit-subscriptions/) and [Outbox/inbox](/chronicle/subscriptions/outbox-inbox/) for the underlying concepts and how they apply across every client. This page adds the Elixir-specific **discoverable subscription module** pattern (`use Chronicle.EventStoreSubscriptions.Subscription`), which isn't covered there.
 
 ## Two ways to register subscriptions
 

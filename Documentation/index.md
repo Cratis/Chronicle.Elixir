@@ -1,23 +1,30 @@
-# Chronicle Elixir Guides
+# Chronicle Elixir Client
 
-Comprehensive guides for using Chronicle Elixir.
+`chronicle` is the Elixir SDK for Chronicle. Use this section for Mix setup, supervision, connection behavior, Elixir modules/macros, process-scoped context, and other runtime-specific details.
 
-## Guides
+Shared Chronicle concepts and workflows live in the main Chronicle docs and use language tabs when code differs by client.
 
-- [Get Started](get-started.md) — Install the client, define an event, start `Chronicle.Client`, and append and read your first events
-- [Connections](connections/index.md) — Connection strings, authentication, and how the client stays resilient across kernel restarts and network interruptions by reconnecting and re-registering observers in order
-- [Event Types](events.md) — Defining immutable event facts with stable identifiers and generations; naming, shape, and registration
-- [Reactors](reactors.md) — Observing events to produce side effects; `handle/2`, idempotency, and lifecycle re-registration
-- [Reducers](reducers.md) — Folding events into read models in plain Elixir with `reduce/3`; registration ordering and when to prefer a reducer over a projection
-- [Model-Bound Constraints](constraints.md) — Declaring unique and unique-event-type constraints directly on event types via `@unique`, `@unique_event_type`, and `@remove_constraint` attributes; automatic registration at client startup
-- [Context Management](context.md) — Process-scoped correlation IDs, identity tracking, and causation chains; typical web handler patterns; async process considerations
-- [Event Sequences](event-sequences.md) — Organizing events into named sequences (default `"event-log"`); querying and checking sequence state; multi-sequence patterns
-- [Event Store Discovery](event-stores.md) — Discovering event stores and namespaces; multi-tenant admin patterns; verifying environment before operations
-- [Seeding](seeding/index.md) — Pre-populate your event store with initial events during application startup; define seeders, register them with Chronicle.Client, and use the builder API to organize events by type and source
-- [Event Migrations](migrations.md) — Schema evolution between event generations using upcast/downcast transformations; generation validation and event type ID matching
-- [Transactions and Unit of Work](transactions.md) — Client-side transaction buffering for atomic multi-event commits; process-scoped UnitOfWorkManager integration
-- [Concurrency Scope](concurrency.md) — Optimistic concurrency control by validating sequence tail before append; scoping by event source, stream, or event types
-- [Event Store Subscriptions](event-store-subscriptions.md) — Importing events from one Chronicle event store to another; subscription filtering and position control
-- [Jobs](jobs.md) — Inspecting and controlling long-running Chronicle operations such as replays, rebuilds, and background work
-- [WebHooks](webhooks.md) — Registering webhooks to push observed events to external HTTP endpoints; event type filtering and target configuration
-- [Read Models](read-models.md) — Querying Chronicle read models with instance lookup, filtered queries, snapshots, and introspection
+## Shared Chronicle topics
+
+- [Get started](/chronicle/get-started/)
+- [Events and event logs](/chronicle/events/)
+- [Appending events](/chronicle/events/appending/)
+- [Read models](/chronicle/read-models/)
+- [Projections](/chronicle/projections/)
+- [Reactors](/chronicle/reactors/)
+- [Reducers](/chronicle/reducers/)
+- [Constraints](/chronicle/constraints/)
+- [Event seeding](/chronicle/event-seeding/)
+- [Compliance](/chronicle/compliance/)
+- [Transactions and unit of work](/chronicle/events/transactions/)
+- [Event evolution](/chronicle/understanding-event-evolution/)
+
+## Elixir-specific pages
+
+- [Get Started](get-started.md) — install the client, start `Chronicle.Client`, and append an event
+- [Connections](connections/index.md) — connection strings, authentication, resilience, and re-registration
+- [Context Management](context.md) — process-scoped correlation IDs, identities, and causation chains
+- [Event Store Discovery](event-stores.md) — discovering event stores and namespaces
+- [Event Store Subscriptions](event-store-subscriptions.md) — importing events between event stores
+- [Jobs](jobs.md) — inspecting and controlling Chronicle jobs
+- [WebHooks](webhooks.md) — registering webhooks from Elixir
