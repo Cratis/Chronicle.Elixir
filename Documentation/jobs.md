@@ -11,7 +11,7 @@ Start `Chronicle.Client` first:
 ```elixir
 children = [
   {Chronicle.Client,
-    connection_string: "chronicle://localhost:35000?disableTls=true",
+    connection_string: "chronicle://localhost:35000",
     event_store: "banking",
     otp_app: :my_app}
 ]

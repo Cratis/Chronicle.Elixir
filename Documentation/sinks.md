@@ -13,7 +13,7 @@ Pass `:default_sink_type_id` when starting `Chronicle.Client`:
 
 ```elixir
 {Chronicle.Client,
-  connection_string: "chronicle://localhost:35000?disableTls=true",
+  connection_string: "chronicle://localhost:35000",
   event_store: "my-store",
   default_sink_type_id: :sql,
   read_models: [MyApp.ReadModels.Account],
@@ -43,14 +43,14 @@ relevant read models to each:
 children = [
   {Chronicle.Client,
    name: :mongo_client,
-   connection_string: "chronicle://localhost:35000?disableTls=true",
+   connection_string: "chronicle://localhost:35000",
    event_store: "store",
    default_sink_type_id: :mongodb,
    read_models: [MyApp.ReadModels.AccountSummary]},
 
   {Chronicle.Client,
    name: :sql_client,
-   connection_string: "chronicle://localhost:35000?disableTls=true",
+   connection_string: "chronicle://localhost:35000",
    event_store: "store",
    default_sink_type_id: :sql,
    read_models: [MyApp.ReadModels.AccountReport]}

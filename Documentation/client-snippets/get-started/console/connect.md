@@ -6,7 +6,7 @@ defmodule MyApp.Application do
   def start(_type, _args) do
     children = [
       {Chronicle.Client,
-       connection_string: "chronicle://localhost:35000?disableTls=true",
+       connection_string: "chronicle://localhost:35000",
        event_store: "quickstart",
        otp_app: :my_app}
     ]

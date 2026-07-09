@@ -43,13 +43,13 @@ Register it explicitly, or let auto-discovery find it:
 ```elixir
 # Explicit
 {Chronicle.Client,
-  connection_string: "chronicle://localhost:35000?disableTls=true",
+  connection_string: "chronicle://localhost:35000",
   event_store: "banking",
   seeders: [MyApp.Seeders.AccountSeeder]}
 
 # Auto-discovery (enabled by default when otp_app is set)
 {Chronicle.Client,
-  connection_string: "chronicle://localhost:35000?disableTls=true",
+  connection_string: "chronicle://localhost:35000",
   event_store: "banking",
   otp_app: :my_app}
 ```
