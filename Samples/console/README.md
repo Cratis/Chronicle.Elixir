@@ -42,12 +42,13 @@ mix run --no-halt
 By default the sample connects with Chronicle's built-in development credentials:
 
 ```text
-chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000?disableTls=true
+chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000
 ```
 
 The Chronicle kernel requires authentication, so the client credentials are needed
 for the gRPC calls to succeed — the client exchanges them for a bearer token against
-the kernel's `/connect/token` endpoint (port `8080`).
+the kernel's `/connect/token` endpoint, served on the same port (`35000`) as the
+gRPC channel.
 
 Override the Chronicle connection string with:
 
