@@ -14,13 +14,13 @@ defmodule Chronicle.Connections.Connection do
   Start it as part of your supervision tree, typically via `Chronicle.Client`:
 
       {Chronicle.Client,
-        connection_string: "chronicle://localhost:35000?disableTls=true",
+        connection_string: "chronicle://localhost:35000",
         ...}
 
   Or start it directly for lower-level use:
 
       {:ok, conn} = Chronicle.Connections.Connection.start_link(
-        connection_string: "chronicle://localhost:35000?disableTls=true",
+        connection_string: "chronicle://localhost:35000",
         name: :my_conn
       )
       :ok = Chronicle.Connections.Connection.connect(:my_conn)
@@ -326,7 +326,10 @@ defmodule Chronicle.Connections.Connection do
     if connection_string.disable_tls or not Code.ensure_loaded?(GRPC.Credential) do
       options
     else
-      credential = apply(GRPC.Credential, :new, [[ssl: []]])
+      # Chronicle requires TLS on its single port and, in development, serves an
+      # auto-generated self-signed certificate. Skip chain validation so the
+      # channel trusts it out of the box, mirroring the OAuth token fetch below.
+      credential = apply(GRPC.Credential, :new, [[ssl: [verify: :verify_none]]])
       Keyword.put_new(options, :cred, credential)
     end
   end
@@ -340,8 +343,9 @@ defmodule Chronicle.Connections.Connection do
         cs = connection_string
         host = cs.server_address.host
 
-        # Use explicit auth_port if provided, otherwise default to 8080 (Chronicle's management port)
-        port = cs.auth_port || 8080
+        # Chronicle serves OAuth on the same port as the gRPC connection.
+        # Use explicit auth_port only when the caller configured a distinct OAuth authority.
+        port = cs.auth_port || cs.server_address.port
 
         case Chronicle.Connections.Auth.fetch_token(
                host,

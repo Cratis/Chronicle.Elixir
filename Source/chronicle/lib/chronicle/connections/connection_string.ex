@@ -9,7 +9,7 @@ defmodule Chronicle.Connections.ConnectionString do
 
       chronicle://localhost:35000
       chronicle://client-id:client-secret@server:35000
-      chronicle://server:35000?apiKey=my-key&disableTls=true
+      chronicle://server:35000?apiKey=my-key
 
   ## Authentication
 
@@ -23,7 +23,10 @@ defmodule Chronicle.Connections.ConnectionString do
   ## Query Parameters
 
     * `apiKey` — API key for authentication
-    * `disableTls` — set to `"true"` to disable TLS (useful for local development)
+    * `disableTls` — set to `"true"` to disable TLS (only for connecting through
+      something else that terminates TLS for you, such as a plaintext-terminating
+      proxy; the Chronicle kernel requires TLS on its single port, including in
+      development)
     * `certificatePath` — path to a client certificate file
     * `certificatePassword` — password for the client certificate
 
