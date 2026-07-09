@@ -50,7 +50,7 @@ Start `Chronicle.Client` with discovery enabled:
 ```elixir
 children = [
   {Chronicle.Client,
-   connection_string: "chronicle://localhost:35000?disableTls=true",
+   connection_string: "chronicle://localhost:35000",
    event_store: "target-store",
    otp_app: :my_app}
 ]

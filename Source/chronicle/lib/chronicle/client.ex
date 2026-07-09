@@ -18,7 +18,7 @@ defmodule Chronicle.Client do
       def start(_type, _args) do
         children = [
           {Chronicle.Client,
-            connection_string: "chronicle://localhost:35000?disableTls=true",
+            connection_string: "chronicle://localhost:35000",
             event_store: "my-store",
             event_types: [
               MyApp.Events.AccountOpened,
@@ -40,7 +40,7 @@ defmodule Chronicle.Client do
   Or enable artifact auto-discovery from an OTP application:
 
       {Chronicle.Client,
-        connection_string: "chronicle://localhost:35000?disableTls=true",
+        connection_string: "chronicle://localhost:35000",
         event_store: "my-store",
         otp_app: :my_app}
 

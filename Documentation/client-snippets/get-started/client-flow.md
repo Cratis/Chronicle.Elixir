@@ -1,7 +1,7 @@
 ```elixir title="application.ex"
 children = [
   {Chronicle.Client,
-   connection_string: "chronicle://localhost:35000?disableTls=true",
+   connection_string: "chronicle://localhost:35000",
    event_store: "chronicle-console",
    otp_app: :my_app}
 ]

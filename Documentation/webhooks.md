@@ -32,7 +32,7 @@ When `Chronicle.Client` starts with `otp_app: :my_app`, discoverable webhooks ar
 
 ```elixir
 {Chronicle.Client,
-  connection_string: "chronicle://localhost:35000?disableTls=true",
+  connection_string: "chronicle://localhost:35000",
   event_store: "banking",
   otp_app: :my_app}
 ```
@@ -41,7 +41,7 @@ You can also register explicit modules:
 
 ```elixir
 {Chronicle.Client,
-  connection_string: "chronicle://localhost:35000?disableTls=true",
+  connection_string: "chronicle://localhost:35000",
   event_store: "banking",
   webhooks: [MyApp.WebHooks.AccountEvents]}
 ```

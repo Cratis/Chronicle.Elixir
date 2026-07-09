@@ -18,7 +18,7 @@ defmodule Chronicle.Sinks.WellKnownSinkTypes do
   ## Example
 
       {Chronicle.Client,
-        connection_string: "chronicle://localhost:35000?disableTls=true",
+        connection_string: "chronicle://localhost:35000",
         event_store: "my-store",
         default_sink_type_id: :sql,
         read_models: [MyApp.ReadModels.Account]}

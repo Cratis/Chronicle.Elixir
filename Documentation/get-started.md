@@ -22,7 +22,8 @@ mix deps.get
 ```
 
 You also need a running Chronicle kernel. For local development, the kernel
-listens on `localhost:35000` without TLS.
+listens on `localhost:35000` over TLS, serving an auto-generated self-signed
+certificate — the client trusts it out of the box, no configuration needed.
 
 ## Define an event
 
@@ -49,7 +50,7 @@ defmodule MyApp.Application do
   def start(_type, _args) do
     children = [
       {Chronicle.Client,
-        connection_string: "chronicle://localhost:35000?disableTls=true",
+        connection_string: "chronicle://localhost:35000",
         event_store: "my-store",
         otp_app: :my_app}
     ]

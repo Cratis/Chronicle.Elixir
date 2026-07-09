@@ -24,7 +24,7 @@ Start a client by pointing it at a kernel with a connection string:
 
 ```elixir
 {Chronicle.Client,
-  connection_string: "chronicle://localhost:35000?disableTls=true",
+  connection_string: "chronicle://localhost:35000",
   event_store: "store",
   otp_app: :my_app}
 ```
