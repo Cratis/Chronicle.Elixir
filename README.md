@@ -35,7 +35,7 @@ You need a Chronicle Kernel available before running samples or application code
 The easiest local setup is the development Docker image:
 
 ```bash
-docker run -p 35000:35000 -p 8080:8080 cratis/chronicle:latest-development
+docker run -p 35000:35000 cratis/chronicle:latest-development
 ```
 
 ## Getting Started
@@ -71,7 +71,7 @@ defmodule MyApp.Application do
   def start(_type, _args) do
     children = [
       {Chronicle.Client,
-        connection_string: "chronicle://localhost:35000?disableTls=true",
+        connection_string: "chronicle://localhost:35000",
         event_store: "my-app",
         otp_app: :my_app}
     ]
