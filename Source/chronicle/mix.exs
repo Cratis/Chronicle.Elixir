@@ -26,7 +26,9 @@ defmodule Chronicle.MixProject do
 
   def application do
     [
-      extra_applications: [:logger]
+      # :inets (:httpc) and :ssl back the least-connections load-balancer
+      # strategy's HTTP probes against the Chronicle kernel.
+      extra_applications: [:logger, :inets, :ssl]
     ]
   end
 

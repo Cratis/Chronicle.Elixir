@@ -11,6 +11,34 @@ defmodule Chronicle.Connections.ConnectionString do
       chronicle://client-id:client-secret@server:35000
       chronicle://server:35000?apiKey=my-key
 
+  ## Multiple hosts
+
+  A `chronicle://` connection string may list more than one host, comma-separated.
+  Every configured host is a candidate the load balancer can pick between (see
+  `Chronicle.Connections.Connection`):
+
+      chronicle://host1:35000,host2:35000,host3:35000
+      chronicle://client-id:secret@host1:35000,host2:35000
+
+  IPv6 literals must use bracket notation, exactly like standard URLs:
+
+      chronicle://[::1]:35000
+      chronicle://[2001:db8::1]:35000,[2001:db8::2]:35000
+
+  A host without an explicit port uses the default (`35000`).
+
+  ## DNS SRV discovery
+
+  `chronicle+srv://` resolves its single host to a set of Chronicle server
+  addresses via a DNS SRV lookup (query name `_chronicle._tcp.<host>`) instead of
+  listing hosts explicitly. It is re-resolved on every connect/reconnect attempt,
+  so membership changes are picked up automatically:
+
+      chronicle+srv://my-chronicle-service
+
+  A `chronicle+srv://` connection string supports only a single host; use
+  `srvNameServer` to query a specific DNS server instead of the system resolver.
+
   ## Authentication
 
   Two authentication modes are supported:
@@ -27,13 +55,24 @@ defmodule Chronicle.Connections.ConnectionString do
       something else that terminates TLS for you, such as a plaintext-terminating
       proxy; the Chronicle kernel requires TLS on its single port, including in
       development)
+    * `skipTlsValidation` — set to `"true"` to skip TLS certificate chain
+      validation (e.g. against a Chronicle kernel serving its auto-generated
+      self-signed development certificate). Distinct from `disableTls`: TLS
+      stays on, only chain validation is skipped. Defaults to `false` — the
+      certificate chain is validated against the system trust store unless
+      this is explicitly set.
     * `certificatePath` — path to a client certificate file
     * `certificatePassword` — password for the client certificate
+    * `loadBalancer` — strategy used to pick among multiple hosts (or
+      SRV-resolved addresses): `"least-connections"` (default), `"round-robin"`,
+      or `"random"`. See `Chronicle.Connections.LoadBalancer`.
+    * `srvNameServer` — for `chronicle+srv://`, a specific DNS server
+      (`"host"` or `"host:port"`) to query instead of the system resolver.
 
   ## Examples
 
       iex> cs = Chronicle.Connections.ConnectionString.default()
-      iex> cs.server_address.host
+      iex> Chronicle.Connections.ConnectionString.server_address(cs).host
       "localhost"
 
       iex> cs = Chronicle.Connections.ConnectionString.parse("chronicle://localhost:35000?disableTls=true")
@@ -44,6 +83,12 @@ defmodule Chronicle.Connections.ConnectionString do
   @default_port 35_000
   @development_client "chronicle-dev-client"
   @development_client_secret "chronicle-dev-secret"
+
+  @load_balancer_strategies %{
+    "least-connections" => :least_connections,
+    "round-robin" => :round_robin,
+    "random" => :random
+  }
 
   defmodule ServerAddress do
     @moduledoc """
@@ -59,26 +104,34 @@ defmodule Chronicle.Connections.ConnectionString do
   end
 
   defstruct scheme: "chronicle",
-            server_address: nil,
+            server_addresses: [],
             username: nil,
             password: nil,
             api_key: nil,
             disable_tls: false,
+            skip_tls_validation: false,
             certificate_path: nil,
             certificate_password: nil,
             auth_port: nil,
+            load_balancer: :least_connections,
+            srv_name_server: nil,
             query_parameters: %{}
+
+  @type load_balancer_strategy :: :least_connections | :round_robin | :random
 
   @type t :: %__MODULE__{
           scheme: String.t(),
-          server_address: ServerAddress.t() | nil,
+          server_addresses: [ServerAddress.t()],
           username: String.t() | nil,
           password: String.t() | nil,
           api_key: String.t() | nil,
           disable_tls: boolean(),
+          skip_tls_validation: boolean(),
           certificate_path: String.t() | nil,
           certificate_password: String.t() | nil,
           auth_port: non_neg_integer() | nil,
+          load_balancer: load_balancer_strategy(),
+          srv_name_server: String.t() | nil,
           query_parameters: %{optional(String.t()) => String.t()}
         }
 
@@ -105,6 +158,20 @@ defmodule Chronicle.Connections.ConnectionString do
   end
 
   @doc """
+  Returns the first configured server address.
+
+  Provided as a convenience for callers that only need a single address — such
+  as the OAuth2 token endpoint, which authenticates against the first
+  configured host rather than the address the load balancer eventually picks
+  for the gRPC channel itself. Multi-host and `chronicle+srv://` connection
+  strings still resolve and select among every address for the channel; see
+  `Chronicle.Connections.Connection` and `Chronicle.Connections.LoadBalancer`.
+  """
+  @spec server_address(t()) :: ServerAddress.t() | nil
+  def server_address(%__MODULE__{server_addresses: [address | _]}), do: address
+  def server_address(%__MODULE__{server_addresses: []}), do: nil
+
+  @doc """
   Parses a Chronicle connection string into a `ConnectionString` struct.
 
   Raises `ArgumentError` if the connection string is malformed.
@@ -117,27 +184,19 @@ defmodule Chronicle.Connections.ConnectionString do
   """
   @spec parse(String.t()) :: t()
   def parse(connection_string) when is_binary(connection_string) do
-    uri = URI.parse(connection_string)
-    scheme = uri.scheme || raise ArgumentError, "Connection string must include a scheme"
+    {scheme, remainder} = split_scheme(connection_string)
+    validate_scheme!(scheme)
 
-    if scheme not in ["chronicle", "chronicle+srv"] do
-      raise ArgumentError, "Unsupported Chronicle scheme '#{scheme}'"
+    {authority, query_string} = split_query(remainder)
+    {user_info, hosts_part} = split_user_info(authority)
+    {username, password} = parse_user_info(user_info)
+    query_parameters = parse_query(query_string)
+
+    server_addresses = parse_hosts(hosts_part)
+
+    if scheme == "chronicle+srv" and length(server_addresses) > 1 do
+      raise ArgumentError, "chronicle+srv connection strings support only a single host"
     end
-
-    host =
-      case uri.host do
-        h when is_binary(h) and h != "" -> h
-        _ -> raise ArgumentError, "Connection string must include a host"
-      end
-
-    port = if uri.port in [nil, -1], do: @default_port, else: uri.port
-
-    if port < 1 or port > 65_535 do
-      raise ArgumentError, "Connection string port must be between 1 and 65535"
-    end
-
-    {username, password} = parse_user_info(uri.userinfo)
-    query_parameters = parse_query(uri.query)
 
     auth_port =
       case Map.get(query_parameters, "authPort") do
@@ -147,14 +206,17 @@ defmodule Chronicle.Connections.ConnectionString do
 
     %__MODULE__{
       scheme: scheme,
-      server_address: %ServerAddress{host: host, port: port},
+      server_addresses: server_addresses,
       username: username,
       password: password,
       api_key: Map.get(query_parameters, "apiKey"),
-      disable_tls: String.downcase(Map.get(query_parameters, "disableTls", "false")) == "true",
+      disable_tls: flag?(query_parameters, "disableTls"),
+      skip_tls_validation: flag?(query_parameters, "skipTlsValidation"),
       certificate_path: Map.get(query_parameters, "certificatePath"),
       certificate_password: Map.get(query_parameters, "certificatePassword"),
       auth_port: auth_port,
+      load_balancer: parse_load_balancer(query_parameters),
+      srv_name_server: Map.get(query_parameters, "srvNameServer"),
       query_parameters: query_parameters
     }
   end
@@ -245,7 +307,7 @@ defmodule Chronicle.Connections.ConnectionString do
   def format(%__MODULE__{} = connection_string) do
     authority =
       build_authority(
-        connection_string.server_address,
+        connection_string.server_addresses,
         connection_string.username,
         connection_string.password
       )
@@ -264,6 +326,44 @@ defmodule Chronicle.Connections.ConnectionString do
     end
   end
 
+  # -- Parsing -------------------------------------------------------------
+  #
+  # `URI.parse/1` cannot represent comma-separated hosts, so the authority
+  # (userinfo + host list) is hand-rolled here instead of relying on it.
+
+  defp split_scheme(connection_string) do
+    case String.split(connection_string, "://", parts: 2) do
+      [scheme, rest] when scheme != "" -> {scheme, rest}
+      _ -> raise ArgumentError, "Connection string must include a scheme"
+    end
+  end
+
+  defp validate_scheme!(scheme) do
+    if scheme not in ["chronicle", "chronicle+srv"] do
+      raise ArgumentError, "Unsupported Chronicle scheme '#{scheme}'"
+    end
+  end
+
+  defp split_query(remainder) do
+    case String.split(remainder, "?", parts: 2) do
+      [authority, query] -> {authority, query}
+      [authority] -> {authority, nil}
+    end
+  end
+
+  defp split_user_info(authority) do
+    case String.split(authority, "@") do
+      [hosts] ->
+        {nil, hosts}
+
+      parts ->
+        # The host list can't legally contain "@", so any occurrence is the
+        # userinfo separator — mirroring how URI.parse treats the *last* "@"
+        # in the authority as the boundary.
+        {parts |> Enum.slice(0..-2//1) |> Enum.join("@"), List.last(parts)}
+    end
+  end
+
   defp parse_user_info(nil), do: {nil, nil}
 
   defp parse_user_info(user_info) do
@@ -279,7 +379,79 @@ defmodule Chronicle.Connections.ConnectionString do
   defp parse_query(nil), do: %{}
   defp parse_query(query), do: URI.decode_query(query)
 
-  defp build_authority(server_address, username, password) do
+  defp parse_hosts(hosts_part) do
+    hosts_part
+    |> String.split(",")
+    |> Enum.map(&parse_host_entry/1)
+  end
+
+  defp parse_host_entry(entry) do
+    entry = String.trim(entry)
+    {host, port} = split_host_and_port(entry)
+
+    if host == nil or host == "" do
+      raise ArgumentError, "Connection string must include a host"
+    end
+
+    port = port || @default_port
+
+    if port < 1 or port > 65_535 do
+      raise ArgumentError, "Connection string port must be between 1 and 65535"
+    end
+
+    %ServerAddress{host: host, port: port}
+  end
+
+  defp split_host_and_port("[" <> _ = entry) do
+    case Regex.run(~r/^\[(?<host>[^\]]*)\](?::(?<port>[0-9]+))?$/, entry) do
+      [_full, host, port] -> {host, parse_port!(port)}
+      [_full, host] -> {host, nil}
+      nil -> raise ArgumentError, "Invalid IPv6 host segment '#{entry}'"
+    end
+  end
+
+  defp split_host_and_port(entry) do
+    case String.split(entry, ":") do
+      [host] ->
+        {host, nil}
+
+      [host, port] ->
+        {host, parse_port!(port)}
+
+      _more_than_one_colon ->
+        # A bare IPv6 literal without a port — bracket notation is required to
+        # pair an IPv6 host with a port, so the whole entry is just the host.
+        {entry, nil}
+    end
+  end
+
+  defp parse_port!(port_string) do
+    case Integer.parse(port_string) do
+      {port, ""} -> port
+      _ -> raise ArgumentError, "Connection string port must be between 1 and 65535"
+    end
+  end
+
+  defp flag?(query_parameters, key) do
+    String.downcase(Map.get(query_parameters, key, "false")) == "true"
+  end
+
+  defp parse_load_balancer(query_parameters) do
+    case Map.get(query_parameters, "loadBalancer") do
+      nil ->
+        :least_connections
+
+      value ->
+        Map.get(@load_balancer_strategies, value) ||
+          raise ArgumentError,
+                "Unsupported loadBalancer strategy '#{value}'. Supported values: " <>
+                  Enum.map_join(@load_balancer_strategies, ", ", fn {name, _} -> name end)
+    end
+  end
+
+  # -- Formatting ------------------------------------------------------------
+
+  defp build_authority(server_addresses, username, password) do
     credentials =
       cond do
         present?(username) and present?(password) ->
@@ -292,8 +464,20 @@ defmodule Chronicle.Connections.ConnectionString do
           ""
       end
 
-    "#{credentials}#{server_address.host}:#{server_address.port}"
+    hosts = Enum.map_join(server_addresses, ",", &format_host_port/1)
+
+    "#{credentials}#{hosts}"
   end
+
+  defp format_host_port(%ServerAddress{host: host, port: port}) do
+    if ipv6_literal?(host) do
+      "[#{host}]:#{port}"
+    else
+      "#{host}:#{port}"
+    end
+  end
+
+  defp ipv6_literal?(host), do: String.contains?(host, ":")
 
   defp present?(value), do: is_binary(value) and value != ""
 end
