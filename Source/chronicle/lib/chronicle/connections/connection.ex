@@ -39,6 +39,9 @@ defmodule Chronicle.Connections.Connection do
     * `:connection_string` — a `Chronicle.Connections.ConnectionString` struct or
       a connection string binary. Defaults to `ConnectionString.default/0`.
     * `:server_address` — alternative to `:connection_string`; a `"host:port"` string.
+    * `:skip_tls_validation` — overrides the connection string's `skipTlsValidation`
+      query option. When `true`, the gRPC channel and the OAuth2 token fetch skip TLS
+      certificate chain validation instead of validating against the system trust store.
     * `:load_balancer` — overrides the connection string's `loadBalancer` query
       option (`:least_connections`, `:round_robin`, or `:random`).
     * `:grpc_options` — additional options passed to `GRPC.Stub.connect/2`.
@@ -71,6 +74,7 @@ defmodule Chronicle.Connections.Connection do
   @type option ::
           {:connection_string, String.t() | ConnectionString.t()}
           | {:server_address, String.t()}
+          | {:skip_tls_validation, boolean()}
           | {:load_balancer, ConnectionString.load_balancer_strategy()}
           | {:grpc_options, keyword()}
           | {:retry_attempts, non_neg_integer()}
@@ -352,6 +356,7 @@ defmodule Chronicle.Connections.Connection do
   defp connection_string_from(options) do
     options
     |> base_connection_string()
+    |> apply_option_override(options, :skip_tls_validation)
     |> apply_option_override(options, :load_balancer)
   end
 
@@ -371,10 +376,11 @@ defmodule Chronicle.Connections.Connection do
     end
   end
 
-  # `:load_balancer` can be set directly as a `Connection` (or `Chronicle.Client`)
-  # option, overriding whatever the connection string itself specifies — useful
-  # when the connection string comes from elsewhere (e.g. a discovered
-  # `chronicle+srv://` host) but the caller still wants to pin the strategy.
+  # `:skip_tls_validation`/`:load_balancer` can be set directly as `Connection`
+  # (or `Chronicle.Client`) options, overriding whatever the connection string
+  # itself specifies — useful when the connection string comes from elsewhere
+  # (e.g. a discovered `chronicle+srv://` host) but the caller still wants to
+  # pin the load-balancer strategy or TLS validation behavior explicitly.
   defp apply_option_override(connection_string, options, key) do
     case Keyword.fetch(options, key) do
       {:ok, value} -> Map.put(connection_string, key, value)
@@ -407,14 +413,29 @@ defmodule Chronicle.Connections.Connection do
       ]
       |> Keyword.merge(grpc_options)
 
-    if connection_string.disable_tls or not Code.ensure_loaded?(GRPC.Credential) do
-      options
-    else
-      # Chronicle requires TLS on its single port and, in development, serves an
-      # auto-generated self-signed certificate. Skip chain validation so the
-      # channel trusts it out of the box, mirroring the OAuth token fetch below.
-      credential = apply(GRPC.Credential, :new, [[ssl: [verify: :verify_none]]])
-      Keyword.put_new(options, :cred, credential)
+    cond do
+      connection_string.disable_tls or not Code.ensure_loaded?(GRPC.Credential) ->
+        options
+
+      connection_string.skip_tls_validation ->
+        # Explicit opt-out: trust any certificate without validating its chain.
+        # Only set `skipTlsValidation`/`:skip_tls_validation` against a
+        # known-safe endpoint, such as a local Chronicle kernel serving its
+        # auto-generated self-signed development certificate.
+        credential = apply(GRPC.Credential, :new, [[ssl: [verify: :verify_none]]])
+        Keyword.put_new(options, :cred, credential)
+
+      true ->
+        # Validate the server's certificate chain against the system trust
+        # store by default. This is a breaking change from the previous
+        # always-skip-validation behavior — set `skipTlsValidation=true` (or
+        # the `:skip_tls_validation` option) to restore it.
+        credential =
+          apply(GRPC.Credential, :new, [
+            [ssl: [verify: :verify_peer, cacerts: :public_key.cacerts_get()]]
+          ])
+
+        Keyword.put_new(options, :cred, credential)
     end
   end
 
@@ -437,7 +458,8 @@ defmodule Chronicle.Connections.Connection do
                port,
                cs.username,
                cs.password,
-               cs.disable_tls
+               cs.disable_tls,
+               cs.skip_tls_validation
              ) do
           {:ok, token} ->
             [{"authorization", "Bearer #{token}"}]

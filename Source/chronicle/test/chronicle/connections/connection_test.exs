@@ -310,4 +310,83 @@ defmodule Chronicle.Connections.ConnectionTest do
       assert target in ["ipv4:host1:1000", "ipv4:host2:2000"]
     end
   end
+
+  describe "TLS validation" do
+    test "validates the certificate chain against the system trust store by default" do
+      test_pid = self()
+      channel = channel_with_conn(self())
+
+      conn =
+        start(
+          connection_string: "chronicle://localhost:35000",
+          connect_fun: fn _target, opts ->
+            send(test_pid, {:opts, opts})
+            {:ok, channel}
+          end,
+          auto_connect: true
+        )
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert_receive {:opts, opts}
+      assert opts[:cred].ssl[:verify] == :verify_peer
+      assert opts[:cred].ssl[:cacerts] != nil
+    end
+
+    test "skips validation when the connection string sets skipTlsValidation=true" do
+      test_pid = self()
+      channel = channel_with_conn(self())
+
+      conn =
+        start(
+          connection_string: "chronicle://localhost:35000?skipTlsValidation=true",
+          connect_fun: fn _target, opts ->
+            send(test_pid, {:opts, opts})
+            {:ok, channel}
+          end,
+          auto_connect: true
+        )
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert_receive {:opts, opts}
+      assert opts[:cred].ssl[:verify] == :verify_none
+    end
+
+    test "skips validation when the :skip_tls_validation option is set" do
+      test_pid = self()
+      channel = channel_with_conn(self())
+
+      conn =
+        start(
+          connection_string: "chronicle://localhost:35000",
+          skip_tls_validation: true,
+          connect_fun: fn _target, opts ->
+            send(test_pid, {:opts, opts})
+            {:ok, channel}
+          end,
+          auto_connect: true
+        )
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert_receive {:opts, opts}
+      assert opts[:cred].ssl[:verify] == :verify_none
+    end
+
+    test "omits credentials entirely when disableTls=true" do
+      test_pid = self()
+      channel = channel_with_conn(self())
+
+      conn =
+        start(
+          connect_fun: fn _target, opts ->
+            send(test_pid, {:opts, opts})
+            {:ok, channel}
+          end,
+          auto_connect: true
+        )
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert_receive {:opts, opts}
+      refute Keyword.has_key?(opts, :cred)
+    end
+  end
 end
