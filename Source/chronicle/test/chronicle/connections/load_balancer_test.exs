@@ -74,7 +74,7 @@ defmodule Chronicle.Connections.LoadBalancerTest do
     end
   end
 
-  describe "select/4 :least_connections" do
+  describe "select/5 :least_connections" do
     test "picks the address reporting the fewest connections" do
       candidates = addresses(["busy", "idle", "medium"])
       cs = connection_string(:least_connections)
@@ -86,7 +86,7 @@ defmodule Chronicle.Connections.LoadBalancerTest do
         :reserve, _addr, _cs -> {:ok, :reserved}
       end
 
-      assert {:ok, %{host: "idle"}} = LoadBalancer.select(candidates, cs, 0, probe_fun)
+      assert {:ok, %{host: "idle"}} = LoadBalancer.select(candidates, cs, 0, probe_fun, 0)
     end
 
     test "reserves the winning address after selecting it" do
@@ -100,7 +100,7 @@ defmodule Chronicle.Connections.LoadBalancerTest do
         :reserve, address, _cs -> send(test, {:reserved, address.host}) && {:ok, :reserved}
       end
 
-      assert {:ok, %{host: "a"}} = LoadBalancer.select(candidates, cs, 0, probe_fun)
+      assert {:ok, %{host: "a"}} = LoadBalancer.select(candidates, cs, 0, probe_fun, 0)
       assert_receive {:reserved, "a"}
     end
 
@@ -115,7 +115,7 @@ defmodule Chronicle.Connections.LoadBalancerTest do
 
       picks =
         for _ <- 1..30 do
-          {:ok, address} = LoadBalancer.select(candidates, cs, 0, probe_fun)
+          {:ok, address} = LoadBalancer.select(candidates, cs, 0, probe_fun, 0)
           address.host
         end
 
@@ -132,7 +132,7 @@ defmodule Chronicle.Connections.LoadBalancerTest do
         :reserve, _addr, _cs -> {:error, :econnrefused}
       end
 
-      assert {:ok, address} = LoadBalancer.select(candidates, cs, 0, probe_fun)
+      assert {:ok, address} = LoadBalancer.select(candidates, cs, 0, probe_fun, 0)
       assert address in candidates
     end
 
@@ -146,7 +146,35 @@ defmodule Chronicle.Connections.LoadBalancerTest do
         :reserve, _addr, _cs -> {:ok, :reserved}
       end
 
-      assert {:ok, %{host: "reachable"}} = LoadBalancer.select(candidates, cs, 0, probe_fun)
+      assert {:ok, %{host: "reachable"}} = LoadBalancer.select(candidates, cs, 0, probe_fun, 0)
+    end
+
+    test "defaults jitter_max_ms to 250 when not given" do
+      candidates = addresses(["a", "b"])
+      cs = connection_string(:least_connections)
+      probe_fun = fn _action, _addr, _cs -> {:error, :unused} end
+
+      {elapsed_microseconds, {:ok, address}} =
+        :timer.tc(fn -> LoadBalancer.select(candidates, cs, 0, probe_fun) end)
+
+      assert address in candidates
+      assert elapsed_microseconds >= 1_000
+    end
+
+    test "jitter_max_ms of 0 disables the pre-probe delay" do
+      candidates = addresses(["a", "b"])
+      cs = connection_string(:least_connections)
+
+      probe_fun = fn
+        :count, %{host: "a"}, _cs -> {:ok, 0}
+        :count, %{host: "b"}, _cs -> {:ok, 1}
+        :reserve, _addr, _cs -> {:ok, :reserved}
+      end
+
+      {elapsed_microseconds, {:ok, %{host: "a"}}} =
+        :timer.tc(fn -> LoadBalancer.select(candidates, cs, 0, probe_fun, 0) end)
+
+      assert elapsed_microseconds < 1_000
     end
   end
 end

@@ -13,13 +13,15 @@ defmodule Chronicle.Connections.LoadBalancer do
     * `:least_connections` (the default) — probes every candidate's
       `GET /connections/count` HTTP endpoint on the Chronicle kernel and picks
       the address reporting the fewest active connections, breaking ties
-      randomly. A small random jitter is slept before probing so a fleet of
-      clients reconnecting at the same moment doesn't stampede every
-      candidate host simultaneously. The winner is then best-effort informed
-      via `POST /connections/reserve`, so other clients racing to connect at
-      the same time see an up-to-date count. If every probe fails (e.g. none
-      of the candidates expose the endpoint), selection falls back to
-      `:random` rather than failing the connection attempt outright. The
+      randomly. Before every probe attempt (not just the first), a random
+      jitter of up to `jitter_max_ms` (0-250ms, defaulting to 250ms; 0
+      disables it) is slept, so a fleet of clients reconnecting at the same
+      moment doesn't stampede every candidate host simultaneously - this
+      mirrors the reference .NET client. The winner is then best-effort
+      informed via `POST /connections/reserve`, so other clients racing to
+      connect at the same time see an up-to-date count. If every probe fails
+      (e.g. none of the candidates expose the endpoint), selection falls back
+      to `:random` rather than failing the connection attempt outright. The
       actual HTTP calls live in `Chronicle.Connections.LoadBalancer.HttpProbe`.
     * `:round_robin` — cycles through the candidates in order. The starting
       point is a random offset chosen once per `Connection` process (not
@@ -44,7 +46,7 @@ defmodule Chronicle.Connections.LoadBalancer do
           (probe_action(), ServerAddress.t(), ConnectionString.t() ->
              {:ok, term()} | {:error, term()})
 
-  @jitter_max_ms 25
+  @default_jitter_max_ms 250
 
   @doc """
   Selects one address from `addresses` according to
@@ -55,23 +57,40 @@ defmodule Chronicle.Connections.LoadBalancer do
   counter (and any future strategy state) belongs to the one `Connection`
   GenServer it is scoped to.
 
+  `jitter_max_ms` bounds the random delay `:least_connections` sleeps before
+  every probe attempt; it defaults to 250ms and 0 disables it entirely.
+  Ignored by `:round_robin` and `:random`.
+
   Returns `{:error, :no_addresses}` when `addresses` is empty.
   """
-  @spec select([ServerAddress.t()], ConnectionString.t(), integer(), probe_fun()) ::
+  @spec select([ServerAddress.t()], ConnectionString.t(), integer(), probe_fun(), non_neg_integer()) ::
           {:ok, ServerAddress.t()} | {:error, :no_addresses}
-  def select([], _connection_string, _round_robin_counter, _probe_fun) do
+  def select(
+        addresses,
+        connection_string,
+        round_robin_counter,
+        probe_fun,
+        jitter_max_ms \\ @default_jitter_max_ms
+      )
+
+  def select([], _connection_string, _round_robin_counter, _probe_fun, _jitter_max_ms) do
     {:error, :no_addresses}
   end
 
-  def select([address], _connection_string, _round_robin_counter, _probe_fun) do
+  def select([address], _connection_string, _round_robin_counter, _probe_fun, _jitter_max_ms) do
     {:ok, address}
   end
 
-  def select(addresses, connection_string, round_robin_counter, probe_fun) do
+  def select(addresses, connection_string, round_robin_counter, probe_fun, jitter_max_ms) do
     case connection_string.load_balancer do
-      :round_robin -> {:ok, round_robin_pick(addresses, round_robin_counter)}
-      :random -> {:ok, Enum.random(addresses)}
-      :least_connections -> {:ok, least_connections_pick(addresses, connection_string, probe_fun)}
+      :round_robin ->
+        {:ok, round_robin_pick(addresses, round_robin_counter)}
+
+      :random ->
+        {:ok, Enum.random(addresses)}
+
+      :least_connections ->
+        {:ok, least_connections_pick(addresses, connection_string, probe_fun, jitter_max_ms)}
     end
   end
 
@@ -87,8 +106,8 @@ defmodule Chronicle.Connections.LoadBalancer do
     Enum.at(addresses, Integer.mod(counter, length(addresses)))
   end
 
-  defp least_connections_pick(addresses, connection_string, probe_fun) do
-    Process.sleep(:rand.uniform(@jitter_max_ms))
+  defp least_connections_pick(addresses, connection_string, probe_fun, jitter_max_ms) do
+    if jitter_max_ms > 0, do: Process.sleep(:rand.uniform(jitter_max_ms))
 
     reachable =
       addresses
