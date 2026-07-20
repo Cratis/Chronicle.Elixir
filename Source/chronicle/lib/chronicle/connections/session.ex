@@ -144,7 +144,15 @@ defmodule Chronicle.Connections.Session do
         struct(ConnectRequest,
           ConnectionId: connection_id,
           ClientVersion: "1.0.0",
-          IsRunningWithDebugger: false
+          IsRunningWithDebugger: false,
+          ProcessId: process_id(),
+          # The BEAM has no reliable way to discover the OS executable path for
+          # the running node (unlike a Debugger-attachable process on other
+          # platforms), so this is reported empty rather than guessed — the
+          # same gap and the same call, decided for the Elixir client.
+          ProcessPath: "",
+          MachineName: machine_name(),
+          ClientType: "Elixir"
         )
 
       case ConnectionService.Stub.connect(channel, request) do
@@ -193,5 +201,16 @@ defmodule Chronicle.Connections.Session do
 
   defp generate_connection_id do
     :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+  end
+
+  defp process_id do
+    :os.getpid() |> List.to_integer()
+  end
+
+  defp machine_name do
+    case :inet.gethostname() do
+      {:ok, hostname} -> List.to_string(hostname)
+      {:error, _reason} -> ""
+    end
   end
 end
