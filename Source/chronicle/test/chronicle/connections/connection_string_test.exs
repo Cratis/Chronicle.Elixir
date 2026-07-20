@@ -207,18 +207,18 @@ defmodule Chronicle.Connections.ConnectionStringTest do
   end
 
   describe "parse/1 skipTlsValidation" do
-    test "defaults to false" do
+    test "defaults to true" do
       cs = ConnectionString.parse("chronicle://localhost:35000")
-      assert cs.skip_tls_validation == false
-    end
-
-    test "parses skipTlsValidation=true" do
-      cs = ConnectionString.parse("chronicle://localhost:35000?skipTlsValidation=true")
       assert cs.skip_tls_validation == true
     end
 
+    test "parses skipTlsValidation=false" do
+      cs = ConnectionString.parse("chronicle://localhost:35000?skipTlsValidation=false")
+      assert cs.skip_tls_validation == false
+    end
+
     test "is independent from disableTls" do
-      cs = ConnectionString.parse("chronicle://localhost:35000?skipTlsValidation=true")
+      cs = ConnectionString.parse("chronicle://localhost:35000?skipTlsValidation=false")
       assert cs.disable_tls == false
     end
   end

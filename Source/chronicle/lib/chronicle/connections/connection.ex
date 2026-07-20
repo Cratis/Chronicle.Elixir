@@ -418,18 +418,17 @@ defmodule Chronicle.Connections.Connection do
         options
 
       connection_string.skip_tls_validation ->
-        # Explicit opt-out: trust any certificate without validating its chain.
-        # Only set `skipTlsValidation`/`:skip_tls_validation` against a
-        # known-safe endpoint, such as a local Chronicle kernel serving its
-        # auto-generated self-signed development certificate.
+        # Default: trust any certificate without validating its chain, since a
+        # Chronicle kernel commonly serves an auto-generated self-signed
+        # certificate. Set `skipTlsValidation=false` (or the
+        # `:skip_tls_validation` option) to require full chain validation
+        # instead, against a server whose certificate is verifiable.
         credential = apply(GRPC.Credential, :new, [[ssl: [verify: :verify_none]]])
         Keyword.put_new(options, :cred, credential)
 
       true ->
-        # Validate the server's certificate chain against the system trust
-        # store by default. This is a breaking change from the previous
-        # always-skip-validation behavior — set `skipTlsValidation=true` (or
-        # the `:skip_tls_validation` option) to restore it.
+        # Explicit opt-in: validate the server's certificate chain against the
+        # system trust store.
         credential =
           apply(GRPC.Credential, :new, [
             [ssl: [verify: :verify_peer, cacerts: :public_key.cacerts_get()]]

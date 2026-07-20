@@ -55,12 +55,12 @@ defmodule Chronicle.Connections.ConnectionString do
       something else that terminates TLS for you, such as a plaintext-terminating
       proxy; the Chronicle kernel requires TLS on its single port, including in
       development)
-    * `skipTlsValidation` — set to `"true"` to skip TLS certificate chain
-      validation (e.g. against a Chronicle kernel serving its auto-generated
-      self-signed development certificate). Distinct from `disableTls`: TLS
-      stays on, only chain validation is skipped. Defaults to `false` — the
-      certificate chain is validated against the system trust store unless
-      this is explicitly set.
+    * `skipTlsValidation` — set to `"false"` to require full TLS certificate
+      chain validation against the system trust store. Distinct from
+      `disableTls`: TLS stays on either way, this only controls whether the
+      chain is validated. Defaults to `true` — a Chronicle kernel commonly
+      serves an auto-generated self-signed certificate, so validation is
+      skipped unless explicitly turned on.
     * `certificatePath` — path to a client certificate file
     * `certificatePassword` — password for the client certificate
     * `loadBalancer` — strategy used to pick among multiple hosts (or
@@ -109,7 +109,7 @@ defmodule Chronicle.Connections.ConnectionString do
             password: nil,
             api_key: nil,
             disable_tls: false,
-            skip_tls_validation: false,
+            skip_tls_validation: true,
             certificate_path: nil,
             certificate_password: nil,
             auth_port: nil,
@@ -210,8 +210,8 @@ defmodule Chronicle.Connections.ConnectionString do
       username: username,
       password: password,
       api_key: Map.get(query_parameters, "apiKey"),
-      disable_tls: flag?(query_parameters, "disableTls"),
-      skip_tls_validation: flag?(query_parameters, "skipTlsValidation"),
+      disable_tls: flag?(query_parameters, "disableTls", false),
+      skip_tls_validation: flag?(query_parameters, "skipTlsValidation", true),
       certificate_path: Map.get(query_parameters, "certificatePath"),
       certificate_password: Map.get(query_parameters, "certificatePassword"),
       auth_port: auth_port,
@@ -432,8 +432,9 @@ defmodule Chronicle.Connections.ConnectionString do
     end
   end
 
-  defp flag?(query_parameters, key) do
-    String.downcase(Map.get(query_parameters, key, "false")) == "true"
+  defp flag?(query_parameters, key, default) do
+    default_string = if default, do: "true", else: "false"
+    String.downcase(Map.get(query_parameters, key, default_string)) == "true"
   end
 
   defp parse_load_balancer(query_parameters) do

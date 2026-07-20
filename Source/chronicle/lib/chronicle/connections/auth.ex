@@ -15,9 +15,9 @@ defmodule Chronicle.Connections.Auth do
   `grant_type=client_credentials`, `client_id`, and `client_secret`.
 
   `skip_tls_validation` mirrors the same option on the gRPC channel
-  (`Chronicle.Connections.Connection`): when `true`, the TLS certificate
-  chain is not validated; otherwise it is validated against the system trust
-  store. Ignored when `disable_tls` is `true`.
+  (`Chronicle.Connections.Connection`): when `true` (the default), the TLS
+  certificate chain is not validated; set it to `false` to validate against
+  the system trust store instead. Ignored when `disable_tls` is `true`.
 
   Returns `{:ok, token}` or `{:error, reason}`.
   """
@@ -29,7 +29,7 @@ defmodule Chronicle.Connections.Auth do
           boolean(),
           boolean()
         ) :: {:ok, String.t()} | {:error, term()}
-  def fetch_token(host, port, client_id, client_secret, disable_tls, skip_tls_validation \\ false) do
+  def fetch_token(host, port, client_id, client_secret, disable_tls, skip_tls_validation \\ true) do
     scheme = if disable_tls, do: :http, else: :https
 
     body =

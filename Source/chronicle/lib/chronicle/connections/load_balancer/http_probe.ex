@@ -9,9 +9,9 @@ defmodule Chronicle.Connections.LoadBalancer.HttpProbe do
   Talks to a Chronicle kernel's `GET /connections/count` and
   `POST /connections/reserve` endpoints via `:httpc` (built into `:inets`, so
   no extra dependency is needed). TLS behavior mirrors the gRPC channel and
-  the OAuth2 token fetch: skipped entirely when `disable_tls` is set, validated
-  against the system trust store by default, and validation-skipped only when
-  `skip_tls_validation` is explicitly set.
+  the OAuth2 token fetch: skipped entirely when `disable_tls` is set, and
+  certificate validation skipped by default (`skip_tls_validation` is `true`
+  unless set to `false`).
 
   The `/connections/count` response body is accepted either as a bare integer
   or as JSON with a `count` or `connections` key, since the exact response
