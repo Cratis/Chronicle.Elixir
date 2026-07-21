@@ -12,12 +12,19 @@ defmodule Chronicle.Connections.Session do
   # the Connect stream, and only sends the first keepalive AFTER that registration
   # completes (plus ~1 second). So `ready?` is set to true on the first keepalive,
   # and observers (reactors/reducers) must wait until then before registering.
+  #
+  # Liveness is a two-way contract. `Chronicle.Connections.KeepAlive` answers
+  # every keepalive the kernel pushes, and the watchdog here treats a gap longer
+  # than @keepalive_timeout as a dead session. Both halves are needed: the kernel
+  # does not close the Connect stream when its own watchdog evicts us, so waiting
+  # for a stream error alone leaves a half-open session that looks connected
+  # forever while observers receive nothing.
 
   use GenServer, restart: :permanent
 
   require Logger
 
-  alias Chronicle.Connections.{Connection, Lifecycle}
+  alias Chronicle.Connections.{Connection, KeepAlive, Lifecycle}
 
   alias Cratis.Chronicle.Contracts.Clients.{
     ConnectionService,
@@ -25,6 +32,11 @@ defmodule Chronicle.Connections.Session do
   }
 
   @retry_delay 3_000
+
+  # Mirrors the C# client: the kernel emits a keepalive every second and evicts
+  # any client whose LastSeen falls more than 5 seconds behind.
+  @keepalive_poll_interval 1_000
+  @keepalive_timeout 5_000
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: name_for(opts[:client_name]))
@@ -73,6 +85,10 @@ defmodule Chronicle.Connections.Session do
       lifecycle: Keyword.get(opts, :lifecycle),
       connection_id: generate_connection_id(),
       keepalive_task: nil,
+      keepalive_fun: Keyword.get(opts, :keepalive_fun, &KeepAlive.answer/2),
+      last_keepalive: nil,
+      watchdog_timer: nil,
+      reconnect_timer: nil,
       ready?: false
     }
 
@@ -91,6 +107,8 @@ defmodule Chronicle.Connections.Session do
 
   @impl true
   def handle_info(:connect, state) do
+    state = %{state | reconnect_timer: nil}
+
     case Connection.channel(state.connection) do
       {:ok, channel} ->
         case start_session(channel, state) do
@@ -100,36 +118,45 @@ defmodule Chronicle.Connections.Session do
 
           {:error, reason} ->
             Logger.warning("Chronicle session failed to start: #{inspect(reason)}, retrying...")
-            Process.send_after(self(), :connect, @retry_delay)
-            {:noreply, state}
+            {:noreply, schedule_reconnect(state)}
         end
 
       {:error, _} ->
-        Process.send_after(self(), :connect, @retry_delay)
-        {:noreply, state}
+        {:noreply, schedule_reconnect(state)}
     end
   end
 
   def handle_info(:keepalive_received, %{ready?: false} = state) do
     notify_connected(state)
-    {:noreply, %{state | ready?: true}}
+    {:noreply, %{state | ready?: true, last_keepalive: now_ms()}}
   end
 
-  def handle_info(:keepalive_received, state), do: {:noreply, state}
+  def handle_info(:keepalive_received, state) do
+    {:noreply, %{state | last_keepalive: now_ms()}}
+  end
+
+  # The kernel leaves the Connect stream open when its watchdog evicts a client,
+  # so a silent stream — not an errored one — is the shape a half-disconnect
+  # actually takes. Poll for the gap rather than waiting to be told.
+  def handle_info(:watchdog, %{last_keepalive: nil} = state), do: {:noreply, state}
+
+  def handle_info(:watchdog, state) do
+    if now_ms() - state.last_keepalive > @keepalive_timeout do
+      {:noreply, drop_session(state, :keepalive_timeout)}
+    else
+      {:noreply, %{state | watchdog_timer: start_watchdog()}}
+    end
+  end
 
   def handle_info({:session_down, reason}, state) do
-    Logger.warning("Chronicle session dropped: #{inspect(reason)}, reconnecting...")
-    notify_disconnected(state)
-    {:noreply, schedule_reconnect(%{state | keepalive_task: nil, ready?: false})}
+    {:noreply, drop_session(state, reason)}
   end
 
   def handle_info(
         {:DOWN, _ref, :process, pid, reason},
         %{keepalive_task: %Task{pid: pid}} = state
       ) do
-    Logger.warning("Chronicle session task exited: #{inspect(reason)}")
-    notify_disconnected(state)
-    {:noreply, schedule_reconnect(%{state | keepalive_task: nil, ready?: false})}
+    {:noreply, drop_session(state, {:task_exited, reason})}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
@@ -158,8 +185,21 @@ defmodule Chronicle.Connections.Session do
       case ConnectionService.Stub.connect(channel, request) do
         {:ok, reply_stream} ->
           handler = self()
-          task = Task.async(fn -> keepalive_loop(handler, reply_stream) end)
-          {:ok, %{state | keepalive_task: task, connection_id: connection_id}}
+          keepalive_fun = state.keepalive_fun
+
+          task =
+            Task.async(fn ->
+              KeepAlive.run(handler, reply_stream, channel, connection_id, keepalive_fun)
+            end)
+
+          {:ok,
+           %{
+             state
+             | keepalive_task: task,
+               connection_id: connection_id,
+               last_keepalive: now_ms(),
+               watchdog_timer: start_watchdog()
+           }}
 
         {:error, reason} ->
           {:error, reason}
@@ -167,6 +207,28 @@ defmodule Chronicle.Connections.Session do
     rescue
       e -> {:error, e}
     end
+  end
+
+  # Tears the session down and schedules a fresh connect. Safe to call more than
+  # once per drop: both the keepalive loop and the task monitor can report the
+  # same failure, and only the first one gets to schedule a reconnect.
+  defp drop_session(state, reason) do
+    if state.keepalive_task || state.watchdog_timer do
+      Logger.warning("Chronicle session dropped: #{inspect(reason)}, reconnecting...")
+    end
+
+    notify_disconnected(state)
+
+    state
+    |> teardown()
+    |> schedule_reconnect()
+  end
+
+  defp teardown(state) do
+    shutdown_task(state.keepalive_task)
+    cancel_timer(state.watchdog_timer)
+
+    %{state | keepalive_task: nil, watchdog_timer: nil, last_keepalive: nil, ready?: false}
   end
 
   defp current_connection_id(%{lifecycle: nil, connection_id: connection_id}), do: connection_id
@@ -178,23 +240,30 @@ defmodule Chronicle.Connections.Session do
     Lifecycle.connected(lifecycle, connection_id)
   end
 
+  # Only report a disconnect for a session that actually came up, so repeated
+  # failed connect attempts don't spam observers with teardown notifications.
+  defp notify_disconnected(%{ready?: false}), do: :ok
   defp notify_disconnected(%{lifecycle: nil}), do: :ok
   defp notify_disconnected(%{lifecycle: lifecycle}), do: Lifecycle.disconnected(lifecycle)
 
-  defp keepalive_loop(handler, reply_stream) do
-    Enum.each(reply_stream, fn
-      {:ok, _keepalive} ->
-        send(handler, :keepalive_received)
-
-      {:error, reason} ->
-        send(handler, {:session_down, reason})
-    end)
+  defp start_watchdog do
+    Process.send_after(self(), :watchdog, @keepalive_poll_interval)
   end
+
+  defp schedule_reconnect(%{reconnect_timer: timer} = state) when not is_nil(timer), do: state
 
   defp schedule_reconnect(state) do
-    Process.send_after(self(), :connect, @retry_delay)
-    state
+    %{state | reconnect_timer: Process.send_after(self(), :connect, @retry_delay)}
   end
+
+  defp shutdown_task(nil), do: :ok
+  defp shutdown_task(%Task{} = task), do: Task.shutdown(task, :brutal_kill)
+  defp shutdown_task(_), do: :ok
+
+  defp cancel_timer(nil), do: :ok
+  defp cancel_timer(timer), do: Process.cancel_timer(timer)
+
+  defp now_ms, do: System.monotonic_time(:millisecond)
 
   defp name_for(nil), do: __MODULE__
   defp name_for(client_name), do: :"#{client_name}.Session"
