@@ -7,6 +7,7 @@ An interactive employee-focused console sample that mirrors the Chronicle TypeSc
 - Seeding Ada Lovelace, Grace Hopper, and Alan Turing through `EmployeeSeeder`
 - Employee lifecycle events: `EmployeeHired`, `EmployeePromoted`, `EmployeeMoved`, `EmployeeEmailSet`, and `EmployeeAddressSet`
 - Reducer-backed `EmployeeState` read models
+- Reacts to those events via `HrNotificationReactor` (console notifications)
 - Model-bound constraints for unique employee hire and case-insensitive unique email addresses
 - Transactional multi-employee updates through `Chronicle.Transactions.UnitOfWork`
 - A customer compliance / PII walkthrough with register-and-view commands
