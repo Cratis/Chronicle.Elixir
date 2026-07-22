@@ -26,12 +26,23 @@ defmodule Chronicle.MixProject do
 
   def application do
     [
-      extra_applications: [:logger]
+      # :inets (:httpc) and :ssl back the least-connections load-balancer
+      # strategy's HTTP probes against the Chronicle kernel.
+      extra_applications: [:logger, :inets, :ssl]
     ]
   end
 
   defp deps do
     [
+      # Kept as a loose lower bound (rather than tightening to ">= 16.3.0", the
+      # first version whose ConnectRequest carries ProcessId, ProcessPath,
+      # MachineName, and ClientType — see Session.start_session/2): the
+      # published package's own mix.exs reads its @version from a
+      # CHRONICLE_VERSION build-time env var that isn't set for downstream
+      # consumers, so it self-reports "0.1.0" locally regardless of the tarball
+      # actually fetched. A tighter local constraint fails Mix's dependency
+      # version check even though the fetched code is correct. mix.lock pins
+      # the real resolved version (16.3.1 as of this change) instead.
       {:cratis_chronicle_contracts, ">= 0.1.0"},
       {:grpc, "~> 0.11"},
       {:mint, "~> 1.7"},

@@ -14,11 +14,22 @@ defmodule Chronicle.Connections.Auth do
   POSTs to `http(s)://host:port/connect/token` with
   `grant_type=client_credentials`, `client_id`, and `client_secret`.
 
+  `skip_tls_validation` mirrors the same option on the gRPC channel
+  (`Chronicle.Connections.Connection`): when `true` (the default), the TLS
+  certificate chain is not validated; set it to `false` to validate against
+  the system trust store instead. Ignored when `disable_tls` is `true`.
+
   Returns `{:ok, token}` or `{:error, reason}`.
   """
-  @spec fetch_token(String.t(), non_neg_integer(), String.t(), String.t(), boolean()) ::
-          {:ok, String.t()} | {:error, term()}
-  def fetch_token(host, port, client_id, client_secret, disable_tls) do
+  @spec fetch_token(
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          String.t(),
+          boolean(),
+          boolean()
+        ) :: {:ok, String.t()} | {:error, term()}
+  def fetch_token(host, port, client_id, client_secret, disable_tls, skip_tls_validation \\ true) do
     scheme = if disable_tls, do: :http, else: :https
 
     body =
@@ -34,7 +45,7 @@ defmodule Chronicle.Connections.Auth do
       {"accept", "application/json"}
     ]
 
-    mint_opts = if disable_tls, do: [], else: [transport_opts: [verify: :verify_none]]
+    mint_opts = mint_transport_opts(disable_tls, skip_tls_validation)
 
     with {:ok, conn} <- Mint.HTTP.connect(scheme, host, port, mint_opts),
          {:ok, conn, _ref} <- Mint.HTTP.request(conn, "POST", "/connect/token", headers, body),
@@ -56,6 +67,12 @@ defmodule Chronicle.Connections.Auth do
   rescue
     e -> {:error, {:exception, e}}
   end
+
+  defp mint_transport_opts(true, _skip_tls_validation), do: []
+  defp mint_transport_opts(false, true), do: [transport_opts: [verify: :verify_none]]
+
+  defp mint_transport_opts(false, false),
+    do: [transport_opts: [verify: :verify_peer, cacerts: :public_key.cacerts_get()]]
 
   defp receive_response(conn, status \\ nil, body \\ "") do
     receive do

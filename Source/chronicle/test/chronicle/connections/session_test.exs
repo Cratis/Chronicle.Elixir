@@ -54,4 +54,64 @@ defmodule Chronicle.Connections.SessionTest do
     assert_receive {:chronicle_lifecycle, :disconnected, _}, 1_000
     assert Lifecycle.phase(lifecycle) == :disconnected
   end
+
+  test "drops the session when keepalives stop arriving", %{
+    lifecycle: lifecycle,
+    session: session
+  } do
+    send(session, :keepalive_received)
+    assert_receive {:chronicle_lifecycle, :connected, _}, 1_000
+
+    # The kernel leaves the Connect stream open when its watchdog evicts a
+    # client, so the only evidence of a half-disconnect is the keepalive gap.
+    backdate_last_keepalive(session, 30_000)
+    send(session, :watchdog)
+
+    assert_receive {:chronicle_lifecycle, :disconnected, _}, 1_000
+    assert Lifecycle.phase(lifecycle) == :disconnected
+  end
+
+  test "keeps the session while keepalives keep arriving", %{
+    lifecycle: lifecycle,
+    session: session
+  } do
+    send(session, :keepalive_received)
+    assert_receive {:chronicle_lifecycle, :connected, _}, 1_000
+
+    send(session, :watchdog)
+
+    refute_receive {:chronicle_lifecycle, :disconnected, _}, 200
+    assert Lifecycle.phase(lifecycle) == :connected
+  end
+
+  test "does not report a disconnect for a session that never came up", %{session: session} do
+    # Repeated failed connect attempts must not spam observers with teardown
+    # notifications for a connection they never saw come up.
+    send(session, {:session_down, :unavailable})
+
+    refute_receive {:chronicle_lifecycle, :disconnected, _}, 200
+  end
+
+  test "schedules only one reconnect when a drop is reported twice", %{session: session} do
+    send(session, :keepalive_received)
+    assert_receive {:chronicle_lifecycle, :connected, _}, 1_000
+
+    # The keepalive loop and the task monitor can both report the same failure.
+    send(session, {:session_down, :closed})
+    send(session, {:session_down, :closed})
+
+    assert_receive {:chronicle_lifecycle, :disconnected, _}, 1_000
+    assert reconnect_timers(session) == 1
+  end
+
+  defp backdate_last_keepalive(session, by_ms) do
+    :sys.replace_state(session, fn state ->
+      %{state | last_keepalive: state.last_keepalive - by_ms}
+    end)
+  end
+
+  defp reconnect_timers(session) do
+    state = :sys.get_state(session)
+    if state.reconnect_timer, do: 1, else: 0
+  end
 end

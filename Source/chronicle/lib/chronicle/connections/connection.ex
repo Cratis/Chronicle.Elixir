@@ -9,6 +9,14 @@ defmodule Chronicle.Connections.Connection do
   kernel. It handles connection failures with exponential backoff and notifies
   callers waiting for the connection to become ready.
 
+  On every connect/reconnect attempt it re-resolves the connection string's
+  addresses — a static multi-host list, or a fresh DNS SRV lookup for
+  `chronicle+srv://` (see `Chronicle.Connections.DnsResolver`) — and picks one
+  via the configured load-balancer strategy (see `Chronicle.Connections.LoadBalancer`)
+  before dialing. Re-resolving on every attempt means a `chronicle+srv://`
+  record change, or a host coming back up, is picked up automatically without
+  a separate background refresh loop.
+
   ## Usage
 
   Start it as part of your supervision tree, typically via `Chronicle.Client`:
@@ -31,11 +39,23 @@ defmodule Chronicle.Connections.Connection do
     * `:connection_string` — a `Chronicle.Connections.ConnectionString` struct or
       a connection string binary. Defaults to `ConnectionString.default/0`.
     * `:server_address` — alternative to `:connection_string`; a `"host:port"` string.
+    * `:skip_tls_validation` — overrides the connection string's `skipTlsValidation`
+      query option. When `true`, the gRPC channel and the OAuth2 token fetch skip TLS
+      certificate chain validation instead of validating against the system trust store.
+    * `:load_balancer` — overrides the connection string's `loadBalancer` query
+      option (`:least_connections`, `:round_robin`, or `:random`).
     * `:grpc_options` — additional options passed to `GRPC.Stub.connect/2`.
     * `:retry_attempts` — maximum reconnect attempts before giving up (default: 5).
     * `:reconnect_base_delay` — base reconnect delay in milliseconds (default: 1000).
     * `:reconnect_max_delay` — maximum reconnect delay in milliseconds (default: 10000).
     * `:auto_connect` — whether to connect immediately on start (default: `true`).
+    * `:resolve_fun` — resolves a `chronicle+srv://` host to candidate addresses.
+      Defaults to `Chronicle.Connections.DnsResolver.resolve/2`. Test-only seam,
+      mirroring `:connect_fun`/`:disconnect_fun` below.
+    * `:probe_fun` — performs the `:least_connections` HTTP probe. Defaults to
+      `Chronicle.Connections.LoadBalancer.default_probe/3`. Test-only seam.
+    * `:connect_fun` — test-only seam replacing `GRPC.Stub.connect/2`.
+    * `:disconnect_fun` — test-only seam replacing `GRPC.Stub.disconnect/1`.
     * `:name` — registered name for the GenServer process.
   """
 
@@ -43,7 +63,8 @@ defmodule Chronicle.Connections.Connection do
 
   require Logger
 
-  alias Chronicle.Connections.ConnectionString
+  alias Chronicle.Connections.{ConnectionString, DnsResolver, LoadBalancer}
+  alias Chronicle.Connections.ConnectionString.ServerAddress
 
   @default_connect_timeout 10_000
   @default_retry_attempts 5
@@ -53,10 +74,15 @@ defmodule Chronicle.Connections.Connection do
   @type option ::
           {:connection_string, String.t() | ConnectionString.t()}
           | {:server_address, String.t()}
+          | {:skip_tls_validation, boolean()}
+          | {:load_balancer, ConnectionString.load_balancer_strategy()}
           | {:grpc_options, keyword()}
           | {:retry_attempts, non_neg_integer()}
           | {:reconnect_base_delay, non_neg_integer()}
           | {:reconnect_max_delay, non_neg_integer()}
+          | {:resolve_fun,
+             (String.t(), String.t() | nil -> {:ok, [ServerAddress.t()]} | {:error, term()})}
+          | {:probe_fun, LoadBalancer.probe_fun()}
           | {:connect_fun, (String.t(), keyword() -> {:ok, term()} | {:error, term()})}
           | {:disconnect_fun, (term() -> any())}
           | {:name, GenServer.name()}
@@ -115,6 +141,8 @@ defmodule Chronicle.Connections.Connection do
       connected?: false,
       connect_fun: Keyword.get(options, :connect_fun, &default_connect/2),
       disconnect_fun: Keyword.get(options, :disconnect_fun, &default_disconnect/1),
+      resolve_fun: Keyword.get(options, :resolve_fun, &DnsResolver.resolve/2),
+      probe_fun: Keyword.get(options, :probe_fun, &LoadBalancer.default_probe/3),
       grpc_options: Keyword.get(options, :grpc_options, []),
       retry_attempts: Keyword.get(options, :retry_attempts, @default_retry_attempts),
       reconnect_base_delay:
@@ -124,7 +152,12 @@ defmodule Chronicle.Connections.Connection do
       reconnect_attempt: 0,
       reconnect_timer: nil,
       connection_process: nil,
-      pending_connects: []
+      pending_connects: [],
+      # Round-robin's counter starts at a random offset (not 0) so a fleet of
+      # clients reconnecting together doesn't all dial the same first host;
+      # it belongs here, in the one `Connection` process it is scoped to,
+      # rather than in `LoadBalancer` (which holds no state of its own).
+      round_robin_counter: :rand.uniform(1_000_000_000)
     }
 
     if Keyword.get(options, :auto_connect, true) do
@@ -176,7 +209,7 @@ defmodule Chronicle.Connections.Connection do
   def handle_info(:connect, state) do
     state = %{state | reconnect_timer: nil}
     spawn_connect_attempt(state)
-    {:noreply, state}
+    {:noreply, %{state | round_robin_counter: state.round_robin_counter + 1}}
   end
 
   def handle_info({:connect_result, {:ok, channel}}, state) do
@@ -220,16 +253,43 @@ defmodule Chronicle.Connections.Connection do
 
   defp spawn_connect_attempt(state) do
     parent = self()
-    target = target_for(state.connection_string)
     connection_string = state.connection_string
     grpc_options = state.grpc_options
     connect_fun = state.connect_fun
+    resolve_fun = state.resolve_fun
+    probe_fun = state.probe_fun
+    round_robin_counter = state.round_robin_counter
 
     Task.start(fn ->
-      opts = build_grpc_options(connection_string, grpc_options)
-      result = connect_fun.(target, opts)
+      result =
+        with {:ok, addresses} <- resolve_addresses(connection_string, resolve_fun),
+             {:ok, address} <-
+               LoadBalancer.select(addresses, connection_string, round_robin_counter, probe_fun) do
+          target = target_for(address)
+          opts = build_grpc_options(connection_string, grpc_options)
+          connect_fun.(target, opts)
+        end
+
       send(parent, {:connect_result, result})
     end)
+  end
+
+  # Resolves the connection string's candidate addresses. `chronicle+srv://`
+  # holds a single unresolved host and is resolved fresh via `resolve_fun` on
+  # every call (i.e. every connect/reconnect attempt); a plain multi-host
+  # `chronicle://` already has its full candidate list from parsing.
+  defp resolve_addresses(
+         %ConnectionString{scheme: "chronicle+srv"} = connection_string,
+         resolve_fun
+       ) do
+    case ConnectionString.server_address(connection_string) do
+      nil -> {:error, :no_addresses}
+      %ServerAddress{host: host} -> resolve_fun.(host, connection_string.srv_name_server)
+    end
+  end
+
+  defp resolve_addresses(%ConnectionString{server_addresses: addresses}, _resolve_fun) do
+    {:ok, addresses}
   end
 
   defp succeed_connect(state, channel) do
@@ -294,6 +354,13 @@ defmodule Chronicle.Connections.Connection do
   end
 
   defp connection_string_from(options) do
+    options
+    |> base_connection_string()
+    |> apply_option_override(options, :skip_tls_validation)
+    |> apply_option_override(options, :load_balancer)
+  end
+
+  defp base_connection_string(options) do
     cond do
       match?(%ConnectionString{}, options[:connection_string]) ->
         options[:connection_string]
@@ -309,8 +376,31 @@ defmodule Chronicle.Connections.Connection do
     end
   end
 
-  defp target_for(connection_string) do
-    "#{connection_string.server_address.host}:#{connection_string.server_address.port}"
+  # `:skip_tls_validation`/`:load_balancer` can be set directly as `Connection`
+  # (or `Chronicle.Client`) options, overriding whatever the connection string
+  # itself specifies — useful when the connection string comes from elsewhere
+  # (e.g. a discovered `chronicle+srv://` host) but the caller still wants to
+  # pin the load-balancer strategy or TLS validation behavior explicitly.
+  defp apply_option_override(connection_string, options, key) do
+    case Keyword.fetch(options, key) do
+      {:ok, value} -> Map.put(connection_string, key, value)
+      :error -> connection_string
+    end
+  end
+
+  # Builds the gRPC target for a single, already-selected address. Uses the
+  # explicit `ipv4:`/`ipv6:` schemes (rather than a bare "host:port") because
+  # the underlying grpc-elixir dependency's default resolver only special-cases
+  # the literal host "localhost" for bare host:port strings — any other real
+  # hostname would fail resolution outright. `ipv4:` here doesn't mean the host
+  # must be an IPv4 literal: the resolver passes the address straight through
+  # to the transport adapter, which resolves hostnames itself.
+  defp target_for(%ServerAddress{host: host, port: port}) do
+    if String.contains?(host, ":") do
+      "ipv6:[#{host}]:#{port}"
+    else
+      "ipv4:#{host}:#{port}"
+    end
   end
 
   defp build_grpc_options(connection_string, grpc_options) do
@@ -323,14 +413,28 @@ defmodule Chronicle.Connections.Connection do
       ]
       |> Keyword.merge(grpc_options)
 
-    if connection_string.disable_tls or not Code.ensure_loaded?(GRPC.Credential) do
-      options
-    else
-      # Chronicle requires TLS on its single port and, in development, serves an
-      # auto-generated self-signed certificate. Skip chain validation so the
-      # channel trusts it out of the box, mirroring the OAuth token fetch below.
-      credential = apply(GRPC.Credential, :new, [[ssl: [verify: :verify_none]]])
-      Keyword.put_new(options, :cred, credential)
+    cond do
+      connection_string.disable_tls or not Code.ensure_loaded?(GRPC.Credential) ->
+        options
+
+      connection_string.skip_tls_validation ->
+        # Default: trust any certificate without validating its chain, since a
+        # Chronicle kernel commonly serves an auto-generated self-signed
+        # certificate. Set `skipTlsValidation=false` (or the
+        # `:skip_tls_validation` option) to require full chain validation
+        # instead, against a server whose certificate is verifiable.
+        credential = apply(GRPC.Credential, :new, [[ssl: [verify: :verify_none]]])
+        Keyword.put_new(options, :cred, credential)
+
+      true ->
+        # Explicit opt-in: validate the server's certificate chain against the
+        # system trust store.
+        credential =
+          apply(GRPC.Credential, :new, [
+            [ssl: [verify: :verify_peer, cacerts: :public_key.cacerts_get()]]
+          ])
+
+        Keyword.put_new(options, :cred, credential)
     end
   end
 
@@ -341,18 +445,20 @@ defmodule Chronicle.Connections.Connection do
 
       present?(connection_string.username) and present?(connection_string.password) ->
         cs = connection_string
-        host = cs.server_address.host
+        address = ConnectionString.server_address(cs)
 
-        # Chronicle serves OAuth on the same port as the gRPC connection.
-        # Use explicit auth_port only when the caller configured a distinct OAuth authority.
-        port = cs.auth_port || cs.server_address.port
+        # Chronicle serves OAuth on the same port as the gRPC connection, on
+        # the first configured host. Use explicit auth_port only when the
+        # caller configured a distinct OAuth authority.
+        port = cs.auth_port || address.port
 
         case Chronicle.Connections.Auth.fetch_token(
-               host,
+               address.host,
                port,
                cs.username,
                cs.password,
-               cs.disable_tls
+               cs.disable_tls,
+               cs.skip_tls_validation
              ) do
           {:ok, token} ->
             [{"authorization", "Bearer #{token}"}]

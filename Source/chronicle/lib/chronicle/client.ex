@@ -106,6 +106,12 @@ defmodule Chronicle.Client do
       projections and reducers. Accepts an atom (`:mongodb`, `:sql`,
       `:in_memory`, `:none`) or a raw sink type string. Defaults to
       `:mongodb`. See `Chronicle.Sinks.WellKnownSinkTypes`.
+    * `:skip_tls_validation` — overrides the connection string's
+      `skipTlsValidation` query option. See `Chronicle.Connections.Connection`.
+    * `:load_balancer` — overrides the connection string's `loadBalancer`
+      query option (`:least_connections`, `:round_robin`, or `:random`), used
+      to pick among multiple hosts or DNS SRV-resolved addresses. See
+      `Chronicle.Connections.LoadBalancer`.
 
   ## Convenience functions
 
@@ -209,6 +215,8 @@ defmodule Chronicle.Client do
       |> Keyword.take([
         :connection_string,
         :server_address,
+        :skip_tls_validation,
+        :load_balancer,
         :grpc_options,
         :retry_attempts,
         :reconnect_base_delay,
