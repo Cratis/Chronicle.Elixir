@@ -39,7 +39,10 @@ defmodule Chronicle.Connections.Session do
   @keepalive_timeout 5_000
 
   def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts, name: name_for(opts[:client_name]))
+    case name_for(opts[:client_name]) do
+      nil -> GenServer.start_link(__MODULE__, opts)
+      name -> GenServer.start_link(__MODULE__, opts, name: name)
+    end
   end
 
   @doc """
@@ -265,7 +268,7 @@ defmodule Chronicle.Connections.Session do
 
   defp now_ms, do: System.monotonic_time(:millisecond)
 
-  defp name_for(nil), do: __MODULE__
+  defp name_for(nil), do: nil
   defp name_for(client_name), do: :"#{client_name}.Session"
 
   defp generate_connection_id do
