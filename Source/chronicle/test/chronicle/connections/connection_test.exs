@@ -57,6 +57,10 @@ defmodule Chronicle.Connections.ConnectionTest do
     test "retries until it succeeds" do
       test = self()
       {:ok, counter} = Agent.start_link(fn -> 0 end)
+      # A stable stand-in for the adapter's connection process — building the
+      # channel around the connect task's own pid would hand the connection a
+      # conn_pid that is already dead, which now triggers a reconnect.
+      conn_pid = spawn(fn -> Process.sleep(:infinity) end)
 
       connect_fun = fn _target, _opts ->
         attempt = Agent.get_and_update(counter, fn n -> {n, n + 1} end)
@@ -65,7 +69,7 @@ defmodule Chronicle.Connections.ConnectionTest do
         if attempt < 2 do
           {:error, :unavailable}
         else
-          {:ok, channel_with_conn(self())}
+          {:ok, channel_with_conn(conn_pid)}
         end
       end
 
@@ -113,6 +117,86 @@ defmodule Chronicle.Connections.ConnectionTest do
 
       # It reconnects on its own.
       assert_receive :connected, 1_000
+      assert Connection.connect(conn, 1_000) == :ok
+    end
+  end
+
+  describe "forced reconnect" do
+    test "reconnect/1 drops the channel and dials a fresh one" do
+      test = self()
+      conn_pid = spawn(fn -> Process.sleep(:infinity) end)
+      {:ok, counter} = Agent.start_link(fn -> 0 end)
+
+      connect_fun = fn _target, _opts ->
+        attempt = Agent.get_and_update(counter, fn n -> {n, n + 1} end)
+        send(test, {:attempt, attempt})
+        {:ok, channel_with_conn(conn_pid)}
+      end
+
+      conn =
+        start(
+          connect_fun: connect_fun,
+          disconnect_fun: fn channel -> send(test, {:disconnected, channel}) end,
+          auto_connect: true
+        )
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert_receive {:attempt, 0}, 1_000
+
+      # A caller (the session watchdog) has evidence the channel is dead even
+      # though this process observed nothing — it must be able to force a
+      # rebuild.
+      Connection.reconnect(conn)
+
+      assert_receive {:disconnected, _old_channel}, 1_000
+      assert_receive {:attempt, 1}, 1_000
+      assert Connection.connect(conn, 1_000) == :ok
+    end
+
+    test "reconnect/1 without a connected channel leaves the dial loop alone" do
+      test = self()
+
+      conn =
+        start(
+          connect_fun: fn _target, _opts ->
+            send(test, :dialed)
+            {:error, :unavailable}
+          end
+        )
+
+      # auto_connect: false — no channel and no dial in flight; a forced
+      # reconnect must not start one of its own.
+      Connection.reconnect(conn)
+
+      refute_receive :dialed, 200
+      refute Connection.connected?(conn)
+    end
+  end
+
+  describe "connection process exit" do
+    test "reconnects when the connection process dies" do
+      test = self()
+      first_conn = spawn(fn -> Process.sleep(:infinity) end)
+      replacement_conn = spawn(fn -> Process.sleep(:infinity) end)
+      {:ok, counter} = Agent.start_link(fn -> 0 end)
+
+      connect_fun = fn _target, _opts ->
+        attempt = Agent.get_and_update(counter, fn n -> {n, n + 1} end)
+        send(test, {:attempt, attempt})
+        {:ok, channel_with_conn(if(attempt == 0, do: first_conn, else: replacement_conn))}
+      end
+
+      conn =
+        start(connect_fun: connect_fun, disconnect_fun: fn _ch -> :ok end, auto_connect: true)
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert_receive {:attempt, 0}, 1_000
+
+      # The adapter's connection process crashing sends no transport-down
+      # message anywhere useful — only the monitor sees it.
+      Process.exit(first_conn, :kill)
+
+      assert_receive {:attempt, 1}, 1_000
       assert Connection.connect(conn, 1_000) == :ok
     end
   end
