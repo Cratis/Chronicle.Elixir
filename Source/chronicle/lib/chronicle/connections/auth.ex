@@ -30,6 +30,41 @@ defmodule Chronicle.Connections.Auth do
           boolean()
         ) :: {:ok, String.t()} | {:error, term()}
   def fetch_token(host, port, client_id, client_secret, disable_tls, skip_tls_validation \\ true) do
+    case fetch_token_with_expiry(
+           host,
+           port,
+           client_id,
+           client_secret,
+           disable_tls,
+           skip_tls_validation
+         ) do
+      {:ok, {token, _expires_in}} -> {:ok, token}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Like `fetch_token/6`, but also returns the token's lifetime.
+
+  Returns `{:ok, {token, expires_in_seconds | nil}}` — `nil` when the token
+  response does not carry `expires_in` — or `{:error, reason}`.
+  """
+  @spec fetch_token_with_expiry(
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          String.t(),
+          boolean(),
+          boolean()
+        ) :: {:ok, {String.t(), non_neg_integer() | nil}} | {:error, term()}
+  def fetch_token_with_expiry(
+        host,
+        port,
+        client_id,
+        client_secret,
+        disable_tls,
+        skip_tls_validation \\ true
+      ) do
     scheme = if disable_tls, do: :http, else: :https
 
     body =
@@ -55,7 +90,7 @@ defmodule Chronicle.Connections.Auth do
       case status do
         200 ->
           case Jason.decode(resp_body) do
-            {:ok, %{"access_token" => token}} -> {:ok, token}
+            {:ok, %{"access_token" => token} = resp} -> {:ok, {token, expires_in(resp)}}
             {:ok, resp} -> {:error, {:missing_access_token, resp}}
             {:error, reason} -> {:error, {:json_decode, reason}}
           end
@@ -67,6 +102,20 @@ defmodule Chronicle.Connections.Auth do
   rescue
     e -> {:error, {:exception, e}}
   end
+
+  # `expires_in` is RECOMMENDED but not required by OAuth2, and some servers
+  # send it as a string.
+  defp expires_in(%{"expires_in" => seconds}) when is_integer(seconds) and seconds > 0,
+    do: seconds
+
+  defp expires_in(%{"expires_in" => seconds}) when is_binary(seconds) do
+    case Integer.parse(seconds) do
+      {parsed, ""} when parsed > 0 -> parsed
+      _ -> nil
+    end
+  end
+
+  defp expires_in(_resp), do: nil
 
   defp mint_transport_opts(true, _skip_tls_validation), do: []
   defp mint_transport_opts(false, true), do: [transport_opts: [verify: :verify_none]]

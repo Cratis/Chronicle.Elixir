@@ -63,7 +63,14 @@ defmodule Chronicle.Connections.Connection do
 
   require Logger
 
-  alias Chronicle.Connections.{ConnectionString, DnsResolver, LoadBalancer}
+  alias Chronicle.Connections.{
+    AuthInterceptor,
+    ConnectionString,
+    DnsResolver,
+    LoadBalancer,
+    TokenProvider
+  }
+
   alias Chronicle.Connections.ConnectionString.ServerAddress
 
   @default_connect_timeout 10_000
@@ -151,8 +158,11 @@ defmodule Chronicle.Connections.Connection do
 
   @impl true
   def init(options) do
+    connection_string = connection_string_from(options)
+
     state = %{
-      connection_string: connection_string_from(options),
+      connection_string: connection_string,
+      token_provider: start_token_provider(connection_string),
       channel: nil,
       connected?: false,
       connect_fun: Keyword.get(options, :connect_fun, &default_connect/2),
@@ -215,6 +225,9 @@ defmodule Chronicle.Connections.Connection do
   def handle_call(:disconnect, _from, state) do
     state = disconnect_channel(state)
     state = fail_pending_connects(state, {:error, :disconnected})
+    # The provider is linked, but a :normal stop does not propagate over the
+    # link — stop it explicitly so it does not outlive the connection.
+    stop_token_provider(state.token_provider)
     {:stop, :normal, :ok, %{state | connected?: false, channel: nil, connection_process: nil}}
   end
 
@@ -301,6 +314,7 @@ defmodule Chronicle.Connections.Connection do
     resolve_fun = state.resolve_fun
     probe_fun = state.probe_fun
     round_robin_counter = state.round_robin_counter
+    token_provider = state.token_provider
 
     Task.start(fn ->
       result =
@@ -308,7 +322,7 @@ defmodule Chronicle.Connections.Connection do
              {:ok, address} <-
                LoadBalancer.select(addresses, connection_string, round_robin_counter, probe_fun) do
           target = target_for(address)
-          opts = build_grpc_options(connection_string, grpc_options)
+          opts = build_grpc_options(connection_string, grpc_options, token_provider)
           connect_fun.(target, opts)
         end
 
@@ -447,7 +461,7 @@ defmodule Chronicle.Connections.Connection do
     end
   end
 
-  defp build_grpc_options(connection_string, grpc_options) do
+  defp build_grpc_options(connection_string, grpc_options, token_provider) do
     headers = auth_headers(connection_string)
 
     options =
@@ -456,6 +470,7 @@ defmodule Chronicle.Connections.Connection do
         headers: headers
       ]
       |> Keyword.merge(grpc_options)
+      |> add_auth_interceptor(token_provider)
 
     cond do
       connection_string.disable_tls or not Code.ensure_loaded?(GRPC.Credential) ->
@@ -482,39 +497,38 @@ defmodule Chronicle.Connections.Connection do
     end
   end
 
+  # The API key is static, so it can live in the channel headers. OAuth2
+  # tokens expire and are attached per RPC by the auth interceptor instead —
+  # a token baked into the channel would silently invalidate it at expiry.
   defp auth_headers(connection_string) do
-    cond do
-      present?(connection_string.api_key) ->
-        [{"api-key", connection_string.api_key}]
-
-      present?(connection_string.username) and present?(connection_string.password) ->
-        cs = connection_string
-        address = ConnectionString.server_address(cs)
-
-        # Chronicle serves OAuth on the same port as the gRPC connection, on
-        # the first configured host. Use explicit auth_port only when the
-        # caller configured a distinct OAuth authority.
-        port = cs.auth_port || address.port
-
-        case Chronicle.Connections.Auth.fetch_token(
-               address.host,
-               port,
-               cs.username,
-               cs.password,
-               cs.disable_tls,
-               cs.skip_tls_validation
-             ) do
-          {:ok, token} ->
-            [{"authorization", "Bearer #{token}"}]
-
-          {:error, reason} ->
-            Logger.warning("Failed to fetch OAuth2 token: #{inspect(reason)}")
-            []
-        end
-
-      true ->
-        []
+    if present?(connection_string.api_key) do
+      [{"api-key", connection_string.api_key}]
+    else
+      []
     end
+  end
+
+  # Client credentials mean OAuth2: a linked TokenProvider owns the token
+  # lifecycle, and every dialed channel gets an interceptor that attaches a
+  # fresh token to each RPC. Mirrors the api-key-wins precedence of
+  # `auth_headers/1` when both are (mis)configured.
+  defp start_token_provider(connection_string) do
+    if present?(connection_string.username) and present?(connection_string.password) and
+         not present?(connection_string.api_key) do
+      {:ok, provider} = TokenProvider.start_link(connection_string: connection_string)
+      provider
+    end
+  end
+
+  defp stop_token_provider(nil), do: :ok
+  defp stop_token_provider(provider), do: GenServer.stop(provider)
+
+  # Prepend rather than replace so caller-supplied interceptors survive.
+  defp add_auth_interceptor(options, nil), do: options
+
+  defp add_auth_interceptor(options, provider) do
+    interceptor = {AuthInterceptor, provider: provider}
+    Keyword.update(options, :interceptors, [interceptor], &[interceptor | &1])
   end
 
   defp present?(value), do: is_binary(value) and value != ""
