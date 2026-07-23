@@ -124,6 +124,22 @@ defmodule Chronicle.Connections.Connection do
   end
 
   @doc """
+  Drops the current channel and dials a fresh one.
+
+  For callers with independent evidence that the channel is unusable — such as
+  the session watchdog detecting missed keepalives. A channel can die in ways
+  this process cannot observe: the gRPC adapter reports transport death to the
+  process that dialed (a completed connect task, not this server), and an
+  expired auth token fails every new RPC while the transport stays healthy.
+  Redialing re-resolves addresses and re-fetches authentication headers.
+  No-op while a connect attempt is already in progress.
+  """
+  @spec reconnect(GenServer.server()) :: :ok
+  def reconnect(connection) do
+    GenServer.cast(connection, :reconnect)
+  end
+
+  @doc """
   Disconnects the active channel and stops reconnect attempts.
 
   The process exits normally after this call.
@@ -152,6 +168,7 @@ defmodule Chronicle.Connections.Connection do
       reconnect_attempt: 0,
       reconnect_timer: nil,
       connection_process: nil,
+      connection_monitor: nil,
       pending_connects: [],
       # Round-robin's counter starts at a random offset (not 0) so a fleet of
       # clients reconnecting together doesn't all dial the same first host;
@@ -202,6 +219,24 @@ defmodule Chronicle.Connections.Connection do
   end
 
   @impl true
+  def handle_cast(:reconnect, %{connected?: false} = state) do
+    # Not connected: a dial or backoff cycle already owns recovery.
+    {:noreply, state}
+  end
+
+  def handle_cast(:reconnect, state) do
+    state =
+      state
+      |> disconnect_channel()
+      |> Map.merge(%{connected?: false, channel: nil, connection_process: nil})
+
+    # Dial immediately rather than through the backoff: the caller has already
+    # waited out its own retry delay before asking for a fresh channel.
+    send(self(), :connect)
+    {:noreply, state}
+  end
+
+  @impl true
   def handle_info(:connect, %{connected?: true} = state) do
     {:noreply, state}
   end
@@ -244,6 +279,13 @@ defmodule Chronicle.Connections.Connection do
 
   def handle_info({:gun_down, pid, _protocol, _reason, _streams}, state)
       when pid == state.connection_process do
+    {:noreply, handle_connection_down(state)}
+  end
+
+  # The adapter's connection process crashing outright (as opposed to reporting
+  # transport death) is only visible through the monitor placed on it when the
+  # channel came up.
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{connection_monitor: ref} = state) do
     {:noreply, handle_connection_down(state)}
   end
 
@@ -302,7 +344,8 @@ defmodule Chronicle.Connections.Connection do
       connected?: true,
       reconnect_attempt: 0,
       reconnect_timer: nil,
-      connection_process: connection_process
+      connection_process: connection_process,
+      connection_monitor: monitor_connection_process(connection_process)
     })
     |> reply_pending_connects(:ok)
   end
@@ -343,6 +386,7 @@ defmodule Chronicle.Connections.Connection do
 
   defp disconnect_channel(%{channel: channel, disconnect_fun: disconnect_fun} = state) do
     cancel_timer(state.reconnect_timer)
+    demonitor(state.connection_monitor)
 
     try do
       disconnect_fun.(channel)
@@ -350,7 +394,7 @@ defmodule Chronicle.Connections.Connection do
       _error -> :ok
     end
 
-    %{state | reconnect_timer: nil}
+    %{state | reconnect_timer: nil, connection_monitor: nil}
   end
 
   defp connection_string_from(options) do
@@ -477,6 +521,12 @@ defmodule Chronicle.Connections.Connection do
 
   defp connection_process_for(%{adapter_payload: %{conn_pid: pid}}) when is_pid(pid), do: pid
   defp connection_process_for(_channel), do: nil
+
+  defp monitor_connection_process(nil), do: nil
+  defp monitor_connection_process(pid), do: Process.monitor(pid)
+
+  defp demonitor(nil), do: :ok
+  defp demonitor(ref), do: Process.demonitor(ref, [:flush])
 
   defp cancel_timer(nil), do: :ok
   defp cancel_timer(timer_ref), do: Process.cancel_timer(timer_ref)
