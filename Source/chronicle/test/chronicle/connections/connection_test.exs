@@ -395,6 +395,71 @@ defmodule Chronicle.Connections.ConnectionTest do
     end
   end
 
+  describe "authentication" do
+    test "installs the per-call auth interceptor for client credentials" do
+      test_pid = self()
+      channel = channel_with_conn(self())
+
+      conn =
+        start(
+          connection_string: "chronicle://user:pass@localhost:35000?disableTls=true",
+          connect_fun: fn _target, opts ->
+            send(test_pid, {:opts, opts})
+            {:ok, channel}
+          end,
+          auto_connect: true
+        )
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert_receive {:opts, opts}
+
+      # The token travels per RPC via the interceptor — never as a channel
+      # header, where its expiry would silently invalidate the channel.
+      assert [{Chronicle.Connections.AuthInterceptor, provider: provider}] = opts[:interceptors]
+      assert is_pid(provider) and Process.alive?(provider)
+      assert opts[:headers] == []
+    end
+
+    test "keeps the static api-key as a channel header without an interceptor" do
+      test_pid = self()
+      channel = channel_with_conn(self())
+
+      conn =
+        start(
+          connection_string: "chronicle://localhost:35000?apiKey=abc&disableTls=true",
+          connect_fun: fn _target, opts ->
+            send(test_pid, {:opts, opts})
+            {:ok, channel}
+          end,
+          auto_connect: true
+        )
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert_receive {:opts, opts}
+      assert opts[:headers] == [{"api-key", "abc"}]
+      refute Keyword.has_key?(opts, :interceptors)
+    end
+
+    test "adds no auth at all without credentials" do
+      test_pid = self()
+      channel = channel_with_conn(self())
+
+      conn =
+        start(
+          connect_fun: fn _target, opts ->
+            send(test_pid, {:opts, opts})
+            {:ok, channel}
+          end,
+          auto_connect: true
+        )
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert_receive {:opts, opts}
+      assert opts[:headers] == []
+      refute Keyword.has_key?(opts, :interceptors)
+    end
+  end
+
   describe "TLS validation" do
     test "skips certificate chain validation by default" do
       test_pid = self()
