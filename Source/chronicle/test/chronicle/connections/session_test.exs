@@ -1,10 +1,34 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+defmodule Chronicle.Connections.SessionTest.FakeConnection do
+  @moduledoc false
+
+  # Stands in for `Chronicle.Connections.Connection`: hands out a channel that
+  # cannot carry a real gRPC call and reports reconnect requests to the test.
+
+  use GenServer
+
+  def start_link(test_pid), do: GenServer.start_link(__MODULE__, test_pid)
+
+  @impl true
+  def init(test_pid), do: {:ok, test_pid}
+
+  @impl true
+  def handle_call(:channel, _from, test_pid), do: {:reply, {:ok, %{fake: true}}, test_pid}
+
+  @impl true
+  def handle_cast(:reconnect, test_pid) do
+    send(test_pid, :reconnect_requested)
+    {:noreply, test_pid}
+  end
+end
+
 defmodule Chronicle.Connections.SessionTest do
   use ExUnit.Case, async: true
 
   alias Chronicle.Connections.{Lifecycle, Session}
+  alias Chronicle.Connections.SessionTest.FakeConnection
 
   setup do
     {:ok, lifecycle} = Lifecycle.start_link([])
@@ -102,6 +126,45 @@ defmodule Chronicle.Connections.SessionTest do
 
     assert_receive {:chronicle_lifecycle, :disconnected, _}, 1_000
     assert reconnect_timers(session) == 1
+  end
+
+  describe "channel rebuild on drop" do
+    @tag capture_log: true
+    test "requests a fresh channel when an established session drops" do
+      {:ok, connection} = FakeConnection.start_link(self())
+      {:ok, session} = Session.start_link(connection: connection, auto_connect: false)
+
+      # A live watchdog is what marks the session as actually running on a
+      # channel (unit-level stand-in for a started keepalive task).
+      :sys.replace_state(session, fn state -> %{state | watchdog_timer: make_ref()} end)
+
+      send(session, {:session_down, :stream_ended})
+
+      # Retrying on the same channel could loop forever: Connection cannot
+      # always observe the death that took the session down.
+      assert_receive :reconnect_requested, 1_000
+    end
+
+    test "does not request a fresh channel for a session that never came up" do
+      {:ok, connection} = FakeConnection.start_link(self())
+      {:ok, session} = Session.start_link(connection: connection, auto_connect: false)
+
+      send(session, {:session_down, :unavailable})
+
+      refute_receive :reconnect_requested, 200
+    end
+
+    @tag capture_log: true
+    test "requests a fresh channel when the session fails to start on the channel" do
+      {:ok, connection} = FakeConnection.start_link(self())
+      {:ok, session} = Session.start_link(connection: connection, auto_connect: false)
+
+      # The fake channel is connected as far as Connection is concerned but
+      # cannot carry the Connect RPC — the shape of a stale channel.
+      send(session, :connect)
+
+      assert_receive :reconnect_requested, 1_000
+    end
   end
 
   defp backdate_last_keepalive(session, by_ms) do

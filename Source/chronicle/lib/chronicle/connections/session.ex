@@ -19,6 +19,14 @@ defmodule Chronicle.Connections.Session do
   # does not close the Connect stream when its own watchdog evicts us, so waiting
   # for a stream error alone leaves a half-open session that looks connected
   # forever while observers receive nothing.
+  #
+  # A dropped session also condemns the channel it ran on. `Connection` cannot
+  # always see the death itself — the gRPC adapter reports transport death to
+  # the process that dialed (a completed connect task), and an expired auth
+  # token fails every new RPC while the transport stays healthy — so retrying
+  # on the same channel can loop forever. Every drop therefore asks
+  # `Connection.reconnect/1` for a fresh channel, which also re-resolves
+  # addresses and re-fetches authentication headers.
 
   use GenServer, restart: :permanent
 
@@ -121,6 +129,10 @@ defmodule Chronicle.Connections.Session do
 
           {:error, reason} ->
             Logger.warning("Chronicle session failed to start: #{inspect(reason)}, retrying...")
+            # The channel handed out was connected yet could not carry a
+            # Connect call — suspect; retrying on it could fail identically
+            # forever.
+            Connection.reconnect(state.connection)
             {:noreply, schedule_reconnect(state)}
         end
 
@@ -218,6 +230,10 @@ defmodule Chronicle.Connections.Session do
   defp drop_session(state, reason) do
     if state.keepalive_task || state.watchdog_timer do
       Logger.warning("Chronicle session dropped: #{inspect(reason)}, reconnecting...")
+      # Whatever killed the session makes the channel it ran on suspect, and
+      # Connection cannot always observe the death itself (see the module
+      # comment) — rebuild rather than retry on a possibly dead channel.
+      Connection.reconnect(state.connection)
     end
 
     notify_disconnected(state)
