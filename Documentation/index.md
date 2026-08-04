@@ -28,3 +28,4 @@ Shared Chronicle concepts and workflows live in the main Chronicle docs and use 
 - [Event Store Subscriptions](event-store-subscriptions.md) — importing events between event stores
 - [Jobs](jobs.md) — inspecting and controlling Chronicle jobs
 - [WebHooks](webhooks.md) — registering webhooks from Elixir
+- [External Services](external-services.md) — registering HTTP and database external services from Elixir

@@ -14,6 +14,8 @@
   href: jobs.md
 - name: WebHooks
   href: webhooks.md
+- name: External Services
+  href: external-services.md
 - name: Sinks
   href: sinks.md
 - name: Seeding
