@@ -51,8 +51,6 @@ defmodule Chronicle.Connections.Lifecycle do
 
   use GenServer
 
-  require Logger
-
   @type phase :: :disconnected | :connected | :registered
 
   @phase_rank %{disconnected: 0, connected: 1, registered: 2}
