@@ -23,6 +23,9 @@ defmodule ConsoleSample do
   alias Chronicle.Transactions.UnitOfWork
   alias Chronicle.Auditing.CausationManager
   alias Chronicle.Identity
+  alias Chronicle.Identities
+  alias Chronicle.ExternalServices
+  alias Chronicle.ExternalServices.DefinitionBuilder
 
   @titles [
     "Software Engineer",
@@ -159,6 +162,14 @@ defmodule ConsoleSample do
 
       "v" ->
         show_customer_read_model()
+        loop(selected_index, user_index)
+
+      "x" ->
+        register_external_service()
+        loop(selected_index, user_index)
+
+      "n" ->
+        rename_current_user(selected_user!(user_index))
         loop(selected_index, user_index)
 
       "h" ->
@@ -413,6 +424,51 @@ defmodule ConsoleSample do
     end
   end
 
+  # Registers an HTTP external service the Chronicle kernel can call on our behalf —
+  # e.g. from a capture. Registration is administrative (no event source, no identity).
+  defp register_external_service do
+    result =
+      ExternalServices.register("CustomersApi", fn builder ->
+        builder
+        |> DefinitionBuilder.http("https://api.example.com")
+        |> DefinitionBuilder.with_bearer_token(external_service_token())
+        |> DefinitionBuilder.with_header("X-Tenant", "acme")
+      end)
+
+    case result do
+      :ok ->
+        IO.puts(
+          "\n[external-services] Registered 'CustomersApi' as an HTTP service with bearer-token auth."
+        )
+
+      {:error, reason} ->
+        IO.puts("\n[external-services] Could not register CustomersApi: #{format_reason(reason)}")
+    end
+  end
+
+  defp external_service_token do
+    System.get_env("CUSTOMERS_API_TOKEN") || "demo-token"
+  end
+
+  # Renames an identity by its stable subject. This changes only the display name — every
+  # event this identity already caused resolves the new name, since the name isn't stored
+  # with the event itself.
+  defp rename_current_user(%Identity{} = user) do
+    new_name = "#{user.name} ##{:rand.uniform(1000)}"
+
+    case Identities.rename(user.subject, new_name) do
+      :ok ->
+        IO.puts(
+          "\n[identities] Renamed identity @#{user.user_name} to '#{new_name}'. Past and future events caused by this identity now show the new name."
+        )
+
+      {:error, reason} ->
+        IO.puts(
+          "\n[identities] Could not rename identity @#{user.user_name}: #{format_reason(reason)}"
+        )
+    end
+  end
+
   # Sets the process-scoped identity and rebuilds the causation chain for the next append.
   # Identity and causation are stored with every event written to the Chronicle event log,
   # enabling full auditability of who triggered each state change and what command caused it.
@@ -463,6 +519,7 @@ defmodule ConsoleSample do
         "  R = Read model       T = Transactional update",
         "  J = Model-bound projection       K = Declarative projection",
         "  C = Register customer with PII   V = View customer PII read model",
+        "  X = Register external service    N = Rename current user's identity",
         "  I = Switch user (cycle: Alice Smith → Bob Jones → System)",
         "  H or ? = Show this menu          Q = Quit",
         ""
