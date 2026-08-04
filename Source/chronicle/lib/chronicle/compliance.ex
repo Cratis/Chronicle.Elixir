@@ -24,7 +24,20 @@ defmodule Chronicle.Compliance do
 
   Each marked field is exposed through the module's `__chronicle_pii__/0`
   accessor as `{field, details}` tuples.
+
+  This module also exposes `delete_encryption_key/2`, the right-to-erasure
+  operation that permanently deletes the encryption key for a PII subject —
+  after deletion, `[PII]`-marked values for that subject decrypt as empty.
+
+  ## Options
+
+    * `:client` — the client name (default: `Chronicle.Client`)
+    * `:namespace` — overrides the client's default namespace
   """
+
+  alias Chronicle.Connections.Connection
+  alias Cratis.Chronicle.Contracts.Compliance.Compliance, as: ComplianceService
+  alias Cratis.Chronicle.Contracts.Compliance.DeleteEncryptionKeyRequest
 
   @doc """
   Marks a struct field as containing Personally Identifiable Information (PII).
@@ -65,6 +78,49 @@ defmodule Chronicle.Compliance do
   defmacro subject(field) do
     quote do
       @chronicle_subject unquote(field)
+    end
+  end
+
+  @doc """
+  Deletes the encryption key for a PII subject.
+
+  This is the right-to-erasure operation: once the encryption key is deleted,
+  `[PII]`-marked values encrypted under `identifier` decrypt as empty for
+  every event and read model that refers to them. The operation cannot be
+  undone.
+  """
+  @spec delete_encryption_key(String.t(), keyword()) :: :ok | {:error, term()}
+  def delete_encryption_key(identifier, opts \\ [])
+      when is_binary(identifier) and is_list(opts) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      namespace = Keyword.get(opts, :namespace, config.namespace)
+
+      request =
+        struct(DeleteEncryptionKeyRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          Identifier: identifier
+        )
+
+      case ComplianceService.Stub.delete_encryption_key(channel, request) do
+        {:ok, _} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  defp resolve_channel(opts) do
+    client = Keyword.get(opts, :client, Chronicle.Client)
+
+    case Chronicle.Client.config(client) do
+      config when is_map(config) ->
+        case Connection.channel(config.connection) do
+          {:ok, channel} -> {:ok, channel, config}
+          error -> error
+        end
+
+      _ ->
+        {:error, :no_client}
     end
   end
 end
