@@ -16,6 +16,8 @@
   href: webhooks.md
 - name: External Services
   href: external-services.md
+- name: Failed Partitions
+  href: failed-partitions.md
 - name: Sinks
   href: sinks.md
 - name: Seeding
