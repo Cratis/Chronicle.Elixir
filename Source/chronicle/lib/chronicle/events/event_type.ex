@@ -132,6 +132,18 @@ defmodule Chronicle.Events.EventType do
     * `:ignore_casing` — compare values case-insensitively
     * `:message` — human-readable message to use when the constraint is
       violated
+    * `:scope` — narrows uniqueness checking to values observed at append
+      time along one or more dimensions, mirroring the C# client's
+      `IConstraintBuilder.PerEventSourceType()`/`PerEventStreamType()`/
+      `PerEventStreamId()`. An atom (`:per_event_source_type`,
+      `:per_event_stream_type`, or `:per_event_stream_id`) or a list of them.
+      Defaults to unscoped (globally unique across the whole event store).
+
+  ## Scoping example
+
+      # Unique only within events for the same event source type — the same
+      # value may repeat across different event source types.
+      unique(:email, scope: :per_event_source_type)
   """
   defmacro unique(fields, opts \\ []) do
     quote do

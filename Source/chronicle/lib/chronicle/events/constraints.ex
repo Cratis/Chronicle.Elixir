@@ -32,6 +32,7 @@ defmodule Chronicle.Events.Constraints do
     Constraints,
     RegisterConstraintsRequest,
     Constraint,
+    ConstraintScope,
     UniqueConstraintDefinition,
     UniqueConstraintEventDefinition,
     UniqueEventTypeConstraintDefinition,
@@ -116,6 +117,7 @@ defmodule Chronicle.Events.Constraints do
             end)
         }
         |> maybe_put_message(Enum.find_value(definitions, "", &Map.get(&1, :message)))
+        |> maybe_put_scope(definitions |> Enum.flat_map(&Map.get(&1, :scope, [])) |> Enum.uniq())
         |> with_removed_with_event_type(Map.get(removal_event_types, name))
       end)
 
@@ -151,12 +153,14 @@ defmodule Chronicle.Events.Constraints do
   # discarded — it is what a later, append-time violation-resolution phase
   # (mirroring C#'s `Constraints.ResolveMessageFor`) will read.
   @spec build_constraint(map()) :: {Constraint.t(), String.t()}
-  def build_constraint(%{
-        type: :unique,
-        name: name,
-        event_type_id: event_type_id,
-        on: properties
-      } = constraint) do
+  def build_constraint(
+        %{
+          type: :unique,
+          name: name,
+          event_type_id: event_type_id,
+          on: properties
+        } = constraint
+      ) do
     build_constraint(%{
       type: :unique,
       name: name,
@@ -182,7 +186,8 @@ defmodule Chronicle.Events.Constraints do
         Name: name,
         Type: :Unique,
         RemovedWith: removed_with_event_type_id(constraint),
-        Definition: definition
+        Definition: definition,
+        Scope: build_constraint_scope(Map.get(constraint, :scope, []))
       )
 
     {wire_constraint, Map.get(constraint, :message, "")}
@@ -240,6 +245,24 @@ defmodule Chronicle.Events.Constraints do
     )
   end
 
+  # Mirrors C#'s IConstraintBuilder.PerEventSourceType()/PerEventStreamType()/
+  # PerEventStreamId(): each dimension is a boolean flag, encoded on the wire
+  # as the presence (vs. absence) of a sentinel string value on the matching
+  # ConstraintScope field — the kernel narrows the uniqueness check to values
+  # observed at append time along the scoped dimension(s), not to a specific
+  # literal value declared here.
+  defp build_constraint_scope(scope) when is_list(scope) and scope != [] do
+    struct(ConstraintScope)
+    |> maybe_put_scoped(:EventSourceType, :per_event_source_type in scope)
+    |> maybe_put_scoped(:EventStreamType, :per_event_stream_type in scope)
+    |> maybe_put_scoped(:EventStreamId, :per_event_stream_id in scope)
+  end
+
+  defp build_constraint_scope(_scope), do: nil
+
+  defp maybe_put_scoped(struct, key, true), do: Map.put(struct, key, "_scoped_")
+  defp maybe_put_scoped(struct, _key, false), do: struct
+
   defp event_type_constraints(event_type) do
     if function_exported?(event_type, :__chronicle_event_type__, 1) do
       case event_type.__chronicle_event_type__(:constraints) do
@@ -264,7 +287,8 @@ defmodule Chronicle.Events.Constraints do
       event_type,
       normalized_fields,
       Keyword.get(opts, :ignore_casing, false),
-      Keyword.get(opts, :message, "")
+      Keyword.get(opts, :message, ""),
+      normalize_scope(Keyword.get(opts, :scope))
     )
   end
 
@@ -280,7 +304,8 @@ defmodule Chronicle.Events.Constraints do
       event_type,
       normalized_fields,
       Keyword.get(opts, :ignore_casing, false),
-      Keyword.get(opts, :message, "")
+      Keyword.get(opts, :message, ""),
+      normalize_scope(Keyword.get(opts, :scope))
     )
   end
 
@@ -292,9 +317,17 @@ defmodule Chronicle.Events.Constraints do
       event_type,
       normalized_fields,
       false,
-      ""
+      "",
+      []
     )
   end
+
+  # A :scope option may be a single atom (:per_event_source_type) or a list of
+  # them, for the (uncommon but valid, mirroring C#'s IConstraintBuilder)
+  # case of scoping along more than one dimension at once.
+  defp normalize_scope(nil), do: []
+  defp normalize_scope(scope) when is_atom(scope), do: [scope]
+  defp normalize_scope(scope) when is_list(scope), do: scope
 
   defp normalize_unique_event_type_declaration(opts, event_type) when is_list(opts) do
     name =
@@ -328,7 +361,7 @@ defmodule Chronicle.Events.Constraints do
     end
   end
 
-  defp build_normalized_unique(name, event_type, normalized_fields, ignore_casing, message) do
+  defp build_normalized_unique(name, event_type, normalized_fields, ignore_casing, message, scope) do
     %{
       name: normalize_constraint_name(name),
       event_type: event_type,
@@ -336,6 +369,7 @@ defmodule Chronicle.Events.Constraints do
       ignore_casing: ignore_casing
     }
     |> maybe_put_message(message)
+    |> maybe_put_scope(scope)
   end
 
   # Only sets `:message` when a non-empty message was actually declared, so
@@ -348,6 +382,12 @@ defmodule Chronicle.Events.Constraints do
   end
 
   defp maybe_put_message(map, _message), do: map
+
+  defp maybe_put_scope(map, scope) when is_list(scope) and scope != [] do
+    Map.put(map, :scope, scope)
+  end
+
+  defp maybe_put_scope(map, _scope), do: map
 
   defp with_removed_with_event_type(definition, nil), do: definition
 
