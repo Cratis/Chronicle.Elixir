@@ -172,7 +172,37 @@ defmodule Chronicle.ReadModels do
           }
   end
 
+  defmodule Changeset do
+    @moduledoc """
+    A live read-model change delivered to a subscriber of `Chronicle.ReadModels.watch/2`.
+    """
+
+    @type change_type :: :added | :modified | :removed
+
+    @enforce_keys [:model_key, :read_model, :removed, :change_type, :event_sequence_number]
+    defstruct model_key: nil,
+              read_model: nil,
+              removed: false,
+              subscribed: false,
+              change_type: :added,
+              event_sequence_number: 0,
+              occurred: nil,
+              correlation_id: nil
+
+    @type t :: %__MODULE__{
+            model_key: String.t() | nil,
+            read_model: struct() | nil,
+            removed: boolean(),
+            subscribed: boolean(),
+            change_type: change_type(),
+            event_sequence_number: non_neg_integer(),
+            occurred: DateTime.t() | String.t() | nil,
+            correlation_id: term()
+          }
+  end
+
   alias Cratis.Chronicle.Contracts.ReadModels.{
+    DehydrateSessionRequest,
     GetAllInstancesRequest,
     GetDefinitionsRequest,
     GetInstanceByKeyRequest,
@@ -180,7 +210,8 @@ defmodule Chronicle.ReadModels do
     GetOccurrencesRequest,
     GetSnapshotsByKeyRequest,
     ReadModelType,
-    ReadModels
+    ReadModels,
+    WatchRequest
   }
 
   alias Cratis.Chronicle.Contracts.Compliance.{
@@ -255,7 +286,8 @@ defmodule Chronicle.ReadModels do
               instance = decode_model(model_module, json)
 
               if reducer_backed?(model_module, config) do
-                {:ok, release_instance(instance, model_module, channel, config.event_store, namespace)}
+                {:ok,
+                 release_instance(instance, model_module, channel, config.event_store, namespace)}
               else
                 {:ok, instance}
               end
@@ -529,6 +561,142 @@ defmodule Chronicle.ReadModels do
 
         {:error, reason} ->
           {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Watches a read model for live changes.
+
+  Mirrors the C# and TypeScript clients' `Watch<TReadModel>()`, which returns an
+  `IObservable`/async-iterable of live changesets. Elixir has no equivalent
+  built-in, so this follows the same message-based subscription idiom as
+  `Chronicle.Connections.Lifecycle.subscribe/1`: the calling process receives a
+  `{:chronicle_read_model_changed, model_module, %Chronicle.ReadModels.Changeset{}}`
+  message for every change (added/modified/removed, for any instance of the
+  read model), until `unwatch/1` is called.
+
+  On a stream failure, the calling process receives
+  `{:chronicle_read_model_watch_error, model_module, reason}` and the watch ends;
+  call `watch/2` again to resume.
+
+  Returns `{:ok, watcher}`, where `watcher` identifies the background watch
+  process — pass it to `unwatch/1` to stop.
+
+  ## Options
+
+    * `:client` — the client name (default: `Chronicle.Client`)
+    * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence identifier (default: `"event-log"`)
+  """
+  @spec watch(module(), keyword()) :: {:ok, pid()} | {:error, term()}
+  def watch(model_module, opts \\ []) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      namespace = Keyword.get(opts, :namespace, config.namespace)
+      model_id = read_model_id(model_module)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+
+      request =
+        struct(WatchRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          ReadModelIdentifier: model_id,
+          EventSequenceId: event_sequence_id
+        )
+
+      subscriber = self()
+
+      {:ok, pid} =
+        Task.start(fn -> watch_loop(channel, request, model_module, subscriber) end)
+
+      {:ok, pid}
+    end
+  end
+
+  @doc """
+  Stops a subscription started by `watch/2`.
+  """
+  @spec unwatch(pid()) :: :ok
+  def unwatch(watcher) when is_pid(watcher) do
+    Process.exit(watcher, :shutdown)
+    :ok
+  end
+
+  defp watch_loop(channel, request, model_module, subscriber) do
+    case ReadModels.Stub.watch(channel, request) do
+      {:ok, reply_stream} ->
+        Enum.each(reply_stream, fn
+          {:ok, changeset} ->
+            send(
+              subscriber,
+              {:chronicle_read_model_changed, model_module,
+               decode_changeset(model_module, changeset)}
+            )
+
+          {:error, reason} ->
+            send(subscriber, {:chronicle_read_model_watch_error, model_module, reason})
+        end)
+
+      {:error, reason} ->
+        send(subscriber, {:chronicle_read_model_watch_error, model_module, reason})
+    end
+  end
+
+  defp decode_changeset(model_module, changeset) do
+    %Changeset{
+      model_key: Map.get(changeset, :ModelKey),
+      read_model: decode_model(model_module, Map.get(changeset, :ReadModel, "")),
+      removed: Map.get(changeset, :Removed, false),
+      subscribed: Map.get(changeset, :Subscribed, false),
+      change_type: decode_change_type(Map.get(changeset, :ChangeType, 0)),
+      event_sequence_number: Map.get(changeset, :EventSequenceNumber, 0),
+      occurred: decode_timestamp(Map.get(changeset, :Occurred)),
+      correlation_id: Map.get(changeset, :CorrelationId)
+    }
+  end
+
+  defp decode_change_type(0), do: :added
+  defp decode_change_type(:Added), do: :added
+  defp decode_change_type(1), do: :modified
+  defp decode_change_type(:Modified), do: :modified
+  defp decode_change_type(2), do: :removed
+  defp decode_change_type(:Removed), do: :removed
+  defp decode_change_type(_), do: :added
+
+  @doc """
+  Explicitly cleans up a materialized read-model session.
+
+  Sessions are created implicitly when reading with a `:session_id` (see
+  `get_instance_by_id/3`); call this once a session's caller is done with it to
+  release the resources Chronicle held for it, rather than waiting for it to
+  expire on its own.
+
+  ## Options
+
+    * `:client` — the client name (default: `Chronicle.Client`)
+    * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence identifier (default: `"event-log"`)
+  """
+  @spec dehydrate_session(module(), String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  def dehydrate_session(model_module, key, session_id, opts \\ []) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      namespace = Keyword.get(opts, :namespace, config.namespace)
+      model_id = read_model_id(model_module)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+
+      request =
+        struct(DehydrateSessionRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          ReadModelIdentifier: model_id,
+          EventSequenceId: event_sequence_id,
+          ReadModelKey: key,
+          SessionId: session_id
+        )
+
+      case ReadModels.Stub.dehydrate_session(channel, request) do
+        {:ok, _response} -> :ok
+        {:error, reason} -> {:error, reason}
       end
     end
   end
