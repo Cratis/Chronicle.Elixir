@@ -54,6 +54,9 @@ defmodule Chronicle.EventSequences.EventLog do
 
   alias Cratis.Chronicle.Contracts.EventSequences.ConcurrencyScope, as: ContractConcurrencyScope
 
+  alias Cratis.Chronicle.Contracts.Observation.Observers
+  alias Cratis.Chronicle.Contracts.Observation.WaitForObserverCompletionRequest
+
   alias Chronicle.Auditing.{CausationEntry, CausationManager, CausationType}
   alias Chronicle.Correlation.{CorrelationId, CorrelationIdManager}
   alias Chronicle.EventSequences.EventForEventSourceId
@@ -68,6 +71,7 @@ defmodule Chronicle.EventSequences.EventLog do
 
   @event_log_id "event-log"
   @unavailable_sequence_number 18_446_744_073_709_551_615
+  @default_wait_for_completion_timeout 5_000
 
   @doc """
   Appends a single event to the event log for the given event source.
@@ -178,6 +182,78 @@ defmodule Chronicle.EventSequences.EventLog do
           {:ok, response} -> normalize_response(response)
           {:error, reason} -> {:error, reason}
         end
+      end
+    end
+  end
+
+  @doc """
+  Appends a single event, then waits for every observer (reactor, reducer, ++)
+  affected by the append to either reach the appended sequence number or fail.
+
+  This is additive rather than a change to `append/3`'s return shape: `append/3`
+  and `append_many/3` return only `:ok | {:error, term()}` today (no
+  `AppendResult`-equivalent carrying a sequence number), so building
+  `WaitForCompletion` on top of them would either be a breaking change to their
+  return contract or require a second round-trip to re-discover the sequence
+  number. This function does the append and the wait as one call instead.
+
+  Mirrors the C# client's `AppendResult.WaitForCompletion()` extension.
+
+  Returns `{:ok, %{success: boolean(), failed_partitions: [Chronicle.FailedPartitions.FailedPartition.t()]}}`
+  on success (whether or not every observer completed — check `:success`), or
+  `{:error, reason}` if the append itself failed.
+
+  ## Options
+
+  Same as `append/3`, plus:
+
+    * `:timeout` — how long to wait for observer completion, in milliseconds
+      (default: `5_000`, matching the C# client's default).
+  """
+  @spec append_and_wait_for_completion(String.t(), struct(), keyword()) ::
+          {:ok, %{success: boolean(), failed_partitions: list()}} | {:error, term()}
+  def append_and_wait_for_completion(event_source_id, event, opts \\ []) do
+    event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+
+    with {:ok, response} <- raw_append(event_sequence_id, event_source_id, event, opts),
+         :ok <- normalize_response(response) do
+      raw_sequence_number =
+        Map.get(response, :SequenceNumber, Map.get(response, :sequence_number, 0))
+
+      if raw_sequence_number == @unavailable_sequence_number do
+        {:ok, %{success: true, failed_partitions: []}}
+      else
+        wait_for_observer_completion(event_sequence_id, raw_sequence_number, opts)
+      end
+    end
+  end
+
+  defp wait_for_observer_completion(event_sequence_id, sequence_number, opts) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      namespace = Keyword.get(opts, :namespace, config.namespace)
+      timeout = Keyword.get(opts, :timeout, @default_wait_for_completion_timeout)
+
+      request =
+        struct(WaitForObserverCompletionRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          EventSequenceId: event_sequence_id,
+          TailEventSequenceNumber: sequence_number
+        )
+
+      case Observers.Stub.wait_for_completion(channel, request, timeout: timeout) do
+        {:ok, response} ->
+          {:ok,
+           %{
+             success: Map.get(response, :IsSuccess, false),
+             failed_partitions:
+               response
+               |> Map.get(:FailedPartitions, [])
+               |> Enum.map(&Chronicle.FailedPartitions.decode_failed_partition/1)
+           }}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     end
   end
@@ -528,6 +604,17 @@ defmodule Chronicle.EventSequences.EventLog do
   end
 
   defp do_append(event_sequence_id, event_source_id, event, opts) do
+    case raw_append(event_sequence_id, event_source_id, event, opts) do
+      {:ok, response} -> normalize_response(response)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Performs the append and returns the raw, un-normalized gRPC response
+  # (still carrying the assigned SequenceNumber), so callers that need it —
+  # like append_and_wait_for_completion/3 — don't have to duplicate the
+  # request-building logic.
+  defp raw_append(event_sequence_id, event_source_id, event, opts) do
     with {:ok, channel, config} <- resolve_channel(opts) do
       namespace = Keyword.get(opts, :namespace, config.namespace)
       event_to_append = build_event_for_event_source_id(event_source_id, event, opts, :append)
@@ -552,10 +639,7 @@ defmodule Chronicle.EventSequences.EventLog do
           Subject: event_to_append.subject || ""
         )
 
-      case EventSequences.Stub.append(channel, request) do
-        {:ok, response} -> normalize_response(response)
-        {:error, reason} -> {:error, reason}
-      end
+      EventSequences.Stub.append(channel, request)
     end
   end
 

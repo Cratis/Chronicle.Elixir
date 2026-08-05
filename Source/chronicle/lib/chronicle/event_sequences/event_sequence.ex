@@ -175,6 +175,25 @@ defmodule Chronicle.EventSequences.EventSequence do
   end
 
   @doc """
+  Appends a single event, then waits for every observer affected by the append
+  to either reach the appended sequence number or fail.
+  """
+  @spec append_and_wait_for_completion(t(), String.t(), struct(), keyword()) ::
+          {:ok, %{success: boolean(), failed_partitions: list()}} | {:error, term()}
+  def append_and_wait_for_completion(
+        %__MODULE__{} = event_sequence,
+        event_source_id,
+        event,
+        opts \\ []
+      ) do
+    Chronicle.EventSequences.EventLog.append_and_wait_for_completion(
+      event_source_id,
+      event,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
   Appends a list of `Chronicle.EventSequences.EventForEventSourceId` entries as a
   single atomic append-many, each carrying its own target event source id.
   """
