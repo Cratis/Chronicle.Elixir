@@ -16,6 +16,7 @@ defmodule Chronicle.Reactors.Handler do
   require Logger
 
   alias Chronicle.Connections.{Connection, Lifecycle}
+  alias Chronicle.EventSequences.{EventForEventSourceId, EventLog}
 
   alias Cratis.Chronicle.Contracts.Observation.Reactors.{
     Reactors,
@@ -42,6 +43,7 @@ defmodule Chronicle.Reactors.Handler do
   @impl true
   def init(opts) do
     module = Keyword.fetch!(opts, :module)
+    client = Keyword.get(opts, :client, Chronicle.Client)
     event_type_modules = module.__chronicle_reactor__(:handles)
 
     event_type_map =
@@ -51,12 +53,15 @@ defmodule Chronicle.Reactors.Handler do
 
     state = %{
       module: module,
+      client: client,
       connection: Keyword.fetch!(opts, :connection),
       lifecycle: Keyword.get(opts, :lifecycle),
       event_store: Keyword.fetch!(opts, :event_store),
       namespace: Keyword.fetch!(opts, :namespace),
       event_type_map: event_type_map,
       establish_fun: Keyword.get(opts, :establish_fun, &default_establish/2),
+      append_fun:
+        Keyword.get(opts, :append_fun, fn operation -> default_append(operation, client) end),
       connection_id: nil,
       stream: nil,
       receiver_task: nil,
@@ -245,7 +250,9 @@ defmodule Chronicle.Reactors.Handler do
         case decode_event(event_module, content) do
           {:ok, event} ->
             try do
-              state.module.handle(event, ctx)
+              event
+              |> state.module.handle(ctx)
+              |> handle_result(state, ctx.event_source_id)
             rescue
               e -> {:error, e}
             end
@@ -255,6 +262,88 @@ defmodule Chronicle.Reactors.Handler do
             :ok
         end
     end
+  end
+
+  # Normalizes handle/2's return value to :ok | {:error, reason}, appending
+  # any returned side-effect event(s) via the triggering event source id (or
+  # each EventForEventSourceId's own explicit target). Public (but @doc false)
+  # so it can be exercised directly in tests against a minimal state map
+  # carrying just :append_fun, without a live connection.
+  @doc false
+  def handle_result(:ok, _state, _event_source_id), do: :ok
+  def handle_result({:error, _reason} = error, _state, _event_source_id), do: error
+
+  def handle_result({:ok, side_effect}, state, event_source_id) do
+    side_effect
+    |> side_effect_operation(event_source_id)
+    |> perform_append(state)
+  end
+
+  def handle_result(_other, _state, _event_source_id), do: :ok
+
+  # Translates a handle/2 side-effect return value into an append instruction,
+  # a pure decision kept separate from performing the actual append (see
+  # perform_append/2) so it can be exercised without a live connection.
+  @doc false
+  def side_effect_operation(nil, _event_source_id), do: :noop
+
+  def side_effect_operation(%EventForEventSourceId{} = wrapped, _event_source_id) do
+    {:append, wrapped.event_source_id, wrapped.event,
+     [
+       event_source_type: wrapped.event_source_type,
+       event_stream_type: wrapped.event_stream_type,
+       event_stream_id: wrapped.event_stream_id,
+       tags: wrapped.tags,
+       subject: wrapped.subject,
+       occurred: wrapped.occurred,
+       concurrency_scope: wrapped.concurrency_scope,
+       causation: wrapped.causation,
+       identity: wrapped.identity
+     ]
+     |> Enum.reject(fn {_key, value} -> is_nil(value) or value == [] end)}
+  end
+
+  def side_effect_operation(events, event_source_id) when is_list(events) do
+    cond do
+      events == [] ->
+        :noop
+
+      Enum.all?(events, &match?(%EventForEventSourceId{}, &1)) ->
+        {:append_many_for_event_sources, events}
+
+      Enum.any?(events, &match?(%EventForEventSourceId{}, &1)) ->
+        normalized =
+          Enum.map(events, fn
+            %EventForEventSourceId{} = wrapped -> wrapped
+            event -> %EventForEventSourceId{event_source_id: event_source_id, event: event}
+          end)
+
+        {:append_many_for_event_sources, normalized}
+
+      true ->
+        {:append_many, event_source_id, events}
+    end
+  end
+
+  def side_effect_operation(%_{} = event, event_source_id) do
+    {:append, event_source_id, event, []}
+  end
+
+  def side_effect_operation(_other, _event_source_id), do: :noop
+
+  defp perform_append(:noop, _state), do: :ok
+  defp perform_append(operation, state), do: state.append_fun.(operation)
+
+  defp default_append({:append, event_source_id, event, opts}, client) do
+    EventLog.append(event_source_id, event, Keyword.put(opts, :client, client))
+  end
+
+  defp default_append({:append_many, event_source_id, events}, client) do
+    EventLog.append_many(event_source_id, events, client: client)
+  end
+
+  defp default_append({:append_many_for_event_sources, events}, client) do
+    EventLog.append_many_for_event_sources(events, client: client)
   end
 
   defp decode_event(event_module, json_content) do

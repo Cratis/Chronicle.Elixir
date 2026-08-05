@@ -87,7 +87,11 @@ defmodule Chronicle.EventSequences.EventSequence do
   """
   @spec get_tail_sequence_number_for_observer(t(), module(), keyword()) ::
           {:ok, non_neg_integer()} | {:error, term()}
-  def get_tail_sequence_number_for_observer(%__MODULE__{} = event_sequence, observer_module, opts \\ []) do
+  def get_tail_sequence_number_for_observer(
+        %__MODULE__{} = event_sequence,
+        observer_module,
+        opts \\ []
+      ) do
     Chronicle.EventSequences.EventLog.get_tail_sequence_number_for_observer(
       observer_module,
       merge_opts(event_sequence, opts)
@@ -113,7 +117,12 @@ defmodule Chronicle.EventSequences.EventSequence do
   @spec complete_stream(t(), String.t(), String.t(), keyword()) ::
           {:ok, non_neg_integer()}
           | {:error, :default_stream_cannot_be_completed | :already_completed | term()}
-  def complete_stream(%__MODULE__{} = event_sequence, event_stream_type, event_stream_id, opts \\ []) do
+  def complete_stream(
+        %__MODULE__{} = event_sequence,
+        event_stream_type,
+        event_stream_id,
+        opts \\ []
+      ) do
     Chronicle.EventSequences.EventLog.complete_stream(
       event_stream_type,
       event_stream_id,
@@ -139,7 +148,13 @@ defmodule Chronicle.EventSequences.EventSequence do
   """
   @spec redact_for_event_source(t(), String.t(), String.t(), [module()], keyword()) ::
           :ok | {:error, term()}
-  def redact_for_event_source(%__MODULE__{} = event_sequence, event_source_id, reason, event_types \\ [], opts \\ []) do
+  def redact_for_event_source(
+        %__MODULE__{} = event_sequence,
+        event_source_id,
+        reason,
+        event_types \\ [],
+        opts \\ []
+      ) do
     Chronicle.EventSequences.EventLog.redact_for_event_source(
       event_source_id,
       reason,
@@ -155,6 +170,23 @@ defmodule Chronicle.EventSequences.EventSequence do
   def has_events_for?(%__MODULE__{} = event_sequence, event_source_id, opts \\ []) do
     Chronicle.EventSequences.EventLog.has_events_for?(
       event_source_id,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Appends a list of `Chronicle.EventSequences.EventForEventSourceId` entries as a
+  single atomic append-many, each carrying its own target event source id.
+  """
+  @spec append_many_for_event_sources(
+          t(),
+          [Chronicle.EventSequences.EventForEventSourceId.t()],
+          keyword()
+        ) ::
+          :ok | {:error, term()}
+  def append_many_for_event_sources(%__MODULE__{} = event_sequence, events, opts \\ []) do
+    Chronicle.EventSequences.EventLog.append_many_for_event_sources(
+      events,
       merge_opts(event_sequence, opts)
     )
   end

@@ -159,7 +159,9 @@ defmodule Chronicle.Client do
     event_store = Keyword.get(opts, :event_store, "default")
     namespace = Keyword.get(opts, :namespace, "Default")
     discover? = Keyword.get(opts, :discover, true)
-    default_sink_type_id = opts |> Keyword.get(:default_sink_type_id, :mongodb) |> WellKnownSinkTypes.resolve()
+
+    default_sink_type_id =
+      opts |> Keyword.get(:default_sink_type_id, :mongodb) |> WellKnownSinkTypes.resolve()
 
     discovered =
       if discover? do
@@ -225,6 +227,7 @@ defmodule Chronicle.Client do
       |> Keyword.put(:name, conn_name)
 
     observer_opts = [
+      client: name,
       connection: conn_name,
       lifecycle: lifecycle_name,
       event_store: event_store,

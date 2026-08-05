@@ -59,17 +59,35 @@ defmodule Chronicle.Reactors.Reactor do
 
   ## Return values
 
-  `handle/2` must return `:ok` on success, or `{:error, reason}` on failure.
-  Failures are reported back to Chronicle as a failed partition, which can be
-  retried or replayed.
+  `handle/2` must return one of:
+
+    * `:ok` — success, no side effect.
+    * `{:error, reason}` — failure. Reported back to Chronicle as a failed
+      partition, which can be retried or replayed.
+    * `{:ok, event_or_events}` — success, with one or more events to append as
+      a side effect. `event_or_events` may be:
+      * a single event struct — appended to the triggering event source id.
+      * a list of event structs — appended atomically (single append-many) to
+        the triggering event source id.
+      * a `Chronicle.EventSequences.EventForEventSourceId` struct — appended to
+        its own explicit event source id.
+      * a list of `EventForEventSourceId` structs (optionally mixed with bare
+        event structs, which are then targeted at the triggering event source
+        id) — appended atomically across all their (possibly different) event
+        source ids.
+
+  If appending a side effect fails, `handle/2`'s overall result becomes
+  `{:error, reason}` — reported the same way as a plain `{:error, reason}` return.
   """
 
   @doc """
   Handles an event dispatched by Chronicle.
 
-  Called once per event for each partition. Must return `:ok` or `{:error, reason}`.
+  Called once per event for each partition. Must return `:ok`, `{:error, reason}`,
+  or `{:ok, event_or_events}` to append a side effect (see moduledoc).
   """
-  @callback handle(event :: struct(), context :: map()) :: :ok | {:error, term()}
+  @callback handle(event :: struct(), context :: map()) ::
+              :ok | {:error, term()} | {:ok, struct() | [struct()]}
 
   defmacro __using__(opts) do
     quote bind_quoted: [opts: opts] do

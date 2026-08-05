@@ -131,6 +131,57 @@ defmodule Chronicle.EventSequences.EventLog do
     end
   end
 
+  @doc """
+  Appends a list of `Chronicle.EventSequences.EventForEventSourceId` entries as a
+  single atomic append-many, each carrying its own target event source id (and
+  other per-event metadata such as stream type/id, subject, and causation).
+
+  Use this when a batch of events needs to target several, possibly different,
+  event source ids in one transaction — e.g. reactor side-effect dispatch (see
+  `Chronicle.Reactors.Handler`).
+
+  ## Options
+
+    * `:client` — the client name (default: `Chronicle.Client`)
+    * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence id (default: `"event-log"`)
+  """
+  @spec append_many_for_event_sources([EventForEventSourceId.t()], keyword()) ::
+          :ok | {:error, term()}
+  def append_many_for_event_sources(events, opts \\ [])
+
+  def append_many_for_event_sources([], _opts), do: :ok
+
+  def append_many_for_event_sources(events, opts) when is_list(events) do
+    event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+
+    if UnitOfWork.has_current?() do
+      Enum.each(events, fn %EventForEventSourceId{} = event ->
+        UnitOfWork.add_event(
+          UnitOfWork.current(),
+          event_sequence_id,
+          event,
+          client: Keyword.get(opts, :client, Chronicle.Client),
+          namespace: Keyword.get(opts, :namespace)
+        )
+      end)
+
+      :ok
+    else
+      with {:ok, channel, config} <- resolve_channel(opts) do
+        namespace = Keyword.get(opts, :namespace, config.namespace)
+
+        request =
+          build_append_many_request(config, namespace, event_sequence_id, events, opts)
+
+        case EventSequences.Stub.append_many(channel, request) do
+          {:ok, response} -> normalize_response(response)
+          {:error, reason} -> {:error, reason}
+        end
+      end
+    end
+  end
+
   @doc false
   @spec buffer_append(String.t(), String.t(), struct(), keyword()) :: :ok
   def buffer_append(event_sequence_id, event_source_id, event, opts \\ []) do
@@ -528,12 +579,14 @@ defmodule Chronicle.EventSequences.EventLog do
   end
 
   defp build_append_many_request(config, namespace, event_sequence_id, events, opts) do
+    normalized_events = Enum.map(events, &normalize_event_for_batch/1)
+
     request =
       struct(AppendManyRequest,
         EventStore: config.event_store,
         Namespace: namespace,
         EventSequenceId: event_sequence_id,
-        Events: Enum.map(events, &event_to_proto/1)
+        Events: Enum.map(normalized_events, &event_to_proto/1)
       )
 
     request
@@ -545,10 +598,31 @@ defmodule Chronicle.EventSequences.EventLog do
       )
     )
     |> maybe_put_identity(
-      batch_identity(events) || Keyword.get(opts, :identity) || build_identity(opts)
+      batch_identity(normalized_events) || Keyword.get(opts, :identity) || build_identity(opts)
     )
-    |> maybe_put(:ConcurrencyScopes, build_concurrency_scopes(events))
+    |> maybe_put(:ConcurrencyScopes, build_concurrency_scopes(normalized_events))
   end
+
+  # Fills in the same per-event defaults `build_event_for_event_source_id/4` applies
+  # for append/append_many, so a caller-constructed `EventForEventSourceId` (e.g. a
+  # reactor side-effect return, see `Chronicle.Reactors.Handler`) that only set
+  # `event_source_id` and `event` still gets a resolved event source type, stream
+  # type/id, causation chain, and identity — instead of nils reaching the wire.
+  defp normalize_event_for_batch(%EventForEventSourceId{} = event) do
+    %{
+      event
+      | event_source_type: event.event_source_type || "Default",
+        event_stream_type: event.event_stream_type || "All",
+        event_stream_id: event.event_stream_id || "Default",
+        causation: normalize_batch_causation(event.causation),
+        identity: event.identity || build_identity([])
+    }
+  end
+
+  defp normalize_batch_causation([]),
+    do: CausationManager.get_current_chain() ++ [client_causation_for_mode(:append_many)]
+
+  defp normalize_batch_causation(causation), do: causation
 
   defp build_event_for_event_source_id(event_source_id, event, opts, mode) do
     %EventForEventSourceId{
@@ -873,9 +947,14 @@ defmodule Chronicle.EventSequences.EventLog do
   # via its `@handles` declarations.
   defp observer_event_types(module) do
     cond do
-      function_exported?(module, :__chronicle_reactor__, 1) -> module.__chronicle_reactor__(:handles)
-      function_exported?(module, :__chronicle_reducer__, 1) -> module.__chronicle_reducer__(:handles)
-      true -> []
+      function_exported?(module, :__chronicle_reactor__, 1) ->
+        module.__chronicle_reactor__(:handles)
+
+      function_exported?(module, :__chronicle_reducer__, 1) ->
+        module.__chronicle_reducer__(:handles)
+
+      true ->
+        []
     end
   end
 
