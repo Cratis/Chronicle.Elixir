@@ -1028,8 +1028,11 @@ defmodule Chronicle.EventSequences.EventLog do
   end
 
   # Returns the event type modules a reactor or reducer module subscribes to,
-  # via its `@handles` declarations.
-  defp observer_event_types(module) do
+  # via its `@handles` declarations. Public (but @doc false) so it can be
+  # exercised directly in tests without a live connection.
+  @doc false
+  @spec observer_event_types(module()) :: [module()]
+  def observer_event_types(module) do
     cond do
       function_exported?(module, :__chronicle_reactor__, 1) ->
         module.__chronicle_reactor__(:handles)
@@ -1042,8 +1045,13 @@ defmodule Chronicle.EventSequences.EventLog do
     end
   end
 
-  defp decode_complete_stream_error(:DefaultStreamCannotBeCompleted),
+  # Decodes complete_stream/3's wire error into a typed atom. Public (but
+  # @doc false) so it can be exercised directly in tests without a live
+  # connection.
+  @doc false
+  @spec decode_complete_stream_error(term()) :: :default_stream_cannot_be_completed | :already_completed
+  def decode_complete_stream_error(:DefaultStreamCannotBeCompleted),
     do: :default_stream_cannot_be_completed
 
-  defp decode_complete_stream_error(_), do: :already_completed
+  def decode_complete_stream_error(_), do: :already_completed
 end
