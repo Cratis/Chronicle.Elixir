@@ -100,53 +100,14 @@ defmodule Chronicle.Reducers.Handler do
   end
 
   def handle_info({:reduce_operation, reduce_op}, state) do
-    partition = Map.get(reduce_op, :Partition, "")
-    initial_state_json = Map.get(reduce_op, :InitialState, "")
-    events = Map.get(reduce_op, :Events, [])
+    case replay_state(reduce_op) do
+      :none ->
+        dispatch_reduce_operation(reduce_op, state)
 
-    initial_model = decode_model(state.model_module, initial_state_json)
-
-    {final_state, observation_state, exception_messages, stack_trace} =
-      Enum.reduce_while(events, {initial_model, :success, [], ""}, fn event, {model, _, _, _} ->
-        case apply_reduce(state, event, model) do
-          {:ok, new_model} ->
-            {:cont, {new_model, :success, [], ""}}
-
-          {:error, reason} ->
-            {:halt, {model, :failed, [inspect(reason)], format_stack_trace(reason)}}
-        end
-      end)
-
-    last_seq =
-      case List.last(events) do
-        nil -> 0
-        event -> Map.get(Map.get(event, :Context, %{}), :SequenceNumber, 0)
-      end
-
-    read_model_json =
-      case final_state do
-        nil -> ""
-        model -> model |> Map.from_struct() |> Jason.encode!()
-      end
-
-    result =
-      struct(ReducerMessage,
-        Content:
-          struct(OneOf,
-            Value1:
-              struct(ReducerResult,
-                Partition: partition,
-                State: encode_observation_state(observation_state),
-                LastSuccessfulObservation: last_seq,
-                ExceptionMessages: exception_messages,
-                ExceptionStackTrace: stack_trace,
-                ReadModelState: read_model_json
-              )
-          )
-      )
-
-    GRPC.Stub.send_request(state.stream, result)
-    {:noreply, state}
+      replay_signal ->
+        notify_replay(state.module, replay_signal, Map.get(reduce_op, :Partition, ""))
+        {:noreply, state}
+    end
   end
 
   def handle_info({:stream_down, reason}, state) do
@@ -249,6 +210,56 @@ defmodule Chronicle.Reducers.Handler do
             )
         )
     )
+  end
+
+  defp dispatch_reduce_operation(reduce_op, state) do
+    partition = Map.get(reduce_op, :Partition, "")
+    initial_state_json = Map.get(reduce_op, :InitialState, "")
+    events = Map.get(reduce_op, :Events, [])
+
+    initial_model = decode_model(state.model_module, initial_state_json)
+
+    {final_state, observation_state, exception_messages, stack_trace} =
+      Enum.reduce_while(events, {initial_model, :success, [], ""}, fn event, {model, _, _, _} ->
+        case apply_reduce(state, event, model) do
+          {:ok, new_model} ->
+            {:cont, {new_model, :success, [], ""}}
+
+          {:error, reason} ->
+            {:halt, {model, :failed, [inspect(reason)], format_stack_trace(reason)}}
+        end
+      end)
+
+    last_seq =
+      case List.last(events) do
+        nil -> 0
+        event -> Map.get(Map.get(event, :Context, %{}), :SequenceNumber, 0)
+      end
+
+    read_model_json =
+      case final_state do
+        nil -> ""
+        model -> model |> Map.from_struct() |> Jason.encode!()
+      end
+
+    result =
+      struct(ReducerMessage,
+        Content:
+          struct(OneOf,
+            Value1:
+              struct(ReducerResult,
+                Partition: partition,
+                State: encode_observation_state(observation_state),
+                LastSuccessfulObservation: last_seq,
+                ExceptionMessages: exception_messages,
+                ExceptionStackTrace: stack_trace,
+                ReadModelState: read_model_json
+              )
+          )
+      )
+
+    GRPC.Stub.send_request(state.stream, result)
+    {:noreply, state}
   end
 
   defp apply_reduce(state, appended_event, model) do
@@ -387,4 +398,42 @@ defmodule Chronicle.Reducers.Handler do
 
   defp format_stack_trace(%{__exception__: true} = exception), do: Exception.message(exception)
   defp format_stack_trace(reason), do: inspect(reason)
+
+  # ReplayState enum: None = 0, BeginReplay = 1, EndReplay = 2,
+  # BeginReplayPartition = 3, EndReplayPartition = 4.
+  defp replay_state(reduce_op) do
+    case Map.get(reduce_op, :ReplayState, :REPLAY_STATE_None) do
+      none when none in [:REPLAY_STATE_None, 0] -> :none
+      begin_replay when begin_replay in [:BeginReplay, 1] -> :begin_replay
+      end_replay when end_replay in [:EndReplay, 2] -> :end_replay
+      begin_partition when begin_partition in [:BeginReplayPartition, 3] -> :begin_replay_partition
+      end_partition when end_partition in [:EndReplayPartition, 4] -> :end_replay_partition
+      _ -> :none
+    end
+  end
+
+  # Invokes the reducer module's optional replay-lifecycle callback (see
+  # Chronicle.Reducers.Reducer) for a replay-state transition. These are
+  # notifications, not events dispatched through reduce/3 — no ReducerResult
+  # is sent back to Chronicle for them (mirroring the C# client), and a
+  # raised exception is logged and swallowed rather than failing the stream.
+  defp notify_replay(module, :begin_replay, _partition),
+    do: safely_notify(module, :on_replay_begin, [])
+
+  defp notify_replay(module, :end_replay, _partition),
+    do: safely_notify(module, :on_replay_end, [])
+
+  defp notify_replay(module, :begin_replay_partition, partition),
+    do: safely_notify(module, :on_partition_replay_begin, [partition])
+
+  defp notify_replay(module, :end_replay_partition, partition),
+    do: safely_notify(module, :on_partition_replay_end, [partition])
+
+  defp safely_notify(module, callback, args) do
+    if function_exported?(module, callback, length(args)) do
+      apply(module, callback, args)
+    end
+  rescue
+    e -> Logger.warning("Reducer #{module} replay callback #{callback} raised: #{inspect(e)}")
+  end
 end

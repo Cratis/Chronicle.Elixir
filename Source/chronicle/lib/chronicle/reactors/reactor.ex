@@ -78,6 +78,24 @@ defmodule Chronicle.Reactors.Reactor do
 
   If appending a side effect fails, `handle/2`'s overall result becomes
   `{:error, reason}` — reported the same way as a plain `{:error, reason}` return.
+
+  ## Replay lifecycle (optional)
+
+  Implement any of `on_replay_begin/0`, `on_replay_end/0`,
+  `on_partition_replay_begin/1`, `on_partition_replay_end/1` to be notified when
+  Chronicle starts or finishes replaying this reactor — either as a whole, or
+  for a single partition (event source). All four are optional; implement only
+  the ones you need.
+
+      @impl true
+      def on_replay_begin, do: Logger.info("Replay starting")
+
+      @impl true
+      def on_replay_end, do: Logger.info("Replay finished")
+
+  These are notifications, not events to handle — they run outside the normal
+  `handle/2` dispatch, are not subject to failed-partition tracking, and a
+  raised exception is logged and swallowed rather than reported to Chronicle.
   """
 
   @doc """
@@ -88,6 +106,23 @@ defmodule Chronicle.Reactors.Reactor do
   """
   @callback handle(event :: struct(), context :: map()) ::
               :ok | {:error, term()} | {:ok, struct() | [struct()]}
+
+  @doc "Called when a full replay of this reactor begins."
+  @callback on_replay_begin() :: any()
+
+  @doc "Called when a full replay of this reactor ends."
+  @callback on_replay_end() :: any()
+
+  @doc "Called when replay of a single partition (event source) begins."
+  @callback on_partition_replay_begin(partition :: String.t()) :: any()
+
+  @doc "Called when replay of a single partition (event source) ends."
+  @callback on_partition_replay_end(partition :: String.t()) :: any()
+
+  @optional_callbacks on_replay_begin: 0,
+                       on_replay_end: 0,
+                       on_partition_replay_begin: 1,
+                       on_partition_replay_end: 1
 
   defmacro __using__(opts) do
     quote bind_quoted: [opts: opts] do
