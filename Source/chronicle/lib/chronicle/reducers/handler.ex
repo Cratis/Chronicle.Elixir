@@ -202,7 +202,7 @@ defmodule Chronicle.Reducers.Handler do
                   EventSequenceId: "event-log",
                   EventTypes: event_types,
                   ReadModel: model_id,
-                  IsActive: true,
+                  IsActive: state.module.__chronicle_reducer__(:active),
                   Sink: struct(SinkDefinition, TypeId: state.default_sink_type_id),
                   Tags: [],
                   Filters: struct(ObserverFilters)
@@ -403,12 +403,23 @@ defmodule Chronicle.Reducers.Handler do
   # BeginReplayPartition = 3, EndReplayPartition = 4.
   defp replay_state(reduce_op) do
     case Map.get(reduce_op, :ReplayState, :REPLAY_STATE_None) do
-      none when none in [:REPLAY_STATE_None, 0] -> :none
-      begin_replay when begin_replay in [:BeginReplay, 1] -> :begin_replay
-      end_replay when end_replay in [:EndReplay, 2] -> :end_replay
-      begin_partition when begin_partition in [:BeginReplayPartition, 3] -> :begin_replay_partition
-      end_partition when end_partition in [:EndReplayPartition, 4] -> :end_replay_partition
-      _ -> :none
+      none when none in [:REPLAY_STATE_None, 0] ->
+        :none
+
+      begin_replay when begin_replay in [:BeginReplay, 1] ->
+        :begin_replay
+
+      end_replay when end_replay in [:EndReplay, 2] ->
+        :end_replay
+
+      begin_partition when begin_partition in [:BeginReplayPartition, 3] ->
+        :begin_replay_partition
+
+      end_partition when end_partition in [:EndReplayPartition, 4] ->
+        :end_replay_partition
+
+      _ ->
+        :none
     end
   end
 

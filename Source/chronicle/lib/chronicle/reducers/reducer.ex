@@ -43,6 +43,12 @@ defmodule Chronicle.Reducers.Reducer do
 
     * `:model` — **(required)** the read model module this reducer produces.
     * `:id` — a stable string identifier. Defaults to the module's full name.
+    * `:active` — whether Chronicle actively keeps this reducer's read model up
+      to date as events are appended. Defaults to `true`. Set to `false` for a
+      **passive** reducer: its read model is only computed on demand (e.g. via
+      `Chronicle.ReadModels.get/3`) and is not kept warm in the background —
+      useful for a reducer whose only purpose is a command-side decision
+      that's read rarely, where continuous observation would be wasted work.
 
   ## Registering with Chronicle.Client
 
@@ -103,9 +109,9 @@ defmodule Chronicle.Reducers.Reducer do
   @callback on_partition_replay_end(partition :: String.t()) :: any()
 
   @optional_callbacks on_replay_begin: 0,
-                       on_replay_end: 0,
-                       on_partition_replay_begin: 1,
-                       on_partition_replay_end: 1
+                      on_replay_end: 0,
+                      on_partition_replay_begin: 1,
+                      on_partition_replay_end: 1
 
   defmacro __using__(opts) do
     model = Keyword.fetch!(opts, :model)
@@ -117,6 +123,7 @@ defmodule Chronicle.Reducers.Reducer do
 
       @chronicle_reducer_model model
       @chronicle_reducer_id Keyword.get(opts, :id, __MODULE__ |> to_string())
+      @chronicle_reducer_active Keyword.get(opts, :active, true)
 
       @before_compile Chronicle.Reducers.Reducer
     end
@@ -128,6 +135,7 @@ defmodule Chronicle.Reducers.Reducer do
       def __chronicle_reducer__(:id), do: @chronicle_reducer_id
       def __chronicle_reducer__(:model), do: @chronicle_reducer_model
       def __chronicle_reducer__(:handles), do: @handles |> Enum.reverse()
+      def __chronicle_reducer__(:active), do: @chronicle_reducer_active
     end
   end
 end
