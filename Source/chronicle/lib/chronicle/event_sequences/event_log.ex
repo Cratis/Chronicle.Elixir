@@ -38,13 +38,17 @@ defmodule Chronicle.EventSequences.EventLog do
     AppendManyRequest,
     AppendRequest,
     Causation,
+    CompleteStreamRequest,
     EventSequences,
     EventToAppend,
     EventType,
     GetForEventSourceIdAndEventTypesRequest,
+    GetFromEventSequenceNumberRequest,
     GetTailSequenceNumberRequest,
     HasEventsForEventSourceIdRequest,
     Identity,
+    RedactForEventSourceRequest,
+    RedactRequest,
     SerializableDateTimeOffset
   }
 
@@ -185,6 +189,9 @@ defmodule Chronicle.EventSequences.EventLog do
     * `:namespace` — overrides the client's default namespace
     * `:event_sequence_id` — event sequence id (default: `"event-log"`)
     * `:event_types` — list of event type modules to filter by (default: all)
+    * `:event_source_type` — the event source type to filter by (default: all)
+    * `:event_stream_type` — the event stream type to filter by (default: all)
+    * `:event_stream_id` — the event stream id to filter by (default: all)
 
   Returns `{:ok, [appended_event]}` or `{:error, reason}`.
   """
@@ -202,11 +209,54 @@ defmodule Chronicle.EventSequences.EventLog do
           EventStore: config.event_store,
           Namespace: namespace,
           EventSequenceId: event_sequence_id,
+          EventSourceType: Keyword.get(opts, :event_source_type, ""),
           EventSourceId: event_source_id,
+          EventStreamType: Keyword.get(opts, :event_stream_type, ""),
+          EventStreamId: Keyword.get(opts, :event_stream_id, ""),
           EventTypes: event_types
         )
 
       case EventSequences.Stub.get_for_event_source_id_and_event_types(channel, request) do
+        {:ok, response} -> {:ok, Map.get(response, :Events, [])}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Returns events from (and including) the given sequence number onward.
+
+  Mirrors the Chronicle C# and TypeScript clients' `GetFromSequenceNumber()`.
+
+  ## Options
+
+    * `:client` — the client name (default: `Chronicle.Client`)
+    * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence id (default: `"event-log"`)
+    * `:event_source_id` — optional event source id to filter by (default: all)
+    * `:event_types` — list of event type modules to filter by (default: all)
+
+  Returns `{:ok, [appended_event]}` or `{:error, reason}`.
+  """
+  @spec get_from_sequence_number(non_neg_integer(), keyword()) :: {:ok, list()} | {:error, term()}
+  def get_from_sequence_number(sequence_number, opts \\ []) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      namespace = Keyword.get(opts, :namespace, config.namespace)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+      event_type_modules = Keyword.get(opts, :event_types, [])
+      event_types = Enum.map(event_type_modules, &build_event_type_for_module/1)
+
+      request =
+        struct(GetFromEventSequenceNumberRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          EventSequenceId: event_sequence_id,
+          FromEventSequenceNumber: sequence_number,
+          EventSourceId: Keyword.get(opts, :event_source_id, ""),
+          EventTypes: event_types
+        )
+
+      case EventSequences.Stub.get_events_from_event_sequence_number(channel, request) do
         {:ok, response} -> {:ok, Map.get(response, :Events, [])}
         {:error, reason} -> {:error, reason}
       end
@@ -221,35 +271,173 @@ defmodule Chronicle.EventSequences.EventLog do
     * `:client` — the client name (default: `Chronicle.Client`)
     * `:namespace` — overrides the client's default namespace
     * `:event_sequence_id` — event sequence id (default: `"event-log"`)
+    * `:event_source_type` — the event source type to filter by (default: `"Default"`)
+    * `:event_stream_type` — the event stream type to filter by (default: `"Default"`)
+    * `:event_stream_id` — the event stream id to filter by (default: all)
+    * `:event_types` — list of event type modules to filter by (default: all)
   """
   @spec get_tail_sequence_number(String.t() | nil, keyword()) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def get_tail_sequence_number(event_source_id \\ nil, opts \\ []) do
+    case raw_tail_sequence_number(event_source_id, opts) do
+      {:ok, sequence_number} -> {:ok, normalize_sequence_number(sequence_number)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Returns the sequence number that will be assigned to the next appended event.
+
+  Mirrors the Chronicle C# and TypeScript clients' `GetNextSequenceNumber()`.
+
+  ## Options
+
+  Same as `get_tail_sequence_number/2`.
+  """
+  @spec get_next_sequence_number(String.t() | nil, keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def get_next_sequence_number(event_source_id \\ nil, opts \\ []) do
+    case raw_tail_sequence_number(event_source_id, opts) do
+      {:ok, @unavailable_sequence_number} -> {:ok, 0}
+      {:ok, sequence_number} -> {:ok, sequence_number + 1}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Returns the tail sequence number scoped to only the event types that the
+  given reactor or reducer module subscribes to (its `@handles` declarations).
+
+  Mirrors the Chronicle C# client's `GetTailSequenceNumberForObserver()`.
+
+  ## Options
+
+  Same as `get_tail_sequence_number/2`, minus `:event_types` (derived from
+  `observer_module`).
+  """
+  @spec get_tail_sequence_number_for_observer(module(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def get_tail_sequence_number_for_observer(observer_module, opts \\ []) do
+    event_types = observer_event_types(observer_module)
+    get_tail_sequence_number(nil, Keyword.put(opts, :event_types, event_types))
+  end
+
+  @doc """
+  Completes a named, non-default stream so that no further events can be
+  appended to it.
+
+  The default stream (event stream type `"All"` paired with the default event
+  stream id) can never be completed. Completing an already-completed stream
+  leaves it in its completed state.
+
+  ## Options
+
+    * `:client` — the client name (default: `Chronicle.Client`)
+    * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence id (default: `"event-log"`)
+
+  Returns `{:ok, tail_sequence_number}` on success, or
+  `{:error, :default_stream_cannot_be_completed | :already_completed}`.
+  """
+  @spec complete_stream(String.t(), String.t(), keyword()) ::
+          {:ok, non_neg_integer()}
+          | {:error, :default_stream_cannot_be_completed | :already_completed | term()}
+  def complete_stream(event_stream_type, event_stream_id, opts \\ []) do
     with {:ok, channel, config} <- resolve_channel(opts) do
       namespace = Keyword.get(opts, :namespace, config.namespace)
       event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
 
       request =
-        struct(GetTailSequenceNumberRequest,
+        struct(CompleteStreamRequest,
           EventStore: config.event_store,
           Namespace: namespace,
           EventSequenceId: event_sequence_id,
-          EventSourceId: event_source_id || "",
-          EventTypes: [],
-          EventSourceType: "Default",
-          EventStreamId: "",
-          EventStreamType: "Default"
+          EventStreamType: event_stream_type,
+          EventStreamId: event_stream_id
         )
 
-      case EventSequences.Stub.get_tail_sequence_number(channel, request) do
+      case EventSequences.Stub.complete_stream(channel, request) do
         {:ok, response} ->
-          sequence_number =
-            Map.get(response, :SequenceNumber, Map.get(response, :sequence_number, 0))
-
-          {:ok, normalize_sequence_number(sequence_number)}
+          if Map.get(response, :IsSuccess, false) do
+            {:ok, normalize_sequence_number(Map.get(response, :SequenceNumber, 0))}
+          else
+            {:error, decode_complete_stream_error(Map.get(response, :Error))}
+          end
 
         {:error, reason} ->
           {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Redacts a single event at a specific sequence number, permanently replacing
+  its content for compliance/GDPR erasure. This is destructive and irreversible.
+
+  ## Options
+
+    * `:client` — the client name (default: `Chronicle.Client`)
+    * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence id (default: `"event-log"`)
+  """
+  @spec redact(non_neg_integer(), String.t(), keyword()) :: :ok | {:error, term()}
+  def redact(sequence_number, reason, opts \\ []) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      namespace = Keyword.get(opts, :namespace, config.namespace)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+
+      request =
+        struct(RedactRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          EventSequenceId: event_sequence_id,
+          SequenceNumber: sequence_number,
+          Reason: reason,
+          CorrelationId: build_correlation_id(opts),
+          Causation: causation_entries_to_proto(build_causation_entries(opts, :plain)),
+          CausedBy: identity_to_proto(build_identity(opts))
+        )
+
+      case EventSequences.Stub.redact(channel, request) do
+        {:ok, _response} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Redacts all events for a given event source, optionally filtered to
+  specific event types. Permanently replaces content for compliance/GDPR
+  erasure. This is destructive and irreversible.
+
+  ## Options
+
+  Same as `redact/3`.
+  """
+  @spec redact_for_event_source(String.t(), String.t(), [module()], keyword()) ::
+          :ok | {:error, term()}
+  def redact_for_event_source(event_source_id, reason, event_types \\ [], opts \\ []) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      namespace = Keyword.get(opts, :namespace, config.namespace)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+      wire_event_types = Enum.map(event_types, &build_event_type_for_module/1)
+
+      request =
+        struct(RedactForEventSourceRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          EventSequenceId: event_sequence_id,
+          EventSourceId: event_source_id,
+          Reason: reason,
+          EventTypes: wire_event_types,
+          CorrelationId: build_correlation_id(opts),
+          Causation: causation_entries_to_proto(build_causation_entries(opts, :plain)),
+          CausedBy: identity_to_proto(build_identity(opts))
+        )
+
+      case EventSequences.Stub.redact_for_event_source(channel, request) do
+        {:ok, _response} -> :ok
+        {:error, reason} -> {:error, reason}
       end
     end
   end
@@ -501,6 +689,13 @@ defmodule Chronicle.EventSequences.EventLog do
       ]
   end
 
+  defp build_causation_entries(opts, :plain) do
+    case Keyword.get(opts, :causation) do
+      entries when is_list(entries) and entries != [] -> entries
+      _ -> CausationManager.get_current_chain()
+    end
+  end
+
   defp build_causation_entries(opts, mode) do
     entries =
       case Keyword.get(opts, :causation) do
@@ -641,4 +836,51 @@ defmodule Chronicle.EventSequences.EventLog do
   defp normalize_sequence_number(@unavailable_sequence_number), do: 0
   defp normalize_sequence_number(value) when is_integer(value) and value >= 0, do: value
   defp normalize_sequence_number(_), do: 0
+
+  # Fetches the tail sequence number without collapsing the "unavailable" sentinel,
+  # so callers that need to distinguish "no tail" from "tail at 0" (like
+  # get_next_sequence_number/2) can do so.
+  defp raw_tail_sequence_number(event_source_id, opts) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      namespace = Keyword.get(opts, :namespace, config.namespace)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+      event_type_modules = Keyword.get(opts, :event_types, [])
+      event_types = Enum.map(event_type_modules, &build_event_type_for_module/1)
+
+      request =
+        struct(GetTailSequenceNumberRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          EventSequenceId: event_sequence_id,
+          EventSourceId: event_source_id || "",
+          EventTypes: event_types,
+          EventSourceType: Keyword.get(opts, :event_source_type, "Default"),
+          EventStreamId: Keyword.get(opts, :event_stream_id, ""),
+          EventStreamType: Keyword.get(opts, :event_stream_type, "Default")
+        )
+
+      case EventSequences.Stub.get_tail_sequence_number(channel, request) do
+        {:ok, response} ->
+          {:ok, Map.get(response, :SequenceNumber, Map.get(response, :sequence_number, 0))}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  # Returns the event type modules a reactor or reducer module subscribes to,
+  # via its `@handles` declarations.
+  defp observer_event_types(module) do
+    cond do
+      function_exported?(module, :__chronicle_reactor__, 1) -> module.__chronicle_reactor__(:handles)
+      function_exported?(module, :__chronicle_reducer__, 1) -> module.__chronicle_reducer__(:handles)
+      true -> []
+    end
+  end
+
+  defp decode_complete_stream_error(:DefaultStreamCannotBeCompleted),
+    do: :default_stream_cannot_be_completed
+
+  defp decode_complete_stream_error(_), do: :already_completed
 end
