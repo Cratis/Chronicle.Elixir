@@ -8,5 +8,9 @@ defmodule ConsoleSample.Events.EmployeeEmailSet do
 
   defstruct [:email]
 
-  unique(:email, ignore_casing: true, name: "employee-email")
+  # Scoped to :per_event_source_type — email uniqueness is checked only among
+  # events observed from the same event source type (employees), not globally
+  # across the whole event store. A customer or any other kind of event source
+  # could use the same email value without tripping this constraint.
+  unique(:email, ignore_casing: true, name: "employee-email", scope: :per_event_source_type)
 end

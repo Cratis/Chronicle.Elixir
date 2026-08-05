@@ -18,7 +18,8 @@ defmodule ConsoleSample.Reactors.HrNotificationReactor do
     EmployeeEmailSet,
     EmployeeHired,
     EmployeeMoved,
-    EmployeePromoted
+    EmployeePromoted,
+    EmployeeWelcomeEmailQueued
   }
 
   @handles EmployeeHired
@@ -33,7 +34,13 @@ defmodule ConsoleSample.Reactors.HrNotificationReactor do
       "\n[reactor] Employee hired: #{event.first_name} #{event.last_name} as #{event.title}"
     )
 
-    :ok
+    # Returning {:ok, event_or_events} instead of a plain :ok appends the given
+    # event(s) as a side effect of having handled this one — Chronicle appends it
+    # right after handle/2 returns, to the same employee's stream since we return a
+    # bare event struct (not an EventForEventSourceId targeting a different stream).
+    # If the append itself fails, handle/2's overall result becomes {:error, reason},
+    # reported the same way a plain {:error, reason} return would be.
+    {:ok, %EmployeeWelcomeEmailQueued{template: "welcome-new-hire"}}
   end
 
   def handle(%EmployeeAddressSet{} = event, _context) do

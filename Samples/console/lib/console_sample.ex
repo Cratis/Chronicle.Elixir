@@ -26,6 +26,7 @@ defmodule ConsoleSample do
   alias Chronicle.Identities
   alias Chronicle.ExternalServices
   alias Chronicle.ExternalServices.DefinitionBuilder
+  alias Chronicle.EventSequences.EventLog
 
   @titles [
     "Software Engineer",
@@ -170,6 +171,18 @@ defmodule ConsoleSample do
 
       "n" ->
         rename_current_user(selected_user!(user_index))
+        loop(selected_index, user_index)
+
+      "w" ->
+        promote_and_wait_for_completion(selected_employee!(selected_index), selected_user!(user_index))
+        loop(selected_index, user_index)
+
+      "d" ->
+        redact_last_event_for_employee(selected_employee!(selected_index))
+        loop(selected_index, user_index)
+
+      "g" ->
+        gdpr_erase_customer()
         loop(selected_index, user_index)
 
       "h" ->
@@ -343,6 +356,81 @@ defmodule ConsoleSample do
 
       {:error, reason} ->
         IO.puts("\n[pii] Could not check customer state: #{format_reason(reason)}")
+    end
+  end
+
+  # Appends and then waits (up to a timeout, default 5s) for every observer affected
+  # by the append — reactors, reducers, projections — to actually process it, instead
+  # of returning as soon as the event is durably stored. Useful when a caller needs
+  # "read your own write" consistency against a read model right after appending.
+  # Mirrors the C# client's AppendResult.WaitForCompletion().
+  defp promote_and_wait_for_completion(%Person{} = person, %Identity{} = user) do
+    title = random_from(@titles)
+    setup_causation(user, "ConsoleSample.Commands.Promote", %{employee_id: person.id})
+
+    case EventLog.append_and_wait_for_completion(person.id, %EmployeePromoted{new_title: title}) do
+      {:ok, %{success: true, failed_partitions: []}} ->
+        IO.puts(
+          "\n[wait-for-completion] Promoted #{full_name(person)} to '#{title}' and confirmed every observer caught up  [caused-by: #{user.user_name}]"
+        )
+
+      {:ok, %{success: false, failed_partitions: failed_partitions}} ->
+        IO.puts(
+          "\n[wait-for-completion] Promoted #{full_name(person)} to '#{title}', but #{length(failed_partitions)} observer(s) failed or timed out."
+        )
+
+      {:error, reason} ->
+        IO.puts(
+          "\n[wait-for-completion] Could not promote #{full_name(person)}: #{format_reason(reason)}"
+        )
+    end
+  end
+
+  # Permanently redacts the most recent event for the selected employee. Unlike
+  # compliance encryption/PII masking (which conceal a value but stay reversible via
+  # key rotation), redact/3 overwrites the event's content in the log for good — a
+  # destructive, irreversible erasure for genuine "this event should never have been
+  # recorded" cases (e.g. a GDPR Article 17 request against a single fact). Mirrors
+  # the C# and TypeScript clients' IEventSequence.Redact().
+  defp redact_last_event_for_employee(%Person{} = person) do
+    case Chronicle.get_tail_sequence_number(person.id) do
+      {:ok, 0} ->
+        IO.puts("\n[redact] #{full_name(person)} has no events yet.")
+
+      {:ok, sequence_number} ->
+        reason = "Console sample demo: redact-on-demand for #{full_name(person)}"
+
+        case EventLog.redact(sequence_number, reason) do
+          :ok ->
+            IO.puts(
+              "\n[redact] Permanently redacted event ##{sequence_number} for #{full_name(person)}. This cannot be undone — its content is gone from the log."
+            )
+
+          {:error, reason} ->
+            IO.puts("\n[redact] Could not redact: #{format_reason(reason)}")
+        end
+
+      {:error, reason} ->
+        IO.puts("\n[redact] Could not determine the tail sequence number: #{format_reason(reason)}")
+    end
+  end
+
+  # Permanently redacts EVERY event for the sample customer's event source in one
+  # call — a bulk GDPR "right to be forgotten" erasure, as opposed to the single-event
+  # redact above. Passing a list of event type modules as the fourth argument would
+  # narrow this to specific event types only; omitting it (as here) redacts everything
+  # recorded for the event source. This is destructive and irreversible.
+  defp gdpr_erase_customer do
+    reason = "Console sample demo: customer requested full erasure under GDPR"
+
+    case EventLog.redact_for_event_source(@sample_customer.id, reason) do
+      :ok ->
+        IO.puts(
+          "\n[redact] Permanently erased every event for customer #{@sample_customer.full_name} (#{@sample_customer.id}). Press V afterward to see the read model reflect the erasure."
+        )
+
+      {:error, reason} ->
+        IO.puts("\n[redact] Could not erase customer events: #{format_reason(reason)}")
     end
   end
 
@@ -520,6 +608,9 @@ defmodule ConsoleSample do
         "  J = Model-bound projection       K = Declarative projection",
         "  C = Register customer with PII   V = View customer PII read model",
         "  X = Register external service    N = Rename current user's identity",
+        "  W = Promote and wait for observer completion",
+        "  D = Redact selected employee's last event (permanent, destructive)",
+        "  G = GDPR bulk-erase all customer events (permanent, destructive)",
         "  I = Switch user (cycle: Alice Smith → Bob Jones → System)",
         "  H or ? = Show this menu          Q = Quit",
         ""
