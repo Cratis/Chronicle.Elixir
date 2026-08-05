@@ -126,7 +126,12 @@ defmodule Chronicle.Events.EventType do
   @doc """
   Declares a unique constraint for one or more event fields.
 
-  This is equivalent to setting `@unique`.
+  This is equivalent to setting `@unique`. Supported `opts`:
+
+    * `:name` — explicit constraint name (defaults to the first field name)
+    * `:ignore_casing` — compare values case-insensitively
+    * `:message` — human-readable message to use when the constraint is
+      violated
   """
   defmacro unique(fields, opts \\ []) do
     quote do
@@ -137,7 +142,11 @@ defmodule Chronicle.Events.EventType do
   @doc """
   Declares a unique constraint for the whole event type.
 
-  This is equivalent to setting `@unique_event_type`.
+  This is equivalent to setting `@unique_event_type`. Supported `opts`:
+
+    * `:name` — explicit constraint name (defaults to the event type id)
+    * `:message` — human-readable message to use when the constraint is
+      violated
   """
   defmacro unique_event_type(opts \\ []) do
     quote do

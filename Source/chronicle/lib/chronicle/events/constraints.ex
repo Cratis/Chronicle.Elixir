@@ -19,7 +19,8 @@ defmodule Chronicle.Events.Constraints do
           name: "unique-email",
           type: :unique,
           event_type_id: "user-registered-v1",
-          on: ["Email"]
+          on: ["Email"],
+          message: "Email is already taken"
         }
       ])
 
@@ -46,6 +47,13 @@ defmodule Chronicle.Events.Constraints do
     * `:type` — **(required)** `:unique` or `:unique_event_type`
     * `:event_type_id` — the event type ID string this constraint applies to
     * `:on` — list of property path strings to check for uniqueness
+    * `:message` — optional human-readable message to use when the constraint
+      is violated. This is a **client-side-only** concern, matching every
+      other Cratis client (C#, TypeScript, Kotlin): the Chronicle kernel's
+      wire `Constraint` message has no field for it, so it is never sent as
+      part of registration. It is resolved locally against the `Message` on
+      a returned `ConstraintViolation` once append-time violation resolution
+      is wired up.
 
   Returns `:ok` or `{:error, reason}`.
   """
@@ -53,7 +61,7 @@ defmodule Chronicle.Events.Constraints do
   def register(_channel, _event_store, []), do: :ok
 
   def register(channel, event_store, constraints) when is_list(constraints) do
-    definitions = Enum.map(constraints, &build_constraint/1)
+    definitions = constraints |> Enum.map(&build_constraint/1) |> Enum.map(&elem(&1, 0))
 
     request =
       struct(RegisterConstraintsRequest,
@@ -107,6 +115,7 @@ defmodule Chronicle.Events.Constraints do
               %{event_type: definition.event_type, on: definition.on}
             end)
         }
+        |> maybe_put_message(Enum.find_value(definitions, "", &Map.get(&1, :message)))
         |> with_removed_with_event_type(Map.get(removal_event_types, name))
       end)
 
@@ -128,22 +137,37 @@ defmodule Chronicle.Events.Constraints do
     |> Enum.sort_by(& &1.name)
   end
 
-  defp build_constraint(%{
-         type: :unique,
-         name: name,
-         event_type_id: event_type_id,
-         on: properties
-       }) do
+  @doc false
+  # Builds the wire `Constraint` for a single constraint definition map.
+  #
+  # Returns `{constraint, message}` rather than a bare `%Constraint{}`. The
+  # `message` (from a `:message` key on the input map, defaulting to `""`
+  # when absent) is deliberately kept off the returned `%Constraint{}` —
+  # the generated `Cratis.Chronicle.Contracts.Events.Constraints.Constraint`
+  # struct has no field for it (confirmed against the kernel proto and every
+  # other Cratis client: C#'s `ConstraintConverters.ToContract()` never sends
+  # a message at registration time either). Returning it alongside the wire
+  # struct is what keeps the caller-supplied message from being silently
+  # discarded — it is what a later, append-time violation-resolution phase
+  # (mirroring C#'s `Constraints.ResolveMessageFor`) will read.
+  @spec build_constraint(map()) :: {Constraint.t(), String.t()}
+  def build_constraint(%{
+        type: :unique,
+        name: name,
+        event_type_id: event_type_id,
+        on: properties
+      } = constraint) do
     build_constraint(%{
       type: :unique,
       name: name,
-      event_definitions: [%{event_type_id: event_type_id, on: properties}]
+      event_definitions: [%{event_type_id: event_type_id, on: properties}],
+      message: Map.get(constraint, :message, "")
     })
   end
 
-  defp build_constraint(
-         %{type: :unique, name: name, event_definitions: event_definitions} = constraint
-       ) do
+  def build_constraint(
+        %{type: :unique, name: name, event_definitions: event_definitions} = constraint
+      ) do
     definition =
       struct(OneOf_UniqueConstraintDefinition_UniqueEventTypeConstraintDefinition,
         Value0:
@@ -153,41 +177,53 @@ defmodule Chronicle.Events.Constraints do
           )
       )
 
-    struct(Constraint,
-      Name: name,
-      Type: :Unique,
-      RemovedWith: removed_with_event_type_id(constraint),
-      Definition: definition
-    )
+    wire_constraint =
+      struct(Constraint,
+        Name: name,
+        Type: :Unique,
+        RemovedWith: removed_with_event_type_id(constraint),
+        Definition: definition
+      )
+
+    {wire_constraint, Map.get(constraint, :message, "")}
   end
 
-  defp build_constraint(
-         %{type: :unique_event_type, name: name, event_type_id: event_type_id} = constraint
-       ) do
+  def build_constraint(
+        %{type: :unique_event_type, name: name, event_type_id: event_type_id} = constraint
+      ) do
     definition =
       struct(OneOf_UniqueConstraintDefinition_UniqueEventTypeConstraintDefinition,
         Value1: struct(UniqueEventTypeConstraintDefinition, EventTypeId: event_type_id)
       )
 
-    struct(Constraint,
-      Name: name,
-      Type: :UniqueEventType,
-      RemovedWith: removed_with_event_type_id(constraint),
-      Definition: definition
-    )
+    wire_constraint =
+      struct(Constraint,
+        Name: name,
+        Type: :UniqueEventType,
+        RemovedWith: removed_with_event_type_id(constraint),
+        Definition: definition
+      )
+
+    {wire_constraint, Map.get(constraint, :message, "")}
   end
 
-  defp build_constraint(%{type: :unique, name: name, event_type: event_module} = constraint) do
+  def build_constraint(%{type: :unique, name: name, event_type: event_module} = constraint) do
     properties = Map.get(constraint, :on, [])
     event_type_id = event_module.__chronicle_event_type__(:id)
 
-    build_constraint(%{
-      constraint
-      | type: :unique,
+    # `Map.merge/2` (not the `%{constraint | ...}` update syntax) because
+    # `constraint` does not already have `:event_type_id` — the update
+    # syntax requires every updated key to pre-exist and raises `KeyError`
+    # otherwise.
+    build_constraint(
+      Map.merge(constraint, %{
+        type: :unique,
         event_type_id: event_type_id,
         on: properties,
-        name: name
-    })
+        name: name,
+        message: Map.get(constraint, :message, "")
+      })
+    )
   end
 
   defp build_unique_event_definition(%{event_type_id: event_type_id, on: properties}) do
@@ -227,7 +263,8 @@ defmodule Chronicle.Events.Constraints do
       constraint_name,
       event_type,
       normalized_fields,
-      Keyword.get(opts, :ignore_casing, false)
+      Keyword.get(opts, :ignore_casing, false),
+      Keyword.get(opts, :message, "")
     )
   end
 
@@ -242,7 +279,8 @@ defmodule Chronicle.Events.Constraints do
       constraint_name,
       event_type,
       normalized_fields,
-      Keyword.get(opts, :ignore_casing, false)
+      Keyword.get(opts, :ignore_casing, false),
+      Keyword.get(opts, :message, "")
     )
   end
 
@@ -253,7 +291,8 @@ defmodule Chronicle.Events.Constraints do
       default_constraint_name_for_fields(event_type, normalized_fields),
       event_type,
       normalized_fields,
-      false
+      false,
+      ""
     )
   end
 
@@ -264,6 +303,7 @@ defmodule Chronicle.Events.Constraints do
       )
 
     %{name: name, event_type_id: event_type.__chronicle_event_type__(:id)}
+    |> maybe_put_message(Keyword.get(opts, :message, ""))
   end
 
   defp normalize_unique_event_type_declaration(_opts, event_type) do
@@ -288,14 +328,26 @@ defmodule Chronicle.Events.Constraints do
     end
   end
 
-  defp build_normalized_unique(name, event_type, normalized_fields, ignore_casing) do
+  defp build_normalized_unique(name, event_type, normalized_fields, ignore_casing, message) do
     %{
       name: normalize_constraint_name(name),
       event_type: event_type,
       on: normalized_fields,
       ignore_casing: ignore_casing
     }
+    |> maybe_put_message(message)
   end
+
+  # Only sets `:message` when a non-empty message was actually declared, so
+  # constraint definition maps without a custom message keep their existing
+  # (message-less) shape — matching every other Cratis client, where an
+  # unset message resolves to an empty string rather than a present-but-empty
+  # field.
+  defp maybe_put_message(map, message) when is_binary(message) and message != "" do
+    Map.put(map, :message, message)
+  end
+
+  defp maybe_put_message(map, _message), do: map
 
   defp with_removed_with_event_type(definition, nil), do: definition
 
