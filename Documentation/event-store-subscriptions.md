@@ -102,6 +102,26 @@ Remove a subscription by identifier:
 :ok = Chronicle.unsubscribe_from_event_store("default-account-events")
 ```
 
+## Listing subscriptions
+
+`Chronicle.EventStoreSubscriptions.get_all/1` returns every event store subscription
+currently registered with the target event store. Mirrors the C# and Kotlin clients'
+`IEventStoreSubscriptions.GetAll()`.
+
+```elixir
+{:ok, subscriptions} = Chronicle.EventStoreSubscriptions.get_all()
+
+Enum.each(subscriptions, fn subscription ->
+  IO.puts("#{subscription.id} <- #{subscription.source_event_store}")
+end)
+```
+
+Each subscription is returned as a `%Chronicle.EventStoreSubscriptions.Definition{}` with:
+
+- `:id` — the subscription's identifier
+- `:source_event_store` — the event store it imports events from
+- `:event_types` — the `%Chronicle.EventStoreSubscriptions.EventType{}` list it subscribes to
+
 ## Definition builder
 
 `Chronicle.EventStoreSubscriptions.DefinitionBuilder` currently supports:

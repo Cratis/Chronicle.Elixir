@@ -61,8 +61,6 @@ defmodule Chronicle.Connections.Connection do
 
   use GenServer
 
-  require Logger
-
   alias Chronicle.Connections.{
     AuthInterceptor,
     ConnectionString,

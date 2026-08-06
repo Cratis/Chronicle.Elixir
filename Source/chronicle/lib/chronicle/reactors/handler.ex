@@ -16,6 +16,7 @@ defmodule Chronicle.Reactors.Handler do
   require Logger
 
   alias Chronicle.Connections.{Connection, Lifecycle}
+  alias Chronicle.EventSequences.{EventForEventSourceId, EventLog}
 
   alias Cratis.Chronicle.Contracts.Observation.Reactors.{
     Reactors,
@@ -42,6 +43,7 @@ defmodule Chronicle.Reactors.Handler do
   @impl true
   def init(opts) do
     module = Keyword.fetch!(opts, :module)
+    client = Keyword.get(opts, :client, Chronicle.Client)
     event_type_modules = module.__chronicle_reactor__(:handles)
 
     event_type_map =
@@ -51,12 +53,15 @@ defmodule Chronicle.Reactors.Handler do
 
     state = %{
       module: module,
+      client: client,
       connection: Keyword.fetch!(opts, :connection),
       lifecycle: Keyword.get(opts, :lifecycle),
       event_store: Keyword.fetch!(opts, :event_store),
       namespace: Keyword.fetch!(opts, :namespace),
       event_type_map: event_type_map,
       establish_fun: Keyword.get(opts, :establish_fun, &default_establish/2),
+      append_fun:
+        Keyword.get(opts, :append_fun, fn operation -> default_append(operation, client) end),
       connection_id: nil,
       stream: nil,
       receiver_task: nil,
@@ -94,40 +99,14 @@ defmodule Chronicle.Reactors.Handler do
   end
 
   def handle_info({:event_batch, events_to_observe}, state) do
-    partition = Map.get(events_to_observe, :Partition, "")
-    events = Map.get(events_to_observe, :Events, [])
+    case replay_state(events_to_observe) do
+      :none ->
+        dispatch_event_batch(events_to_observe, state)
 
-    {observation_state, exception_messages, stack_trace} =
-      Enum.reduce_while(events, {:success, [], ""}, fn appended_event, _acc ->
-        case dispatch_event(state, appended_event) do
-          :ok -> {:cont, {:success, [], ""}}
-          {:error, reason} -> {:halt, {:failed, [inspect(reason)], format_stack_trace(reason)}}
-        end
-      end)
-
-    last_seq =
-      case List.last(events) do
-        nil -> 0
-        event -> Map.get(Map.get(event, :Context, %{}), :SequenceNumber, 0)
-      end
-
-    result =
-      struct(ReactorMessage,
-        Content:
-          struct(OneOf,
-            Value1:
-              struct(ReactorResult,
-                Partition: partition,
-                State: encode_observation_state(observation_state),
-                LastSuccessfulObservation: last_seq,
-                ExceptionMessages: exception_messages,
-                ExceptionStackTrace: stack_trace
-              )
-          )
-      )
-
-    GRPC.Stub.send_request(state.stream, result)
-    {:noreply, state}
+      replay_signal ->
+        notify_replay(state.module, replay_signal, Map.get(events_to_observe, :Partition, ""))
+        {:noreply, state}
+    end
   end
 
   def handle_info({:stream_down, reason}, state) do
@@ -229,6 +208,43 @@ defmodule Chronicle.Reactors.Handler do
     )
   end
 
+  defp dispatch_event_batch(events_to_observe, state) do
+    partition = Map.get(events_to_observe, :Partition, "")
+    events = Map.get(events_to_observe, :Events, [])
+
+    {observation_state, exception_messages, stack_trace} =
+      Enum.reduce_while(events, {:success, [], ""}, fn appended_event, _acc ->
+        case dispatch_event(state, appended_event) do
+          :ok -> {:cont, {:success, [], ""}}
+          {:error, reason} -> {:halt, {:failed, [inspect(reason)], format_stack_trace(reason)}}
+        end
+      end)
+
+    last_seq =
+      case List.last(events) do
+        nil -> 0
+        event -> Map.get(Map.get(event, :Context, %{}), :SequenceNumber, 0)
+      end
+
+    result =
+      struct(ReactorMessage,
+        Content:
+          struct(OneOf,
+            Value1:
+              struct(ReactorResult,
+                Partition: partition,
+                State: encode_observation_state(observation_state),
+                LastSuccessfulObservation: last_seq,
+                ExceptionMessages: exception_messages,
+                ExceptionStackTrace: stack_trace
+              )
+          )
+      )
+
+    GRPC.Stub.send_request(state.stream, result)
+    {:noreply, state}
+  end
+
   defp dispatch_event(state, appended_event) do
     context = Map.get(appended_event, :Context, %{})
     event_type = Map.get(context, :EventType, %{})
@@ -245,7 +261,9 @@ defmodule Chronicle.Reactors.Handler do
         case decode_event(event_module, content) do
           {:ok, event} ->
             try do
-              state.module.handle(event, ctx)
+              event
+              |> state.module.handle(ctx)
+              |> handle_result(state, ctx.event_source_id)
             rescue
               e -> {:error, e}
             end
@@ -255,6 +273,88 @@ defmodule Chronicle.Reactors.Handler do
             :ok
         end
     end
+  end
+
+  # Normalizes handle/2's return value to :ok | {:error, reason}, appending
+  # any returned side-effect event(s) via the triggering event source id (or
+  # each EventForEventSourceId's own explicit target). Public (but @doc false)
+  # so it can be exercised directly in tests against a minimal state map
+  # carrying just :append_fun, without a live connection.
+  @doc false
+  def handle_result(:ok, _state, _event_source_id), do: :ok
+  def handle_result({:error, _reason} = error, _state, _event_source_id), do: error
+
+  def handle_result({:ok, side_effect}, state, event_source_id) do
+    side_effect
+    |> side_effect_operation(event_source_id)
+    |> perform_append(state)
+  end
+
+  def handle_result(_other, _state, _event_source_id), do: :ok
+
+  # Translates a handle/2 side-effect return value into an append instruction,
+  # a pure decision kept separate from performing the actual append (see
+  # perform_append/2) so it can be exercised without a live connection.
+  @doc false
+  def side_effect_operation(nil, _event_source_id), do: :noop
+
+  def side_effect_operation(%EventForEventSourceId{} = wrapped, _event_source_id) do
+    {:append, wrapped.event_source_id, wrapped.event,
+     [
+       event_source_type: wrapped.event_source_type,
+       event_stream_type: wrapped.event_stream_type,
+       event_stream_id: wrapped.event_stream_id,
+       tags: wrapped.tags,
+       subject: wrapped.subject,
+       occurred: wrapped.occurred,
+       concurrency_scope: wrapped.concurrency_scope,
+       causation: wrapped.causation,
+       identity: wrapped.identity
+     ]
+     |> Enum.reject(fn {_key, value} -> is_nil(value) or value == [] end)}
+  end
+
+  def side_effect_operation(events, event_source_id) when is_list(events) do
+    cond do
+      events == [] ->
+        :noop
+
+      Enum.all?(events, &match?(%EventForEventSourceId{}, &1)) ->
+        {:append_many_for_event_sources, events}
+
+      Enum.any?(events, &match?(%EventForEventSourceId{}, &1)) ->
+        normalized =
+          Enum.map(events, fn
+            %EventForEventSourceId{} = wrapped -> wrapped
+            event -> %EventForEventSourceId{event_source_id: event_source_id, event: event}
+          end)
+
+        {:append_many_for_event_sources, normalized}
+
+      true ->
+        {:append_many, event_source_id, events}
+    end
+  end
+
+  def side_effect_operation(%_{} = event, event_source_id) do
+    {:append, event_source_id, event, []}
+  end
+
+  def side_effect_operation(_other, _event_source_id), do: :noop
+
+  defp perform_append(:noop, _state), do: :ok
+  defp perform_append(operation, state), do: state.append_fun.(operation)
+
+  defp default_append({:append, event_source_id, event, opts}, client) do
+    EventLog.append(event_source_id, event, Keyword.put(opts, :client, client))
+  end
+
+  defp default_append({:append_many, event_source_id, events}, client) do
+    EventLog.append_many(event_source_id, events, client: client)
+  end
+
+  defp default_append({:append_many_for_event_sources, events}, client) do
+    EventLog.append_many_for_event_sources(events, client: client)
   end
 
   defp decode_event(event_module, json_content) do
@@ -340,4 +440,42 @@ defmodule Chronicle.Reactors.Handler do
 
   defp format_stack_trace(%{__exception__: true} = exception), do: Exception.message(exception)
   defp format_stack_trace(reason), do: inspect(reason)
+
+  # ReplayState enum: None = 0, BeginReplay = 1, EndReplay = 2,
+  # BeginReplayPartition = 3, EndReplayPartition = 4.
+  defp replay_state(events_to_observe) do
+    case Map.get(events_to_observe, :ReplayState, :REPLAY_STATE_None) do
+      none when none in [:REPLAY_STATE_None, 0] -> :none
+      begin_replay when begin_replay in [:BeginReplay, 1] -> :begin_replay
+      end_replay when end_replay in [:EndReplay, 2] -> :end_replay
+      begin_partition when begin_partition in [:BeginReplayPartition, 3] -> :begin_replay_partition
+      end_partition when end_partition in [:EndReplayPartition, 4] -> :end_replay_partition
+      _ -> :none
+    end
+  end
+
+  # Invokes the reactor module's optional replay-lifecycle callback (see
+  # Chronicle.Reactors.Reactor) for a replay-state transition. These are
+  # notifications, not events dispatched through handle/2 — no ReactorResult
+  # is sent back to Chronicle for them (mirroring the C# client), and a
+  # raised exception is logged and swallowed rather than failing the stream.
+  defp notify_replay(module, :begin_replay, _partition),
+    do: safely_notify(module, :on_replay_begin, [])
+
+  defp notify_replay(module, :end_replay, _partition),
+    do: safely_notify(module, :on_replay_end, [])
+
+  defp notify_replay(module, :begin_replay_partition, partition),
+    do: safely_notify(module, :on_partition_replay_begin, [partition])
+
+  defp notify_replay(module, :end_replay_partition, partition),
+    do: safely_notify(module, :on_partition_replay_end, [partition])
+
+  defp safely_notify(module, callback, args) do
+    if function_exported?(module, callback, length(args)) do
+      apply(module, callback, args)
+    end
+  rescue
+    e -> Logger.warning("Reactor #{module} replay callback #{callback} raised: #{inspect(e)}")
+  end
 end

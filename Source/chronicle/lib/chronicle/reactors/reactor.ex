@@ -59,17 +59,70 @@ defmodule Chronicle.Reactors.Reactor do
 
   ## Return values
 
-  `handle/2` must return `:ok` on success, or `{:error, reason}` on failure.
-  Failures are reported back to Chronicle as a failed partition, which can be
-  retried or replayed.
+  `handle/2` must return one of:
+
+    * `:ok` — success, no side effect.
+    * `{:error, reason}` — failure. Reported back to Chronicle as a failed
+      partition, which can be retried or replayed.
+    * `{:ok, event_or_events}` — success, with one or more events to append as
+      a side effect. `event_or_events` may be:
+      * a single event struct — appended to the triggering event source id.
+      * a list of event structs — appended atomically (single append-many) to
+        the triggering event source id.
+      * a `Chronicle.EventSequences.EventForEventSourceId` struct — appended to
+        its own explicit event source id.
+      * a list of `EventForEventSourceId` structs (optionally mixed with bare
+        event structs, which are then targeted at the triggering event source
+        id) — appended atomically across all their (possibly different) event
+        source ids.
+
+  If appending a side effect fails, `handle/2`'s overall result becomes
+  `{:error, reason}` — reported the same way as a plain `{:error, reason}` return.
+
+  ## Replay lifecycle (optional)
+
+  Implement any of `on_replay_begin/0`, `on_replay_end/0`,
+  `on_partition_replay_begin/1`, `on_partition_replay_end/1` to be notified when
+  Chronicle starts or finishes replaying this reactor — either as a whole, or
+  for a single partition (event source). All four are optional; implement only
+  the ones you need.
+
+      @impl true
+      def on_replay_begin, do: Logger.info("Replay starting")
+
+      @impl true
+      def on_replay_end, do: Logger.info("Replay finished")
+
+  These are notifications, not events to handle — they run outside the normal
+  `handle/2` dispatch, are not subject to failed-partition tracking, and a
+  raised exception is logged and swallowed rather than reported to Chronicle.
   """
 
   @doc """
   Handles an event dispatched by Chronicle.
 
-  Called once per event for each partition. Must return `:ok` or `{:error, reason}`.
+  Called once per event for each partition. Must return `:ok`, `{:error, reason}`,
+  or `{:ok, event_or_events}` to append a side effect (see moduledoc).
   """
-  @callback handle(event :: struct(), context :: map()) :: :ok | {:error, term()}
+  @callback handle(event :: struct(), context :: map()) ::
+              :ok | {:error, term()} | {:ok, struct() | [struct()]}
+
+  @doc "Called when a full replay of this reactor begins."
+  @callback on_replay_begin() :: any()
+
+  @doc "Called when a full replay of this reactor ends."
+  @callback on_replay_end() :: any()
+
+  @doc "Called when replay of a single partition (event source) begins."
+  @callback on_partition_replay_begin(partition :: String.t()) :: any()
+
+  @doc "Called when replay of a single partition (event source) ends."
+  @callback on_partition_replay_end(partition :: String.t()) :: any()
+
+  @optional_callbacks on_replay_begin: 0,
+                       on_replay_end: 0,
+                       on_partition_replay_begin: 1,
+                       on_partition_replay_end: 1
 
   defmacro __using__(opts) do
     quote bind_quoted: [opts: opts] do

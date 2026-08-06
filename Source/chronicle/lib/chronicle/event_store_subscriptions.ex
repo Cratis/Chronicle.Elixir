@@ -53,6 +53,7 @@ defmodule Chronicle.EventStoreSubscriptions do
   alias Cratis.Chronicle.Contracts.Observation.EventStoreSubscriptions.{
     AddEventStoreSubscriptions,
     EventStoreSubscriptions,
+    GetEventStoreSubscriptionsRequest,
     RemoveEventStoreSubscriptions
   }
 
@@ -144,6 +145,36 @@ defmodule Chronicle.EventStoreSubscriptions do
       case EventStoreSubscriptions.Stub.remove(channel, request) do
         {:ok, _} -> :ok
         {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Returns all event store subscriptions currently registered with the target
+  event store.
+
+  Mirrors the C# and Kotlin clients' `IEventStoreSubscriptions.GetAll()`.
+
+  ## Options
+
+    * `:client` — the client name (default: `Chronicle.Client`)
+  """
+  @spec get_all(keyword()) :: {:ok, [Definition.t()]} | {:error, term()}
+  def get_all(opts \\ []) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      request = struct(GetEventStoreSubscriptionsRequest, TargetEventStore: config.event_store)
+
+      case EventStoreSubscriptions.Stub.get_subscriptions(channel, request) do
+        {:ok, response} ->
+          definitions =
+            response
+            |> Map.get(:items, [])
+            |> Enum.map(&Definition.from_proto/1)
+
+          {:ok, definitions}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     end
   end

@@ -6,8 +6,6 @@ defmodule Chronicle.Connections.Auth do
 
   # Fetches OAuth2 Bearer tokens using the client credentials grant via HTTP/2.
 
-  require Logger
-
   @doc """
   Fetches an OAuth2 access token using the client credentials grant.
 

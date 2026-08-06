@@ -16,8 +16,6 @@ defmodule Chronicle.Connections.KeepAlive do
   # and every append keeps working. This mirrors the C# client's
   # ChronicleConnection.HandleConnection.
 
-  require Logger
-
   alias Cratis.Chronicle.Contracts.Clients.ConnectionService
   alias Cratis.Chronicle.Contracts.Clients.ConnectionKeepAlive, as: KeepAliveMessage
 

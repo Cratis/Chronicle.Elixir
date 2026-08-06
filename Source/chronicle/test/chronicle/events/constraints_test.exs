@@ -39,6 +39,37 @@ defmodule Chronicle.ConstraintsTest do
     unique_event_type()
   end
 
+  defmodule EmailChanged do
+    use Chronicle.Events.EventType, id: "email-changed-v1"
+    defstruct [:email]
+
+    unique(:email, name: "email_taken", message: "Email is already taken")
+  end
+
+  defmodule SubscriptionStarted do
+    use Chronicle.Events.EventType, id: "subscription-started-v1"
+    defstruct [:account_id]
+
+    unique_event_type(name: "one-subscription-per-account", message: "Already subscribed")
+  end
+
+  defmodule UsernameClaimed do
+    use Chronicle.Events.EventType, id: "username-claimed-v1"
+    defstruct [:username]
+
+    unique(:username, name: "username_per_source_type", scope: :per_event_source_type)
+  end
+
+  defmodule SlotReserved do
+    use Chronicle.Events.EventType, id: "slot-reserved-v1"
+    defstruct [:slot]
+
+    unique(:slot,
+      name: "slot_per_stream",
+      scope: [:per_event_stream_type, :per_event_stream_id]
+    )
+  end
+
   describe "from_event_types/1" do
     test "captures options from unique/2 macro" do
       assert AccountCreated.__chronicle_event_type__(:constraints) == %{
@@ -98,6 +129,123 @@ defmodule Chronicle.ConstraintsTest do
                  event_type_id: "account-opened-v1"
                }
              ]
+    end
+
+    test "does not drop a :message declared on unique/2" do
+      constraints = Chronicle.Events.Constraints.from_event_types([EmailChanged])
+
+      assert constraints == [
+               %{
+                 type: :unique,
+                 name: "email_taken",
+                 ignore_casing: false,
+                 message: "Email is already taken",
+                 event_definitions: [%{event_type: EmailChanged, on: ["email"]}]
+               }
+             ]
+    end
+
+    test "does not drop a :message declared on unique_event_type/1" do
+      constraints = Chronicle.Events.Constraints.from_event_types([SubscriptionStarted])
+
+      assert constraints == [
+               %{
+                 type: :unique_event_type,
+                 name: "one-subscription-per-account",
+                 event_type_id: "subscription-started-v1",
+                 message: "Already subscribed"
+               }
+             ]
+    end
+
+    test "captures a single :scope dimension" do
+      constraints = Chronicle.Events.Constraints.from_event_types([UsernameClaimed])
+
+      assert constraints == [
+               %{
+                 type: :unique,
+                 name: "username_per_source_type",
+                 ignore_casing: false,
+                 scope: [:per_event_source_type],
+                 event_definitions: [%{event_type: UsernameClaimed, on: ["username"]}]
+               }
+             ]
+    end
+
+    test "captures multiple :scope dimensions" do
+      constraints = Chronicle.Events.Constraints.from_event_types([SlotReserved])
+
+      assert [%{scope: scope}] = constraints
+      assert Enum.sort(scope) == [:per_event_stream_id, :per_event_stream_type]
+    end
+
+    test "does not set :scope when none was declared" do
+      constraints = Chronicle.Events.Constraints.from_event_types([UserRegistered])
+
+      assert [definition] = constraints
+      refute Map.has_key?(definition, :scope)
+    end
+  end
+
+  describe "build_constraint/1" do
+    alias Chronicle.Events.Constraints
+    alias Cratis.Chronicle.Contracts.Events.Constraints.Constraint
+
+    test "carries a custom unique constraint message alongside the wire Constraint" do
+      [definition] = Constraints.from_event_types([EmailChanged])
+
+      assert {%Constraint{} = wire_constraint, message} = Constraints.build_constraint(definition)
+
+      # The message travels alongside the wire struct rather than on it: the
+      # generated Constraint has no field for it, matching the C#, TypeScript
+      # and Kotlin reference clients, none of which send a constraint message
+      # to the kernel at registration time.
+      assert message == "Email is already taken"
+      assert Map.get(wire_constraint, :Name) == "email_taken"
+      assert Map.get(wire_constraint, :Type) == :Unique
+      refute Map.has_key?(Map.from_struct(wire_constraint), :Message)
+    end
+
+    test "carries a custom unique_event_type constraint message alongside the wire Constraint" do
+      [definition] = Constraints.from_event_types([SubscriptionStarted])
+
+      assert {%Constraint{} = wire_constraint, message} = Constraints.build_constraint(definition)
+
+      assert message == "Already subscribed"
+      assert Map.get(wire_constraint, :Name) == "one-subscription-per-account"
+      assert Map.get(wire_constraint, :Type) == :UniqueEventType
+    end
+
+    test "defaults the message to an empty string when none was declared" do
+      [definition] = Constraints.from_event_types([UserRegistered])
+
+      assert {%Constraint{}, ""} = Constraints.build_constraint(definition)
+    end
+
+    test "leaves Scope unset when no :scope was declared" do
+      [definition] = Constraints.from_event_types([UserRegistered])
+
+      assert {%Constraint{Scope: nil}, _message} = Constraints.build_constraint(definition)
+    end
+
+    test "sets only the scoped dimension's field on the wire ConstraintScope" do
+      [definition] = Constraints.from_event_types([UsernameClaimed])
+
+      assert {%Constraint{Scope: scope}, _message} = Constraints.build_constraint(definition)
+
+      assert Map.get(scope, :EventSourceType) == "_scoped_"
+      assert Map.get(scope, :EventStreamType) == ""
+      assert Map.get(scope, :EventStreamId) == ""
+    end
+
+    test "sets every scoped dimension's field on the wire ConstraintScope" do
+      [definition] = Constraints.from_event_types([SlotReserved])
+
+      assert {%Constraint{Scope: scope}, _message} = Constraints.build_constraint(definition)
+
+      assert Map.get(scope, :EventStreamType) == "_scoped_"
+      assert Map.get(scope, :EventStreamId) == "_scoped_"
+      assert Map.get(scope, :EventSourceType) == ""
     end
   end
 end

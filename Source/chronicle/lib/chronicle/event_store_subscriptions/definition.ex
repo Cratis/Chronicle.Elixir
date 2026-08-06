@@ -31,11 +31,29 @@ defmodule Chronicle.EventStoreSubscriptions.Definition do
     )
   end
 
+  @doc false
+  @spec from_proto(map()) :: t()
+  def from_proto(definition) do
+    %__MODULE__{
+      id: Map.get(definition, :Identifier, ""),
+      source_event_store: Map.get(definition, :SourceEventStore, ""),
+      event_types: Map.get(definition, :EventTypes, []) |> Enum.map(&event_type_from_proto/1)
+    }
+  end
+
   defp event_type_to_proto(%EventType{} = event_type) do
     struct(ProtoEventType,
       Id: event_type.id,
       Generation: event_type.generation,
       Tombstone: event_type.tombstone?
     )
+  end
+
+  defp event_type_from_proto(event_type) do
+    %EventType{
+      id: Map.get(event_type, :Id, ""),
+      generation: Map.get(event_type, :Generation, 1),
+      tombstone?: Map.get(event_type, :Tombstone, false)
+    }
   end
 end

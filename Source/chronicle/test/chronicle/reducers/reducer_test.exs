@@ -29,6 +29,15 @@ defmodule Chronicle.ReducerTest do
     end
   end
 
+  defmodule PassiveReducer do
+    use Chronicle.Reducers.Reducer, model: MyReadModel, active: false
+
+    @handles MyEvent
+
+    @impl true
+    def reduce(%MyEvent{} = event, nil, _context), do: %MyReadModel{total: event.amount}
+  end
+
   describe "use Chronicle.Reducers.Reducer" do
     test "exposes the model module" do
       assert TestReducer.__chronicle_reducer__(:model) == MyReadModel
@@ -40,6 +49,14 @@ defmodule Chronicle.ReducerTest do
 
     test "defaults id to module name" do
       assert TestReducer.__chronicle_reducer__(:id) == to_string(TestReducer)
+    end
+
+    test "defaults active to true" do
+      assert TestReducer.__chronicle_reducer__(:active) == true
+    end
+
+    test "supports an explicit active: false for a passive reducer" do
+      assert PassiveReducer.__chronicle_reducer__(:active) == false
     end
 
     test "reduce/3 builds initial model" do

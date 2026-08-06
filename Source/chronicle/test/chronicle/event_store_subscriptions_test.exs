@@ -4,7 +4,7 @@
 defmodule Chronicle.EventStoreSubscriptionsTest do
   use ExUnit.Case, async: true
 
-  alias Chronicle.EventStoreSubscriptions.DefinitionBuilder
+  alias Chronicle.EventStoreSubscriptions.{Definition, DefinitionBuilder}
 
   defmodule AccountOpened do
     use Chronicle.Events.EventType, id: "account-opened", generation: 2
@@ -78,6 +78,16 @@ defmodule Chronicle.EventStoreSubscriptionsTest do
       discovered = Chronicle.Artifacts.discover_loaded()
       assert DefaultAccountEvents in discovered.event_store_subscriptions
       assert CustomSubscription in discovered.event_store_subscriptions
+    end
+  end
+
+  describe "Definition.from_proto/1" do
+    test "round-trips a definition through to_proto/1, as used by get_all/1" do
+      definition =
+        DefinitionBuilder.new([AccountOpened, FundsDeposited])
+        |> DefinitionBuilder.build("all-events", "default")
+
+      assert Definition.from_proto(Definition.to_proto(definition)) == definition
     end
   end
 end
