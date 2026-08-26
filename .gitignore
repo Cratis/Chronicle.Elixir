@@ -29,3 +29,6 @@ erl_crash.dump
 # OS
 .DS_Store
 Thumbs.db
+
+# Local AI work artifacts (plans, handovers, session notes) — never tracked
+.ai-work/
