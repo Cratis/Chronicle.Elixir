@@ -55,7 +55,12 @@ defmodule Chronicle.MixProject do
     [
       name: "cratis_chronicle",
       licenses: ["MIT"],
-      links: %{"GitHub" => @source_url},
+      links: %{
+        "GitHub" => @source_url,
+        "Chronicle" => "https://github.com/Cratis/Chronicle",
+        "Documentation" => "https://www.cratis.io/chronicle/",
+        "Cratis" => "https://www.cratis.io"
+      },
       maintainers: ["Cratis"],
       files: ~w(
         lib
