@@ -22,6 +22,8 @@ Event sourcing for Elixir — the idiomatic client for [Cratis Chronicle](https:
 - **Jobs and webhooks** — inspect Chronicle jobs and manage webhook registrations
 - **Resilient connection** — automatic reconnection with exponential backoff
 
+We believe event sourcing is worth it for almost any system dealing with information and business flows — and that in Elixir it should feel like Elixir: modules, structs, and `use` macros rather than a foreign paradigm. The client is designed to keep friction and boilerplate low, so it reads as familiar code even if you have never event-sourced before. It is part of one deliberately simple Cratis ecosystem, built with productivity, quality, and reliability in mind — AI-friendly by design, with free [AI skills](https://github.com/Cratis/AI) for building with the stack.
+
 ## Install
 
 Add `cratis_chronicle` to your `mix.exs` dependencies:
