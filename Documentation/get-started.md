@@ -10,7 +10,7 @@ Add the client to your `mix.exs` dependencies:
 ```elixir
 defp deps do
   [
-    {:cratis_chronicle, "~> 0.1"}
+    {:cratis_chronicle, "~> 2.2"}
   ]
 end
 ```

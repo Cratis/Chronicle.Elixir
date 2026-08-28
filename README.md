@@ -1,10 +1,14 @@
 # Chronicle Elixir Client
 
-An idiomatic Elixir client for [Cratis Chronicle](https://github.com/Cratis/Chronicle).
+Event sourcing for Elixir — the idiomatic client for [Cratis Chronicle](https://github.com/Cratis/Chronicle), the open-source (MIT) event-sourcing database and processing runtime.
+
+[![Hex.pm](https://img.shields.io/hexpm/v/cratis_chronicle.svg)](https://hex.pm/packages/cratis_chronicle)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/cratis_chronicle)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## Overview
 
-`cratis_chronicle` provides a clean Elixir API for interacting with the Chronicle Kernel. It builds on the Chronicle gRPC API and exposes OTP-native constructs including:
+`cratis_chronicle` brings event sourcing and CQRS to Elixir applications: append events to an event store, project them into read models, and react to them — all backed by the Chronicle Kernel. It builds on Chronicle's language-agnostic gRPC API and exposes OTP-native constructs including:
 
 - **`use Chronicle.EventType`** — annotate structs as event types with stable IDs
 - **`use Chronicle.ReadModel`** — declare model-bound projections executed server-side
@@ -17,6 +21,18 @@ An idiomatic Elixir client for [Cratis Chronicle](https://github.com/Cratis/Chro
 - **Transactions** — buffer and commit multi-event units of work
 - **Jobs and webhooks** — inspect Chronicle jobs and manage webhook registrations
 - **Resilient connection** — automatic reconnection with exponential backoff
+
+## Install
+
+Add `cratis_chronicle` to your `mix.exs` dependencies:
+
+```elixir
+defp deps do
+  [
+    {:cratis_chronicle, "~> 2.2"}
+  ]
+end
+```
 
 ## Structure
 
@@ -40,7 +56,7 @@ docker run -p 35000:35000 cratis/chronicle:latest-development
 
 ## Getting Started
 
-See [Documentation/getting-started.md](./Documentation/getting-started.md) for installation and usage instructions.
+See [Documentation/get-started.md](./Documentation/get-started.md) for installation and usage instructions.
 
 ## Quick Example
 
@@ -116,3 +132,18 @@ Set `CHRONICLE_CONNECTION_STRING` to override the default connection:
 ```bash
 CHRONICLE_CONNECTION_STRING="chronicle://myserver:35000?apiKey=secret" mix run --no-halt
 ```
+
+## The Cratis ecosystem
+
+This project is part of [Cratis](https://www.cratis.io) — free, MIT-licensed tools for building event-sourced and CQRS applications.
+
+- **[Chronicle](https://github.com/Cratis/Chronicle)** — event-sourcing database and runtime. Orleans-based kernel, pluggable storage (MongoDB default; PostgreSQL, SQL Server, SQLite, in-memory), language-agnostic gRPC contracts. [Docs](https://www.cratis.io/chronicle/)
+- **Chronicle clients** — first-class [.NET SDK](https://github.com/Cratis/Chronicle), plus [TypeScript](https://github.com/Cratis/Chronicle.TypeScript), [Kotlin/Java](https://github.com/Cratis/Chronicle.Kotlin), and this Elixir client; [Python](https://github.com/Cratis/Chronicle.Python) coming soon (pre-alpha). AI agents connect through the [Chronicle MCP server](https://github.com/Cratis/Chronicle.Mcp).
+- **[Arc](https://github.com/Cratis/Arc)** — opinionated CQRS framework for ASP.NET Core with commands, queries, validation, authorization, and TypeScript proxy generation. Works without event sourcing. [Docs](https://www.cratis.io/arc/)
+- **[Components](https://github.com/Cratis/Components)** — React components aligned with Arc patterns. [Docs](https://www.cratis.io/components/)
+- **[CLI](https://github.com/Cratis/cli) + Workbench** — inspect and diagnose Chronicle from the terminal or the browser. [Docs](https://www.cratis.io/cli/)
+- **Model-first layer (experimental)** — [Studio](https://github.com/Cratis/Studio), [Screenplay](https://github.com/Cratis/Screenplay), [Stage](https://github.com/Cratis/Stage), [Scene](https://github.com/Cratis/Scene), [Prologue](https://github.com/Cratis/Prologue)
+- **Supporting** — [Fundamentals](https://github.com/Cratis/Fundamentals), [Specifications](https://github.com/Cratis/Specifications), [Synopsis](https://github.com/Cratis/Synopsis), [Lens](https://github.com/Cratis/Lens), [Narrator](https://github.com/Cratis/Narrator), and free [AI tooling](https://github.com/Cratis/AI) (preview); [Ensemble](https://github.com/Cratis/Ensemble) coming soon (pre-release)
+- **[Samples](https://github.com/Cratis/Samples)** — runnable event sourcing and CQRS samples for the whole stack
+
+Everything Cratis publishes today is MIT licensed and free to use.
