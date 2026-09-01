@@ -269,7 +269,8 @@ defmodule Chronicle.Registration.Coordinator do
         )
       end)
 
-    all_definitions = projection_definitions ++ reducer_definitions ++ declarative_projection_definitions
+    all_definitions =
+      projection_definitions ++ reducer_definitions ++ declarative_projection_definitions
 
     if Enum.empty?(all_definitions) do
       :ok
@@ -354,7 +355,10 @@ defmodule Chronicle.Registration.Coordinator do
     end
   end
 
-  defp build_projection_definition(read_model_module) do
+  # Public so the definition a read model produces can be asserted directly, which is where the
+  # mapping bugs live - the same reason side_effect_operation/2 is reachable from a spec.
+  @doc false
+  def build_projection_definition(read_model_module) do
     identifier = read_model_module.__chronicle_read_model__(:id)
     model_name = identifier
 
@@ -411,26 +415,42 @@ defmodule Chronicle.Registration.Coordinator do
         [] ->
           nil
 
-        [opts | _] ->
+        declarations ->
+          # Every from_every/1 call contributes mappings. Merging them all is what lets a model
+          # declare context capture and property mapping separately instead of silently losing
+          # everything but the first call.
           struct(FromEveryDefinition,
-            Properties: build_properties(opts),
-            IncludeChildren: Keyword.get(opts, :include_children, false)
+            Properties:
+              declarations
+              |> Enum.map(&build_properties/1)
+              |> Enum.reduce(%{}, &Map.merge(&2, &1)),
+            IncludeChildren: Enum.any?(declarations, &Keyword.get(&1, :include_children, false))
           )
       end
+
+    {auto_map, no_auto_map_properties} = read_model_module.__chronicle_read_model__(:no_auto_map)
 
     struct(ProjectionDefinition,
       Identifier: identifier,
       ReadModel: model_name,
-      EventSequenceId: "event-log",
+      EventSequenceId: read_model_module.__chronicle_read_model__(:event_sequence),
       IsActive: not read_model_module.__chronicle_read_model__(:passive?),
-      IsRewindable: true,
+      IsRewindable: read_model_module.__chronicle_read_model__(:rewindable?),
       From: from_entries,
       Join: join_entries,
       RemovedWith: removed_with_entries,
       All: from_every,
+      AutoMap: auto_map_value(auto_map),
+      NoAutoMapProperties: Enum.map(no_auto_map_properties, &to_string/1),
       InitialModelState: initial_model_state(read_model_module)
     )
   end
+
+  # The kernel distinguishes "never declared" (Inherit) from an explicit Enabled/Disabled, so a
+  # projection that says nothing keeps behaving exactly as it did before this was declarable.
+  defp auto_map_value(:inherit), do: :Inherit
+  defp auto_map_value(:enabled), do: :Enabled
+  defp auto_map_value(:disabled), do: :Disabled
 
   defp build_declarative_projection_definition(projection_module) do
     projection_id = projection_module.__chronicle_projection__(:id)
@@ -490,23 +510,30 @@ defmodule Chronicle.Registration.Coordinator do
         [] ->
           nil
 
-        [opts | _] ->
+        declarations ->
           struct(FromEveryDefinition,
-            Properties: build_properties(opts),
-            IncludeChildren: Keyword.get(opts, :include_children, false)
+            Properties:
+              declarations
+              |> Enum.map(&build_properties/1)
+              |> Enum.reduce(%{}, &Map.merge(&2, &1)),
+            IncludeChildren: Enum.any?(declarations, &Keyword.get(&1, :include_children, false))
           )
       end
+
+    {auto_map, no_auto_map_properties} = projection_module.__chronicle_projection__(:no_auto_map)
 
     struct(ProjectionDefinition,
       Identifier: projection_id,
       ReadModel: model_id,
-      EventSequenceId: "event-log",
+      EventSequenceId: projection_module.__chronicle_projection__(:event_sequence),
       IsActive: not projection_module.__chronicle_projection__(:passive?),
-      IsRewindable: true,
+      IsRewindable: projection_module.__chronicle_projection__(:rewindable?),
       From: from_entries,
       Join: join_entries,
       RemovedWith: removed_with_entries,
       All: from_every,
+      AutoMap: auto_map_value(auto_map),
+      NoAutoMapProperties: Enum.map(no_auto_map_properties, &to_string/1),
       InitialModelState: initial_model_state(model_module)
     )
   end
