@@ -13,7 +13,7 @@ defmodule MyApp.Reactors.WaitlistNotifierSideEffect do
   @handles BookReturned
 
   @impl true
-  def handle(%BookReturned{}, %{event_source_id: book_id}) do
+  def handle(_event, %{event_source_id: book_id}) do
     NotificationService.notify_next_in_line(book_id)
 
     # Returning {:ok, event} appends it as a side effect against the
