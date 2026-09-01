@@ -10,11 +10,11 @@ Event sourcing for Elixir — the idiomatic client for [Cratis Chronicle](https:
 
 `cratis_chronicle` brings event sourcing and CQRS to Elixir applications: append events to an event store, project them into read models, and react to them — all backed by the Chronicle Kernel. It builds on Chronicle's language-agnostic gRPC API and exposes OTP-native constructs including:
 
-- **`use Chronicle.EventType`** — annotate structs as event types with stable IDs
-- **`use Chronicle.ReadModel`** — declare model-bound projections executed server-side
-- **`use Chronicle.Reactor`** — react to events with side effects
-- **`use Chronicle.Reducer`** — fold events into read models in your own process
-- **`use Chronicle.Seeder`** — seed event stores with baseline events at startup
+- **`use Chronicle.Events.EventType`** — annotate structs as event types with stable IDs
+- **`use Chronicle.ReadModels.ReadModel`** — declare model-bound projections executed server-side
+- **`use Chronicle.Reactors.Reactor`** — react to events with side effects
+- **`use Chronicle.Reducers.Reducer`** — fold events into read models in your own process
+- **`use Chronicle.Seeding.Seeder`** — seed event stores with baseline events at startup
 - **Model-bound constraints** — unique and unique-event-type constraints on event types
 - **Context-aware appends** — process-scoped identity, correlation, and causation metadata
 - **Optimistic concurrency** — guard appends with scoped tail-sequence checks
@@ -64,12 +64,12 @@ See [Documentation/get-started.md](./Documentation/get-started.md) for installat
 
 ```elixir
 defmodule MyApp.Events.AccountOpened do
-  use Chronicle.EventType, id: "account-opened-v1"
+  use Chronicle.Events.EventType, id: "account-opened-v1"
   defstruct [:account_id, :owner_name, :initial_balance]
 end
 
 defmodule MyApp.ReadModels.Account do
-  use Chronicle.ReadModel
+  use Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.AccountOpened
 
