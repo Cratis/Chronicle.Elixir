@@ -142,14 +142,25 @@ defmodule Chronicle.ReadModels.ReadModel do
       Module.register_attribute(__MODULE__, :chronicle_projection_join, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_removed_with, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_from_every, accumulate: true)
+      Module.register_attribute(__MODULE__, :chronicle_projection_no_auto_map, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_pii, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_subject, [])
 
       @chronicle_read_model_id Keyword.get(opts, :id, __MODULE__ |> Module.split() |> List.last())
       @chronicle_read_model_passive Keyword.get(opts, :passive, false)
+      @chronicle_read_model_rewindable not Keyword.get(opts, :not_rewindable, false)
+      @chronicle_read_model_event_sequence Keyword.get(opts, :event_sequence, "event-log")
 
       import Chronicle.ReadModels.ReadModel,
-        only: [from: 1, from: 2, join: 2, removed_with: 2, from_every: 1]
+        only: [
+          from: 1,
+          from: 2,
+          join: 2,
+          removed_with: 2,
+          from_every: 1,
+          no_auto_map: 0,
+          no_auto_map: 1
+        ]
 
       import Chronicle.Compliance, only: [pii: 1, pii: 2, subject: 1]
 
@@ -201,6 +212,54 @@ defmodule Chronicle.ReadModels.ReadModel do
     end
   end
 
+  @doc """
+  Disables Chronicle's automatic mapping of matching event property names onto this read model.
+
+  Called with no arguments it turns AutoMap off for the whole projection, so every property has
+  to be mapped explicitly. Called with a list of fields it leaves AutoMap on but excludes just
+  those fields, which is what you want when a single property is set from something other than
+  the event property that happens to share its name.
+
+      no_auto_map()
+      no_auto_map([:balance, :status])
+
+  Without either, AutoMap is left at the kernel's default and cannot be turned off.
+  """
+  defmacro no_auto_map do
+    quote do
+      @chronicle_projection_no_auto_map :all
+    end
+  end
+
+  @doc """
+  Excludes specific fields from Chronicle's automatic property mapping.
+
+  See `no_auto_map/0` for the whole-projection form.
+  """
+  defmacro no_auto_map(fields) do
+    quote do
+      @chronicle_projection_no_auto_map unquote(fields)
+    end
+  end
+
+  @doc """
+  Resolves accumulated `no_auto_map` declarations into the AutoMap setting and the excluded fields.
+
+  Returns `{:disabled, []}` when AutoMap is off for the whole projection, `{:enabled, fields}`
+  when specific fields are excluded, and `{:inherit, []}` when nothing was declared - which
+  leaves the kernel's own default in place, exactly as before this could be declared at all.
+  """
+  @spec resolve_no_auto_map([:all | [atom()]]) :: {:inherit | :enabled | :disabled, [atom()]}
+  def resolve_no_auto_map([]), do: {:inherit, []}
+
+  def resolve_no_auto_map(declarations) do
+    if Enum.member?(declarations, :all) do
+      {:disabled, []}
+    else
+      {:enabled, declarations |> Enum.reverse() |> List.flatten() |> Enum.uniq()}
+    end
+  end
+
   defmacro __before_compile__(_env) do
     quote do
       @doc false
@@ -216,12 +275,19 @@ defmodule Chronicle.ReadModels.ReadModel do
         do: @chronicle_projection_removed_with |> Enum.reverse()
 
       def __chronicle_read_model__(:from_every),
-        do: @chronicle_projection_from_every
+        do: @chronicle_projection_from_every |> Enum.reverse()
 
       def __chronicle_read_model__(:has_projection?),
         do: not Enum.empty?(@chronicle_projection_from)
 
       def __chronicle_read_model__(:passive?), do: @chronicle_read_model_passive
+
+      def __chronicle_read_model__(:rewindable?), do: @chronicle_read_model_rewindable
+
+      def __chronicle_read_model__(:event_sequence), do: @chronicle_read_model_event_sequence
+
+      def __chronicle_read_model__(:no_auto_map),
+        do: Chronicle.ReadModels.ReadModel.resolve_no_auto_map(@chronicle_projection_no_auto_map)
 
       def __chronicle_read_model__(:pii), do: Enum.reverse(@chronicle_pii)
 
