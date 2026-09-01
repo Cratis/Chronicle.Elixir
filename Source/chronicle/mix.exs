@@ -15,6 +15,13 @@ defmodule Chronicle.MixProject do
       version: @version,
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
+      # Protocol consolidation runs after `lib/` compiles, which would freeze the
+      # Jason.Encoder dispatch table before ExUnit loads `test/**/*_test.exs`. Concept
+      # specs define their fixture concepts (and therefore new Jason.Encoder
+      # implementations) inline inside test modules by house convention, so
+      # consolidation must be skipped in :test — otherwise a fixture's implementation
+      # is silently ignored and encoding raises Protocol.UndefinedError.
+      consolidate_protocols: Mix.env() != :test,
       deps: deps(),
       description: "Idiomatic Elixir client for Chronicle event sourcing",
       package: package(),
