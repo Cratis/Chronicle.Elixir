@@ -77,13 +77,18 @@ defmodule Chronicle.Projections.Projection do
       Module.register_attribute(__MODULE__, :chronicle_projection_join, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_removed_with, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_from_every, accumulate: true)
+      Module.register_attribute(__MODULE__, :chronicle_projection_no_auto_map, accumulate: true)
 
       @chronicle_projection_model Keyword.fetch!(opts, :model)
       @chronicle_projection_id Keyword.get(opts, :id, __MODULE__ |> Module.split() |> List.last())
       @chronicle_projection_passive Keyword.get(opts, :passive, false)
+      @chronicle_projection_rewindable not Keyword.get(opts, :not_rewindable, false)
+      @chronicle_projection_event_sequence Keyword.get(opts, :event_sequence, "event-log")
 
       import Chronicle.Projections.Projection,
         only: [from: 1, from: 2, join: 2, removed_with: 2, from_every: 1]
+
+      import Chronicle.ReadModels.ReadModel, only: [no_auto_map: 0, no_auto_map: 1]
 
       @before_compile Chronicle.Projections.Projection
     end
@@ -143,6 +148,13 @@ defmodule Chronicle.Projections.Projection do
 
       @doc false
       def __chronicle_projection__(:passive?), do: @chronicle_projection_passive
+
+      def __chronicle_projection__(:rewindable?), do: @chronicle_projection_rewindable
+
+      def __chronicle_projection__(:event_sequence), do: @chronicle_projection_event_sequence
+
+      def __chronicle_projection__(:no_auto_map),
+        do: Chronicle.ReadModels.ReadModel.resolve_no_auto_map(@chronicle_projection_no_auto_map)
 
       def __chronicle_projection__(:from),
         do: @chronicle_projection_from |> Enum.reverse()

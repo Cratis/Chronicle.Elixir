@@ -510,23 +510,30 @@ defmodule Chronicle.Registration.Coordinator do
         [] ->
           nil
 
-        [opts | _] ->
+        declarations ->
           struct(FromEveryDefinition,
-            Properties: build_properties(opts),
-            IncludeChildren: Keyword.get(opts, :include_children, false)
+            Properties:
+              declarations
+              |> Enum.map(&build_properties/1)
+              |> Enum.reduce(%{}, &Map.merge(&2, &1)),
+            IncludeChildren: Enum.any?(declarations, &Keyword.get(&1, :include_children, false))
           )
       end
+
+    {auto_map, no_auto_map_properties} = projection_module.__chronicle_projection__(:no_auto_map)
 
     struct(ProjectionDefinition,
       Identifier: projection_id,
       ReadModel: model_id,
-      EventSequenceId: "event-log",
+      EventSequenceId: projection_module.__chronicle_projection__(:event_sequence),
       IsActive: not projection_module.__chronicle_projection__(:passive?),
-      IsRewindable: true,
+      IsRewindable: projection_module.__chronicle_projection__(:rewindable?),
       From: from_entries,
       Join: join_entries,
       RemovedWith: removed_with_entries,
       All: from_every,
+      AutoMap: auto_map_value(auto_map),
+      NoAutoMapProperties: Enum.map(no_auto_map_properties, &to_string/1),
       InitialModelState: initial_model_state(model_module)
     )
   end
