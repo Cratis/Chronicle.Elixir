@@ -24,6 +24,7 @@ defmodule Chronicle.Jobs do
   alias Bcl.Guid, as: BclGuid
 
   alias Chronicle.Connections.Connection
+  alias Chronicle.WireResult
 
   alias Chronicle.Jobs.{
     Job,
@@ -35,13 +36,12 @@ defmodule Chronicle.Jobs do
   }
 
   alias Cratis.Chronicle.Contracts.Jobs.{
-    DeleteJob,
-    GetJobRequest,
-    GetJobsRequest,
+    AllJobsRequest,
+    DeleteJobRequest,
     GetJobStepsRequest,
     Jobs,
-    ResumeJob,
-    StopJob
+    ResumeJobRequest,
+    StopJobRequest
   }
 
   @type job_id :: String.t()
@@ -51,7 +51,7 @@ defmodule Chronicle.Jobs do
   """
   @spec stop(job_id(), keyword()) :: :ok | {:error, term()}
   def stop(job_id, opts \\ []) when is_binary(job_id) do
-    perform_job_action(StopJob, :stop, job_id, opts)
+    perform_job_action(StopJobRequest, :stop_job, job_id, opts)
   end
 
   @doc """
@@ -59,7 +59,7 @@ defmodule Chronicle.Jobs do
   """
   @spec resume(job_id(), keyword()) :: :ok | {:error, term()}
   def resume(job_id, opts \\ []) when is_binary(job_id) do
-    perform_job_action(ResumeJob, :resume, job_id, opts)
+    perform_job_action(ResumeJobRequest, :resume_job, job_id, opts)
   end
 
   @doc """
@@ -67,23 +67,19 @@ defmodule Chronicle.Jobs do
   """
   @spec delete(job_id(), keyword()) :: :ok | {:error, term()}
   def delete(job_id, opts \\ []) when is_binary(job_id) do
-    perform_job_action(DeleteJob, :delete, job_id, opts)
+    perform_job_action(DeleteJobRequest, :delete_job, job_id, opts)
   end
 
   @doc """
   Gets a single job by identifier.
 
-  Returns `{:ok, nil}` when the job does not exist.
+  The kernel has no single-job query - it serves the whole set and expects the
+  caller to pick. Returns `{:ok, nil}` when the job does not exist.
   """
   @spec get(job_id(), keyword()) :: {:ok, Job.t() | nil} | {:error, term()}
   def get(job_id, opts \\ []) when is_binary(job_id) do
-    with {:ok, channel, config} <- resolve_channel(opts) do
-      request = build_job_request(GetJobRequest, config, opts, job_id)
-
-      case Jobs.Stub.get_job(channel, request) do
-        {:ok, response} -> {:ok, decode_job_response(response)}
-        {:error, reason} -> {:error, reason}
-      end
+    with {:ok, jobs} <- all(opts) do
+      {:ok, Enum.find(jobs, &(&1.id == job_id))}
     end
   end
 
@@ -94,19 +90,16 @@ defmodule Chronicle.Jobs do
   def all(opts \\ []) do
     with {:ok, channel, config} <- resolve_channel(opts) do
       request =
-        struct(GetJobsRequest,
+        struct(AllJobsRequest,
           EventStore: config.event_store,
           Namespace: Keyword.get(opts, :namespace, config.namespace)
         )
 
-      case Jobs.Stub.get_jobs(channel, request) do
-        {:ok, response} ->
-          jobs =
-            response
-            |> Map.get(:items, Map.get(response, :Items, []))
-            |> Enum.map(&job_from_proto/1)
-
-          {:ok, jobs}
+      case Jobs.Stub.all_jobs(channel, request) do
+        {:ok, envelope} ->
+          with {:ok, data} <- WireResult.unwrap(envelope) do
+            {:ok, Enum.map(data || [], &job_from_proto/1)}
+          end
 
         {:error, reason} ->
           {:error, reason}
@@ -123,13 +116,10 @@ defmodule Chronicle.Jobs do
       request = build_job_request(GetJobStepsRequest, config, opts, job_id)
 
       case Jobs.Stub.get_job_steps(channel, request) do
-        {:ok, response} ->
-          steps =
-            response
-            |> Map.get(:items, Map.get(response, :Items, []))
-            |> Enum.map(&job_step_from_proto/1)
-
-          {:ok, steps}
+        {:ok, envelope} ->
+          with {:ok, data} <- WireResult.unwrap(envelope) do
+            {:ok, Enum.map(data || [], &job_step_from_proto/1)}
+          end
 
         {:error, reason} ->
           {:error, reason}
@@ -160,7 +150,7 @@ defmodule Chronicle.Jobs do
       request = build_job_request(request_module, config, opts, job_id)
 
       case apply(Jobs.Stub, rpc, [channel, request]) do
-        {:ok, _} -> :ok
+        {:ok, envelope} -> with {:ok, _} <- WireResult.unwrap(envelope), do: :ok
         {:error, reason} -> {:error, reason}
       end
     end
@@ -186,16 +176,6 @@ defmodule Chronicle.Jobs do
 
       _ ->
         {:error, :no_client}
-    end
-  end
-
-  defp decode_job_response(response) do
-    cond do
-      job = Map.get(response, :Value0) -> job_from_proto(job)
-      job = Map.get(response, :value0) -> job_from_proto(job)
-      Map.get(response, :Value1) in [:NotFound, :not_found, 1] -> nil
-      Map.get(response, :value1) in [:NotFound, :not_found, 1] -> nil
-      true -> nil
     end
   end
 
