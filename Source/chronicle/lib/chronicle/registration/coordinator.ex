@@ -25,7 +25,9 @@ defmodule Chronicle.Registration.Coordinator do
   alias Chronicle.Schemas.JsonSchemaGenerator
   alias Chronicle.Sinks.WellKnownSinkTypes
 
-  alias Cratis.Chronicle.Contracts.{EventStores, Namespaces, EnsureEventStore, EnsureNamespace}
+  alias Chronicle.WireResult
+  alias Cratis.Chronicle.Contracts.EventStores.{EventStores, EnsureEventStoreRequest}
+  alias Cratis.Chronicle.Contracts.Namespaces.{Namespaces, EnsureNamespaceRequest}
 
   alias Cratis.Chronicle.Contracts.Projections.{
     Projections,
@@ -172,19 +174,25 @@ defmodule Chronicle.Registration.Coordinator do
   end
 
   defp ensure_event_store(channel, event_store) do
-    case EventStores.Stub.ensure(channel, struct(EnsureEventStore, Name: event_store)) do
-      {:ok, _} -> :ok
-      {:error, reason} -> {:error, {:ensure_event_store, reason}}
+    case EventStores.Stub.ensure_event_store(channel, struct(EnsureEventStoreRequest, Name: event_store)) do
+      {:ok, envelope} ->
+        with {:ok, _} <- WireResult.unwrap(envelope), do: :ok
+
+      {:error, reason} ->
+        {:error, {:ensure_event_store, reason}}
     end
   end
 
   defp ensure_namespace(channel, event_store, namespace) do
-    case Namespaces.Stub.ensure(
+    case Namespaces.Stub.ensure_namespace(
            channel,
-           struct(EnsureNamespace, EventStore: event_store, Name: namespace)
+           struct(EnsureNamespaceRequest, EventStore: event_store, Namespace: namespace)
          ) do
-      {:ok, _} -> :ok
-      {:error, reason} -> {:error, {:ensure_namespace, reason}}
+      {:ok, envelope} ->
+        with {:ok, _} <- WireResult.unwrap(envelope), do: :ok
+
+      {:error, reason} ->
+        {:error, {:ensure_namespace, reason}}
     end
   end
 
