@@ -346,22 +346,22 @@ defmodule Chronicle.EventSequences.EventLog do
       event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
       event_type_modules = Keyword.get(opts, :event_types, [])
 
-      event_types = Enum.map(event_type_modules, &build_event_type_for_module/1)
+      event_type_ids = join_event_type_ids(event_type_modules)
+      _event_source_type = Keyword.get(opts, :event_source_type, "")
 
       request =
-        struct(GetForEventSourceIdAndEventTypesRequest,
+        struct(ForEventSourceIdAndEventTypesRequest,
           EventStore: config.event_store,
           Namespace: namespace,
           EventSequenceId: event_sequence_id,
-          EventSourceType: Keyword.get(opts, :event_source_type, ""),
           EventSourceId: event_source_id,
           EventStreamType: Keyword.get(opts, :event_stream_type, ""),
           EventStreamId: Keyword.get(opts, :event_stream_id, ""),
-          EventTypes: event_types
+          EventTypeIds: event_type_ids
         )
 
-      case EventSequences.Stub.get_for_event_source_id_and_event_types(channel, request) do
-        {:ok, response} -> {:ok, Map.get(response, :Events, [])}
+      case EventSequences.Stub.for_event_source_id_and_event_types(channel, request) do
+        {:ok, envelope} -> WireResult.unwrap(envelope)
         {:error, reason} -> {:error, reason}
       end
     end
@@ -388,20 +388,20 @@ defmodule Chronicle.EventSequences.EventLog do
       namespace = Keyword.get(opts, :namespace, config.namespace)
       event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
       event_type_modules = Keyword.get(opts, :event_types, [])
-      event_types = Enum.map(event_type_modules, &build_event_type_for_module/1)
+      event_type_ids = join_event_type_ids(event_type_modules)
 
       request =
-        struct(GetFromEventSequenceNumberRequest,
+        struct(FromSequenceNumberRequest,
           EventStore: config.event_store,
           Namespace: namespace,
           EventSequenceId: event_sequence_id,
           FromEventSequenceNumber: sequence_number,
           EventSourceId: Keyword.get(opts, :event_source_id, ""),
-          EventTypes: event_types
+          EventTypeIds: event_type_ids
         )
 
-      case EventSequences.Stub.get_events_from_event_sequence_number(channel, request) do
-        {:ok, response} -> {:ok, Map.get(response, :Events, [])}
+      case EventSequences.Stub.from_sequence_number(channel, request) do
+        {:ok, envelope} -> WireResult.unwrap(envelope)
         {:error, reason} -> {:error, reason}
       end
     end
@@ -826,6 +826,14 @@ defmodule Chronicle.EventSequences.EventLog do
     )
   end
 
+  # Event type filters travel as a single comma-joined id string on the wire,
+  # not a repeated EventType list.
+  defp join_event_type_ids(event_type_modules) do
+    event_type_modules
+    |> Enum.map(& &1.__chronicle_event_type__(:id))
+    |> Enum.join(",")
+  end
+
   defp resolve_channel(opts) do
     client = Keyword.get(opts, :client, Chronicle.Client)
     resolve_channel_for_client(client)
@@ -1085,23 +1093,25 @@ defmodule Chronicle.EventSequences.EventLog do
       namespace = Keyword.get(opts, :namespace, config.namespace)
       event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
       event_type_modules = Keyword.get(opts, :event_types, [])
-      event_types = Enum.map(event_type_modules, &build_event_type_for_module/1)
+      event_type_ids = join_event_type_ids(event_type_modules)
 
       request =
-        struct(GetTailSequenceNumberRequest,
+        struct(TailSequenceNumberRequest,
           EventStore: config.event_store,
           Namespace: namespace,
           EventSequenceId: event_sequence_id,
           EventSourceId: event_source_id || "",
-          EventTypes: event_types,
+          EventTypeIds: event_type_ids,
           EventSourceType: Keyword.get(opts, :event_source_type, "Default"),
           EventStreamId: Keyword.get(opts, :event_stream_id, ""),
           EventStreamType: Keyword.get(opts, :event_stream_type, "Default")
         )
 
-      case EventSequences.Stub.get_tail_sequence_number(channel, request) do
-        {:ok, response} ->
-          {:ok, Map.get(response, :SequenceNumber, Map.get(response, :sequence_number, 0))}
+      case EventSequences.Stub.tail_sequence_number(channel, request) do
+        {:ok, envelope} ->
+          with {:ok, data} <- WireResult.unwrap(envelope) do
+            {:ok, Map.get(data, :SequenceNumber, Map.get(data, :sequence_number, 0))}
+          end
 
         {:error, reason} ->
           {:error, reason}
