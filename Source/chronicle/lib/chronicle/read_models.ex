@@ -208,10 +208,14 @@ defmodule Chronicle.ReadModels do
     GetInstanceByKeyRequest,
     GetInstancesRequest,
     GetOccurrencesRequest,
-    GetSnapshotsByKeyRequest,
     ReadModelType,
     ReadModels,
     WatchRequest
+  }
+
+  alias Cratis.Chronicle.Contracts.ReadModelExplorer.{
+    AllSnapshotsForReadModelRequest,
+    ReadModelExplorer
   }
 
   alias Cratis.Chronicle.Contracts.Compliance.{
@@ -222,6 +226,7 @@ defmodule Chronicle.ReadModels do
   alias Chronicle.Connections.Connection
   alias Chronicle.ReadModels.Resilience
   alias Chronicle.Schemas.JsonSchemaGenerator
+  alias Chronicle.WireResult
 
   @event_log_id "event-log"
   @unlimited_event_count 18_446_744_073_709_551_615
@@ -446,18 +451,27 @@ defmodule Chronicle.ReadModels do
       event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
 
       request =
-        struct(GetSnapshotsByKeyRequest,
+        struct(AllSnapshotsForReadModelRequest,
           EventStore: config.event_store,
           Namespace: namespace,
-          ReadModelIdentifier: model_id,
+          ReadModel: model_id,
           EventSequenceId: event_sequence_id,
-          ReadModelKey: key
+          ReadModelKey: key,
+          Grouping: ""
         )
 
-      case call_resilient(config, fn -> ReadModels.Stub.get_snapshots_by_key(channel, request) end) do
-        {:ok, response} ->
+      resilient_result =
+        with {:ok, envelope} <-
+               call_resilient(config, fn ->
+                 ReadModelExplorer.Stub.all_snapshots_for_read_model(channel, request)
+               end) do
+          WireResult.unwrap(envelope)
+        end
+
+      case resilient_result do
+        {:ok, data} ->
           snapshots =
-            Map.get(response, :Snapshots, [])
+            (data || [])
             |> Enum.map(&decode_snapshot(model_module, &1))
 
           released_snapshots =
@@ -755,7 +769,7 @@ defmodule Chronicle.ReadModels do
 
   defp decode_snapshot(model_module, snapshot) do
     %Snapshot{
-      read_model: decode_model(model_module, Map.get(snapshot, :ReadModel, "")),
+      read_model: decode_model(model_module, Map.get(snapshot, :Instance, "")),
       events: Map.get(snapshot, :Events, []),
       occurred: decode_timestamp(Map.get(snapshot, :Occurred)),
       correlation_id: Map.get(snapshot, :CorrelationId)
