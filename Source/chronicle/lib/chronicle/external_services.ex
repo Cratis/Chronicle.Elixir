@@ -27,7 +27,8 @@ defmodule Chronicle.ExternalServices do
 
   alias Chronicle.Connections.Connection
   alias Chronicle.ExternalServices.{Definition, DefinitionBuilder}
-  alias Cratis.Chronicle.Contracts.ExternalServices.AddExternalServices
+  alias Chronicle.WireResult
+  alias Cratis.Chronicle.Contracts.ExternalServices.AddExternalServicesRequest
   alias Cratis.Chronicle.Contracts.ExternalServices.ExternalServices, as: ExternalServicesService
 
   @doc """
@@ -53,13 +54,13 @@ defmodule Chronicle.ExternalServices do
 
   defp add_definitions(channel, event_store, definitions) do
     request =
-      struct(AddExternalServices,
+      struct(AddExternalServicesRequest,
         EventStore: event_store,
         ExternalServices: Enum.map(definitions, &Definition.to_proto/1)
       )
 
-    case ExternalServicesService.Stub.add(channel, request) do
-      {:ok, _} -> :ok
+    case ExternalServicesService.Stub.add_external_services(channel, request) do
+      {:ok, envelope} -> with {:ok, _} <- WireResult.unwrap(envelope), do: :ok
       {:error, reason} -> {:error, reason}
     end
   end
