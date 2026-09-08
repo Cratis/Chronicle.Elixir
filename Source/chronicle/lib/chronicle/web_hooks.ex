@@ -48,10 +48,12 @@ defmodule Chronicle.WebHooks do
   alias Chronicle.Connections.Connection
   alias Chronicle.WebHooks.{Definition, DefinitionBuilder}
 
+  alias Chronicle.WireResult
+
   alias Cratis.Chronicle.Contracts.Observation.Webhooks.{
-    AddWebhooks,
+    AddWebhooksRequest,
     GetWebhooksRequest,
-    RemoveWebhooks,
+    RemoveWebhooksRequest,
     Webhooks
   }
 
@@ -125,13 +127,10 @@ defmodule Chronicle.WebHooks do
       request = struct(GetWebhooksRequest, EventStore: config.event_store)
 
       case Webhooks.Stub.get_webhooks(channel, request) do
-        {:ok, response} ->
-          webhooks =
-            response
-            |> Map.get(:items, Map.get(response, :Items, []))
-            |> Enum.map(&Definition.from_proto/1)
-
-          {:ok, webhooks}
+        {:ok, envelope} ->
+          with {:ok, data} <- WireResult.unwrap(envelope) do
+            {:ok, Enum.map(data || [], &Definition.from_proto/1)}
+          end
 
         {:error, reason} ->
           {:error, reason}
@@ -146,13 +145,13 @@ defmodule Chronicle.WebHooks do
   def remove(webhook_id, opts \\ []) when is_binary(webhook_id) do
     with {:ok, channel, config} <- resolve_channel(opts) do
       request =
-        struct(RemoveWebhooks,
+        struct(RemoveWebhooksRequest,
           EventStore: config.event_store,
           Webhooks: [webhook_id]
         )
 
-      case Webhooks.Stub.remove(channel, request) do
-        {:ok, _} -> :ok
+      case Webhooks.Stub.remove_webhooks(channel, request) do
+        {:ok, envelope} -> with {:ok, _} <- WireResult.unwrap(envelope), do: :ok
         {:error, reason} -> {:error, reason}
       end
     end
@@ -160,14 +159,13 @@ defmodule Chronicle.WebHooks do
 
   defp add_definitions(channel, event_store, definitions) do
     request =
-      struct(AddWebhooks,
+      struct(AddWebhooksRequest,
         EventStore: event_store,
-        Owner: observer_owner(:client),
         Webhooks: Enum.map(definitions, &Definition.to_proto/1)
       )
 
-    case Webhooks.Stub.add(channel, request) do
-      {:ok, _} -> :ok
+    case Webhooks.Stub.add_webhooks(channel, request) do
+      {:ok, envelope} -> with {:ok, _} <- WireResult.unwrap(envelope), do: :ok
       {:error, reason} -> {:error, reason}
     end
   end
@@ -239,6 +237,4 @@ defmodule Chronicle.WebHooks do
   rescue
     _ -> nil
   end
-
-  defp observer_owner(:client), do: 1
 end

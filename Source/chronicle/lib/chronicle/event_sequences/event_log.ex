@@ -34,25 +34,28 @@ defmodule Chronicle.EventSequences.EventLog do
   buffered locally and only sent to Chronicle when the unit of work is committed.
   """
 
-  alias Cratis.Chronicle.Contracts.EventSequences.{
+  alias Cratis.Chronicle.Contracts.Sequences.{
+    AppendManyForEventSourcesRequest,
     AppendManyRequest,
     AppendRequest,
     Causation,
     CompleteStreamRequest,
     EventSequences,
+    EventSourceConcurrencyScope,
     EventToAppend,
     EventType,
-    GetForEventSourceIdAndEventTypesRequest,
-    GetFromEventSequenceNumberRequest,
-    GetTailSequenceNumberRequest,
+    ForEventSourceIdAndEventTypesRequest,
+    FromSequenceNumberRequest,
     HasEventsForEventSourceIdRequest,
     Identity,
     RedactForEventSourceRequest,
     RedactRequest,
-    SerializableDateTimeOffset
+    SerializableDateTimeOffset,
+    TailSequenceNumberRequest
   }
 
-  alias Cratis.Chronicle.Contracts.EventSequences.ConcurrencyScope, as: ContractConcurrencyScope
+  alias Cratis.Chronicle.Contracts.Sequences.ConcurrencyScope, as: ContractConcurrencyScope
+  alias Cratis.Chronicle.Contracts.Sequences.EventForEventSourceId, as: WireEventForEventSourceId
 
   alias Cratis.Chronicle.Contracts.Observation.Observers
   alias Cratis.Chronicle.Contracts.Observation.WaitForObserverCompletionRequest
@@ -61,6 +64,7 @@ defmodule Chronicle.EventSequences.EventLog do
   alias Chronicle.Correlation.{CorrelationId, CorrelationIdManager}
   alias Chronicle.EventSequences.EventForEventSourceId
   alias Chronicle.Identity.IdentityProvider
+  alias Chronicle.WireResult
 
   alias Chronicle.Events.ConcurrencyScope, as: ClientConcurrencyScope
 
@@ -176,11 +180,22 @@ defmodule Chronicle.EventSequences.EventLog do
         namespace = Keyword.get(opts, :namespace, config.namespace)
 
         request =
-          build_append_many_request(config, namespace, event_sequence_id, events, opts)
+          build_append_many_for_event_sources_request(
+            config,
+            namespace,
+            event_sequence_id,
+            events,
+            opts
+          )
 
-        case EventSequences.Stub.append_many(channel, request) do
-          {:ok, response} -> normalize_response(response)
-          {:error, reason} -> {:error, reason}
+        case EventSequences.Stub.append_many_for_event_sources(channel, request) do
+          {:ok, envelope} ->
+            with {:ok, response} <- WireResult.unwrap(envelope) do
+              normalize_response(response)
+            end
+
+          {:error, reason} ->
+            {:error, reason}
         end
       end
     end
@@ -286,20 +301,22 @@ defmodule Chronicle.EventSequences.EventLog do
       correlation_id = Map.fetch!(state, :correlation_id)
 
       request =
-        build_append_many_request(config, namespace, event_sequence_id, events,
+        build_append_many_for_event_sources_request(config, namespace, event_sequence_id, events,
           correlation_id: correlation_id,
           causation: batch_causation(events),
           identity: batch_identity(events)
         )
 
-      case EventSequences.Stub.append_many(channel, request) do
-        {:ok, response} ->
-          {:ok,
-           UnitOfWork.default_commit_result(
-             get_sequence_numbers(response),
-             get_constraint_violations(response),
-             get_append_errors(response)
-           )}
+      case EventSequences.Stub.append_many_for_event_sources(channel, request) do
+        {:ok, envelope} ->
+          with {:ok, response} <- WireResult.unwrap(envelope) do
+            {:ok,
+             UnitOfWork.default_commit_result(
+               get_sequence_numbers(response),
+               get_constraint_violations(response),
+               get_append_errors(response)
+             )}
+          end
 
         {:error, reason} ->
           {:error, reason}
@@ -329,22 +346,22 @@ defmodule Chronicle.EventSequences.EventLog do
       event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
       event_type_modules = Keyword.get(opts, :event_types, [])
 
-      event_types = Enum.map(event_type_modules, &build_event_type_for_module/1)
+      event_type_ids = join_event_type_ids(event_type_modules)
+      _event_source_type = Keyword.get(opts, :event_source_type, "")
 
       request =
-        struct(GetForEventSourceIdAndEventTypesRequest,
+        struct(ForEventSourceIdAndEventTypesRequest,
           EventStore: config.event_store,
           Namespace: namespace,
           EventSequenceId: event_sequence_id,
-          EventSourceType: Keyword.get(opts, :event_source_type, ""),
           EventSourceId: event_source_id,
           EventStreamType: Keyword.get(opts, :event_stream_type, ""),
           EventStreamId: Keyword.get(opts, :event_stream_id, ""),
-          EventTypes: event_types
+          EventTypeIds: event_type_ids
         )
 
-      case EventSequences.Stub.get_for_event_source_id_and_event_types(channel, request) do
-        {:ok, response} -> {:ok, Map.get(response, :Events, [])}
+      case EventSequences.Stub.for_event_source_id_and_event_types(channel, request) do
+        {:ok, envelope} -> WireResult.unwrap(envelope)
         {:error, reason} -> {:error, reason}
       end
     end
@@ -371,20 +388,20 @@ defmodule Chronicle.EventSequences.EventLog do
       namespace = Keyword.get(opts, :namespace, config.namespace)
       event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
       event_type_modules = Keyword.get(opts, :event_types, [])
-      event_types = Enum.map(event_type_modules, &build_event_type_for_module/1)
+      event_type_ids = join_event_type_ids(event_type_modules)
 
       request =
-        struct(GetFromEventSequenceNumberRequest,
+        struct(FromSequenceNumberRequest,
           EventStore: config.event_store,
           Namespace: namespace,
           EventSequenceId: event_sequence_id,
           FromEventSequenceNumber: sequence_number,
           EventSourceId: Keyword.get(opts, :event_source_id, ""),
-          EventTypes: event_types
+          EventTypeIds: event_type_ids
         )
 
-      case EventSequences.Stub.get_events_from_event_sequence_number(channel, request) do
-        {:ok, response} -> {:ok, Map.get(response, :Events, [])}
+      case EventSequences.Stub.from_sequence_number(channel, request) do
+        {:ok, envelope} -> WireResult.unwrap(envelope)
         {:error, reason} -> {:error, reason}
       end
     end
@@ -639,7 +656,10 @@ defmodule Chronicle.EventSequences.EventLog do
           Subject: event_to_append.subject || ""
         )
 
-      EventSequences.Stub.append(channel, request)
+      case EventSequences.Stub.append(channel, request) do
+        {:ok, envelope} -> WireResult.unwrap(envelope)
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -653,16 +673,28 @@ defmodule Chronicle.EventSequences.EventLog do
         end)
 
       request =
-        build_append_many_request(config, namespace, event_sequence_id, events_to_append, opts)
+        build_append_many_request(
+          config,
+          namespace,
+          event_sequence_id,
+          event_source_id,
+          events_to_append,
+          opts
+        )
 
       case EventSequences.Stub.append_many(channel, request) do
-        {:ok, response} -> normalize_response(response)
-        {:error, reason} -> {:error, reason}
+        {:ok, envelope} ->
+          with {:ok, response} <- WireResult.unwrap(envelope) do
+            normalize_response(response)
+          end
+
+        {:error, reason} ->
+          {:error, reason}
       end
     end
   end
 
-  defp build_append_many_request(config, namespace, event_sequence_id, events, opts) do
+  defp build_append_many_request(config, namespace, event_sequence_id, event_source_id, events, opts) do
     normalized_events = Enum.map(events, &normalize_event_for_batch/1)
 
     request =
@@ -670,6 +702,7 @@ defmodule Chronicle.EventSequences.EventLog do
         EventStore: config.event_store,
         Namespace: namespace,
         EventSequenceId: event_sequence_id,
+        EventSourceId: event_source_id,
         Events: Enum.map(normalized_events, &event_to_proto/1)
       )
 
@@ -684,7 +717,32 @@ defmodule Chronicle.EventSequences.EventLog do
     |> maybe_put_identity(
       batch_identity(normalized_events) || Keyword.get(opts, :identity) || build_identity(opts)
     )
-    |> maybe_put(:ConcurrencyScopes, build_concurrency_scopes(normalized_events))
+    |> maybe_put(:ConcurrencyScope, build_concurrency_scope(Keyword.get(opts, :concurrency_scope)))
+  end
+
+  defp build_append_many_for_event_sources_request(config, namespace, event_sequence_id, events, opts) do
+    normalized_events = Enum.map(events, &normalize_event_for_batch/1)
+
+    request =
+      struct(AppendManyForEventSourcesRequest,
+        EventStore: config.event_store,
+        Namespace: namespace,
+        EventSequenceId: event_sequence_id,
+        Events: Enum.map(normalized_events, &event_for_event_source_to_proto/1)
+      )
+
+    request
+    |> maybe_put(:CorrelationId, build_correlation_id(opts))
+    |> maybe_put(
+      :Causation,
+      causation_entries_to_proto(
+        Keyword.get(opts, :causation, build_causation_entries(opts, :append_many))
+      )
+    )
+    |> maybe_put_identity(
+      batch_identity(normalized_events) || Keyword.get(opts, :identity) || build_identity(opts)
+    )
+    |> maybe_put(:ConcurrencyScopes, build_concurrency_scope_entries(normalized_events))
   end
 
   # Fills in the same per-event defaults `build_event_for_event_source_id/4` applies
@@ -724,11 +782,26 @@ defmodule Chronicle.EventSequences.EventLog do
     }
   end
 
+  # EventToAppend is the minimal per-event shape for a single-event-source AppendMany
+  # batch - the event source, stream, tags, causation, identity, concurrency scope,
+  # and occurred time are all shared, top-level fields on AppendManyRequest itself,
+  # set once for the whole batch rather than repeated per event.
   defp event_to_proto(%EventForEventSourceId{} = event_to_append) do
+    struct(EventToAppend,
+      EventType: build_event_type(event_to_append.event),
+      Content: encode_event(event_to_append.event)
+    )
+    |> maybe_put(:Subject, event_to_append.subject || "")
+  end
+
+  # The rich per-event shape for an AppendManyForEventSources batch, where each event
+  # can target a different event source and stream - unlike EventToAppend above, those
+  # fields cannot be hoisted to the request level here.
+  defp event_for_event_source_to_proto(%EventForEventSourceId{} = event_to_append) do
     event =
-      struct(EventToAppend,
-        EventSourceType: event_to_append.event_source_type,
+      struct(WireEventForEventSourceId,
         EventSourceId: event_to_append.event_source_id,
+        EventSourceType: event_to_append.event_source_type,
         EventStreamType: event_to_append.event_stream_type,
         EventStreamId: event_to_append.event_stream_id,
         EventType: build_event_type(event_to_append.event),
@@ -737,9 +810,6 @@ defmodule Chronicle.EventSequences.EventLog do
       )
 
     event
-    |> maybe_put(:Causation, causation_entries_to_proto(event_to_append.causation))
-    |> maybe_put_identity(event_to_append.identity)
-    |> maybe_put(:ConcurrencyScope, build_concurrency_scope(event_to_append.concurrency_scope))
     |> maybe_put(:Occurred, datetime_offset_for(event_to_append.occurred))
     |> maybe_put(:Subject, event_to_append.subject || "")
   end
@@ -754,6 +824,14 @@ defmodule Chronicle.EventSequences.EventLog do
       Id: module.__chronicle_event_type__(:id),
       Generation: module.__chronicle_event_type__(:generation)
     )
+  end
+
+  # Event type filters travel as a single comma-joined id string on the wire,
+  # not a repeated EventType list.
+  defp join_event_type_ids(event_type_modules) do
+    event_type_modules
+    |> Enum.map(& &1.__chronicle_event_type__(:id))
+    |> Enum.join(",")
   end
 
   defp resolve_channel(opts) do
@@ -941,18 +1019,30 @@ defmodule Chronicle.EventSequences.EventLog do
     maybe_put(struct, :CausedBy, identity_to_proto(identity))
   end
 
-  defp build_concurrency_scopes(events) do
+  # AppendManyForEventSourcesRequest.ConcurrencyScopes is a repeated list of
+  # {EventSourceId, Scope} entries, not a map - one entry per distinct event source
+  # that declared a scope, first-declared-wins for an event source repeated in the batch.
+  defp build_concurrency_scope_entries(events) do
     events
-    |> Enum.reduce(%{}, fn %EventForEventSourceId{} = event, scopes ->
-      case event.concurrency_scope do
-        nil -> scopes
-        scope -> Map.put_new(scopes, event.event_source_id, build_concurrency_scope(scope))
+    |> Enum.reduce([], fn %EventForEventSourceId{} = event, acc ->
+      cond do
+        is_nil(event.concurrency_scope) ->
+          acc
+
+        Enum.any?(acc, fn entry -> Map.get(entry, :EventSourceId) == event.event_source_id end) ->
+          acc
+
+        true ->
+          [
+            struct(EventSourceConcurrencyScope,
+              EventSourceId: event.event_source_id,
+              Scope: build_concurrency_scope(event.concurrency_scope)
+            )
+            | acc
+          ]
       end
     end)
-    |> case do
-      scopes when map_size(scopes) == 0 -> nil
-      scopes -> scopes
-    end
+    |> Enum.reverse()
   end
 
   defp batch_causation([%EventForEventSourceId{causation: causation} | _]), do: causation
@@ -1003,23 +1093,25 @@ defmodule Chronicle.EventSequences.EventLog do
       namespace = Keyword.get(opts, :namespace, config.namespace)
       event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
       event_type_modules = Keyword.get(opts, :event_types, [])
-      event_types = Enum.map(event_type_modules, &build_event_type_for_module/1)
+      event_type_ids = join_event_type_ids(event_type_modules)
 
       request =
-        struct(GetTailSequenceNumberRequest,
+        struct(TailSequenceNumberRequest,
           EventStore: config.event_store,
           Namespace: namespace,
           EventSequenceId: event_sequence_id,
           EventSourceId: event_source_id || "",
-          EventTypes: event_types,
+          EventTypeIds: event_type_ids,
           EventSourceType: Keyword.get(opts, :event_source_type, "Default"),
           EventStreamId: Keyword.get(opts, :event_stream_id, ""),
           EventStreamType: Keyword.get(opts, :event_stream_type, "Default")
         )
 
-      case EventSequences.Stub.get_tail_sequence_number(channel, request) do
-        {:ok, response} ->
-          {:ok, Map.get(response, :SequenceNumber, Map.get(response, :sequence_number, 0))}
+      case EventSequences.Stub.tail_sequence_number(channel, request) do
+        {:ok, envelope} ->
+          with {:ok, data} <- WireResult.unwrap(envelope) do
+            {:ok, Map.get(data, :SequenceNumber, Map.get(data, :sequence_number, 0))}
+          end
 
         {:error, reason} ->
           {:error, reason}

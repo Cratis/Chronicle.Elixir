@@ -47,24 +47,28 @@ defmodule Chronicle.WebHooks.Definition do
     )
   end
 
+  # The kernel's GetWebhooks response is a flattened WebhookDetailsResponse (Url/Headers
+  # directly on it), not the nested WebhookDefinition (Target: {Url, Headers,
+  # Authorization}) that to_proto/1 sends on registration - Authorization is never sent
+  # back on read, matching the already-migrated .NET/TypeScript/Kotlin clients.
   @doc false
   @spec from_proto(map()) :: t()
-  def from_proto(definition) do
+  def from_proto(response) do
     %__MODULE__{
-      id: Map.get(definition, :Identifier, Map.get(definition, :identifier, "")),
+      id: Map.get(response, :Identifier, Map.get(response, :identifier, "")),
       event_sequence_id:
-        Map.get(
-          definition,
-          :EventSequenceId,
-          Map.get(definition, :event_sequence_id, "event-log")
-        ),
+        Map.get(response, :EventSequenceId, Map.get(response, :event_sequence_id, "event-log")),
       event_types:
-        definition
-        |> Map.get(:EventTypes, Map.get(definition, :event_types, []))
+        response
+        |> Map.get(:EventTypes, Map.get(response, :event_types, []))
         |> Enum.map(&event_type_from_proto/1),
-      target: target_from_proto(Map.get(definition, :Target, Map.get(definition, :target))),
-      replayable?: Map.get(definition, :IsReplayable, Map.get(definition, :is_replayable, true)),
-      active?: Map.get(definition, :IsActive, Map.get(definition, :is_active, true))
+      target: %Target{
+        url: Map.get(response, :Url, Map.get(response, :url, "")),
+        headers: Map.get(response, :Headers, Map.get(response, :headers, %{})),
+        authorization: nil
+      },
+      replayable?: Map.get(response, :IsReplayable, Map.get(response, :is_replayable, true)),
+      active?: Map.get(response, :IsActive, Map.get(response, :is_active, true))
     }
   end
 
@@ -89,17 +93,6 @@ defmodule Chronicle.WebHooks.Definition do
       Headers: target.headers,
       Authorization: authorization_to_proto(target.authorization)
     )
-  end
-
-  defp target_from_proto(nil), do: %Target{}
-
-  defp target_from_proto(target) do
-    %Target{
-      url: Map.get(target, :Url, Map.get(target, :url, "")),
-      headers: Map.get(target, :Headers, Map.get(target, :headers, %{})),
-      authorization:
-        authorization_from_proto(Map.get(target, :Authorization, Map.get(target, :authorization)))
-    }
   end
 
   defp authorization_to_proto(nil), do: nil
@@ -129,30 +122,4 @@ defmodule Chronicle.WebHooks.Definition do
     )
   end
 
-  defp authorization_from_proto(nil), do: nil
-
-  defp authorization_from_proto(authorization) do
-    cond do
-      basic = Map.get(authorization, :Value0, Map.get(authorization, :value0)) ->
-        {:basic,
-         %{
-           username: Map.get(basic, :Username, Map.get(basic, :username, "")),
-           password: Map.get(basic, :Password, Map.get(basic, :password, ""))
-         }}
-
-      bearer = Map.get(authorization, :Value1, Map.get(authorization, :value1)) ->
-        {:bearer, %{token: Map.get(bearer, :Token, Map.get(bearer, :token, ""))}}
-
-      oauth = Map.get(authorization, :Value2, Map.get(authorization, :value2)) ->
-        {:oauth,
-         %{
-           authority: Map.get(oauth, :Authority, Map.get(oauth, :authority, "")),
-           client_id: Map.get(oauth, :ClientId, Map.get(oauth, :client_id, "")),
-           client_secret: Map.get(oauth, :ClientSecret, Map.get(oauth, :client_secret, ""))
-         }}
-
-      true ->
-        nil
-    end
-  end
 end

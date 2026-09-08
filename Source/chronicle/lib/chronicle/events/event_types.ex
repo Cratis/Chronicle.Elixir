@@ -24,7 +24,9 @@ defmodule Chronicle.Events.EventTypes do
   alias Chronicle.Events.Migrators
   alias Chronicle.Schemas.JsonSchemaGenerator
 
-  alias Cratis.Chronicle.Contracts.Events.{
+  alias Chronicle.WireResult
+
+  alias Cratis.Chronicle.Contracts.EventTypes.{
     EventTypes,
     RegisterEventTypesRequest,
     EventTypeRegistration,
@@ -68,9 +70,12 @@ defmodule Chronicle.Events.EventTypes do
         DisableValidation: false
       )
 
-    case EventTypes.Stub.register(channel, request) do
-      {:ok, _} -> :ok
-      {:error, reason} -> {:error, reason}
+    case EventTypes.Stub.register_event_types(channel, request) do
+      {:ok, envelope} ->
+        with {:ok, _} <- WireResult.unwrap(envelope), do: :ok
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

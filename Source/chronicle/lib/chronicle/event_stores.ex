@@ -9,8 +9,10 @@ defmodule Chronicle.EventStores do
   idiomatic Elixir API.
   """
 
-  alias Cratis.Chronicle.Contracts.{EventStores, GetNamespacesRequest, Namespaces}
+  alias Cratis.Chronicle.Contracts.EventStores.EventStores
+  alias Cratis.Chronicle.Contracts.Namespaces.{AllNamespacesRequest, Namespaces}
   alias Chronicle.Connections.Connection
+  alias Chronicle.WireResult
 
   @doc """
   Returns all event store names.
@@ -22,9 +24,10 @@ defmodule Chronicle.EventStores do
   @spec get_all(keyword()) :: {:ok, [String.t()]} | {:error, term()}
   def get_all(opts \\ []) do
     with {:ok, channel, _config} <- resolve_channel(opts),
-         {:ok, response} <-
-           EventStores.Stub.get_event_stores(channel, %Google.Protobuf.Empty{}) do
-      {:ok, items_from_response(response)}
+         {:ok, envelope} <-
+           EventStores.Stub.all_event_stores(channel, %Google.Protobuf.Empty{}),
+         {:ok, data} <- WireResult.unwrap(envelope) do
+      {:ok, items_from_response(data)}
     else
       {:error, reason} -> {:error, reason}
     end
@@ -41,14 +44,15 @@ defmodule Chronicle.EventStores do
   @spec get_namespaces(keyword()) :: {:ok, [String.t()]} | {:error, term()}
   def get_namespaces(opts \\ []) do
     with {:ok, channel, config} <- resolve_channel(opts),
-         {:ok, response} <-
-           Namespaces.Stub.get_namespaces(
+         {:ok, envelope} <-
+           Namespaces.Stub.all_namespaces(
              channel,
-             struct(GetNamespacesRequest,
+             struct(AllNamespacesRequest,
                EventStore: Keyword.get(opts, :event_store, config.event_store)
              )
-           ) do
-      {:ok, items_from_response(response)}
+           ),
+         {:ok, data} <- WireResult.unwrap(envelope) do
+      {:ok, items_from_response(data)}
     else
       {:error, reason} -> {:error, reason}
     end
@@ -69,9 +73,8 @@ defmodule Chronicle.EventStores do
     end
   end
 
-  defp items_from_response(response) do
-    response
-    |> Map.get(:Items, Map.get(response, :items, []))
+  defp items_from_response(data) do
+    (data || [])
     |> Enum.map(fn
       item when is_binary(item) -> item
       %{Name: name} when is_binary(name) -> name
