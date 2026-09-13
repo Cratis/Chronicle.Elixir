@@ -5,7 +5,7 @@ authenticate. It is a URL with the `chronicle://` scheme, so it carries the host
 port, credentials and options in one value you can keep in config or an
 environment variable.
 
-```
+```text
 chronicle://host:port?option=value&option=value
 ```
 
@@ -18,13 +18,13 @@ Two modes are supported.
 
 **Client credentials** — supply a client id and secret in the URL userinfo:
 
-```
+```text
 chronicle://client-id:client-secret@host:35000
 ```
 
 **API key** — supply an `apiKey` query parameter:
 
-```
+```text
 chronicle://host:35000?apiKey=my-api-key
 ```
 
