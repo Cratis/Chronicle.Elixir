@@ -81,8 +81,20 @@ defmodule Chronicle.ReadModels.ReadModel do
 
       from_every set: [last_activity: "Occurred"]
 
+  For dictionary properties keyed by event context values:
+
+      from_every increment: [event_counts: {:event_context, :type}]
+
+  This increments a map field `event_counts` with keys derived from the event type
+  identifier, producing one counter per distinct event type.
+
   Options:
     * `:set`, `:add`, `:subtract` — property mappings applied to every event
+    * `:count` — field atom to increment by 1 on each event occurrence
+    * `:increment` — keyword list for incrementing fields; use `{field: {:event_context, :property}}`
+      for dictionary fields keyed by event context values
+    * `:decrement` — keyword list for decrementing fields; use `{field: {:event_context, :property}}`
+      for dictionary fields keyed by event context values
 
   ## Property Expressions
 

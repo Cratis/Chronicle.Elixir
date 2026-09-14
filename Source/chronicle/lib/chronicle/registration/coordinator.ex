@@ -174,7 +174,10 @@ defmodule Chronicle.Registration.Coordinator do
   end
 
   defp ensure_event_store(channel, event_store) do
-    case EventStores.Stub.ensure_event_store(channel, struct(EnsureEventStoreRequest, Name: event_store)) do
+    case EventStores.Stub.ensure_event_store(
+           channel,
+           struct(EnsureEventStoreRequest, Name: event_store)
+         ) do
       {:ok, envelope} ->
         with {:ok, _} <- WireResult.unwrap(envelope), do: :ok
 
@@ -546,9 +549,14 @@ defmodule Chronicle.Registration.Coordinator do
     )
   end
 
-  # Converts set/add/subtract/count opts into a Chronicle properties map.
+  # Converts set/add/subtract/count/increment/decrement opts into a Chronicle properties map.
   # The keys are read model field names (strings), the values are
   # Chronicle property expressions.
+  #
+  # For increment/decrement with dictionaries keyed by event context:
+  #   increment: [event_counts: {:event_context, :type}]
+  # produces:
+  #   {"event_counts.$eventContext.type", "$increment"}
   defp build_properties(opts) do
     set_props =
       opts
@@ -578,7 +586,35 @@ defmodule Chronicle.Registration.Coordinator do
         fields when is_list(fields) -> Enum.map(fields, fn f -> {to_string(f), "$count"} end)
       end
 
-    (set_props ++ add_props ++ subtract_props ++ count_fields) |> Map.new()
+    increment_fields =
+      opts
+      |> Keyword.get(:increment, [])
+      |> Enum.map(fn
+        {field, {:event_context, property}} ->
+          {"#{field}.$eventContext.#{property}", "$increment"}
+
+        {field, _expr} ->
+          {to_string(field), "$increment"}
+      end)
+
+    decrement_fields =
+      opts
+      |> Keyword.get(:decrement, [])
+      |> Enum.map(fn
+        {field, {:event_context, property}} ->
+          {"#{field}.$eventContext.#{property}", "$decrement"}
+
+        {field, _expr} ->
+          {to_string(field), "$decrement"}
+      end)
+
+    (set_props ++
+       add_props ++
+       subtract_props ++
+       count_fields ++
+       increment_fields ++
+       decrement_fields)
+    |> Map.new()
   end
 
   defp resolve_expression(atom) when is_atom(atom) do
