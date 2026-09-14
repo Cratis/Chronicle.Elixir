@@ -63,7 +63,13 @@ defmodule Chronicle.Connections.LoadBalancer do
 
   Returns `{:error, :no_addresses}` when `addresses` is empty.
   """
-  @spec select([ServerAddress.t()], ConnectionString.t(), integer(), probe_fun(), non_neg_integer()) ::
+  @spec select(
+          [ServerAddress.t()],
+          ConnectionString.t(),
+          integer(),
+          probe_fun(),
+          non_neg_integer()
+        ) ::
           {:ok, ServerAddress.t()} | {:error, :no_addresses}
   def select(
         addresses,

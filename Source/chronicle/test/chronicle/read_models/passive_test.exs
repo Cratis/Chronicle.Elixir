@@ -12,13 +12,13 @@ defmodule Chronicle.ReadModels.PassiveTest do
   defmodule ActiveReadModel do
     use Chronicle.ReadModels.ReadModel
     defstruct id: nil, name: nil
-    from SomeEvent, set: [id: :event_source_id, name: :name]
+    from(SomeEvent, set: [id: :event_source_id, name: :name])
   end
 
   defmodule PassiveReadModel do
     use Chronicle.ReadModels.ReadModel, passive: true
     defstruct id: nil, name: nil
-    from SomeEvent, set: [id: :event_source_id, name: :name]
+    from(SomeEvent, set: [id: :event_source_id, name: :name])
   end
 
   describe "passive read models" do

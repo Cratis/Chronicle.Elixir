@@ -694,7 +694,14 @@ defmodule Chronicle.EventSequences.EventLog do
     end
   end
 
-  defp build_append_many_request(config, namespace, event_sequence_id, event_source_id, events, opts) do
+  defp build_append_many_request(
+         config,
+         namespace,
+         event_sequence_id,
+         event_source_id,
+         events,
+         opts
+       ) do
     normalized_events = Enum.map(events, &normalize_event_for_batch/1)
 
     request =
@@ -717,10 +724,19 @@ defmodule Chronicle.EventSequences.EventLog do
     |> maybe_put_identity(
       batch_identity(normalized_events) || Keyword.get(opts, :identity) || build_identity(opts)
     )
-    |> maybe_put(:ConcurrencyScope, build_concurrency_scope(Keyword.get(opts, :concurrency_scope)))
+    |> maybe_put(
+      :ConcurrencyScope,
+      build_concurrency_scope(Keyword.get(opts, :concurrency_scope))
+    )
   end
 
-  defp build_append_many_for_event_sources_request(config, namespace, event_sequence_id, events, opts) do
+  defp build_append_many_for_event_sources_request(
+         config,
+         namespace,
+         event_sequence_id,
+         events,
+         opts
+       ) do
     normalized_events = Enum.map(events, &normalize_event_for_batch/1)
 
     request =
@@ -1141,7 +1157,8 @@ defmodule Chronicle.EventSequences.EventLog do
   # @doc false) so it can be exercised directly in tests without a live
   # connection.
   @doc false
-  @spec decode_complete_stream_error(term()) :: :default_stream_cannot_be_completed | :already_completed
+  @spec decode_complete_stream_error(term()) ::
+          :default_stream_cannot_be_completed | :already_completed
   def decode_complete_stream_error(:DefaultStreamCannotBeCompleted),
     do: :default_stream_cannot_be_completed
 

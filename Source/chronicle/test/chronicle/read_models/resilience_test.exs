@@ -104,7 +104,10 @@ defmodule Chronicle.ReadModels.ResilienceTest do
     end
 
     test "is false for an unrelated gRPC error" do
-      refute Resilience.reducer_not_connected?(%GRPC.RPCError{status: 4, message: "Deadline Exceeded"})
+      refute Resilience.reducer_not_connected?(%GRPC.RPCError{
+               status: 4,
+               message: "Deadline Exceeded"
+             })
     end
 
     test "is false for a non-gRPC error" do

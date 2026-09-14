@@ -120,9 +120,9 @@ defmodule Chronicle.Reactors.Reactor do
   @callback on_partition_replay_end(partition :: String.t()) :: any()
 
   @optional_callbacks on_replay_begin: 0,
-                       on_replay_end: 0,
-                       on_partition_replay_begin: 1,
-                       on_partition_replay_end: 1
+                      on_replay_end: 0,
+                      on_partition_replay_begin: 1,
+                      on_partition_replay_end: 1
 
   defmacro __using__(opts) do
     quote bind_quoted: [opts: opts] do
