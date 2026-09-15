@@ -33,7 +33,8 @@ defmodule Chronicle.Connections.TokenProvider do
 
   @typedoc "Fetches a token. Replaceable in tests."
   @type fetch_fun ::
-          (ConnectionString.t() -> {:ok, {String.t(), non_neg_integer() | nil}} | {:error, term()})
+          (ConnectionString.t() ->
+             {:ok, {String.t(), non_neg_integer() | nil}} | {:error, term()})
 
   @doc """
   Starts a token provider for the given connection string.

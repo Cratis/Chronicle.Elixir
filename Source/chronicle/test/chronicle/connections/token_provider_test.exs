@@ -41,7 +41,8 @@ defmodule Chronicle.Connections.TokenProviderTest do
   end
 
   test "serves the cached token while it is fresh" do
-    {provider, calls} = start([{:ok, {"token-1", @long_lifetime}}, {:ok, {"token-2", @long_lifetime}}])
+    {provider, calls} =
+      start([{:ok, {"token-1", @long_lifetime}}, {:ok, {"token-2", @long_lifetime}}])
 
     assert TokenProvider.authorization_headers(provider) ==
              %{"authorization" => "Bearer token-1"}

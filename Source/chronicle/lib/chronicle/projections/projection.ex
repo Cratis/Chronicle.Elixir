@@ -130,6 +130,10 @@ defmodule Chronicle.Projections.Projection do
   @doc """
   Applies property mappings on every event, regardless of type.
 
+  Supports dictionary fields keyed by event context values:
+
+      from_every increment: [event_counts: {:event_context, :type}]
+
   See `Chronicle.ReadModels.ReadModel` for full options documentation.
   """
   defmacro from_every(opts) do

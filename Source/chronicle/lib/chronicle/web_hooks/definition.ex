@@ -121,5 +121,4 @@ defmodule Chronicle.WebHooks.Definition do
         )
     )
   end
-
 end

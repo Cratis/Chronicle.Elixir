@@ -59,6 +59,43 @@ defmodule Chronicle.Registration.ProjectionDefinitionTest do
     from_every(set: [occurred: :occurred])
   end
 
+  defmodule DictionaryIncrementReadModel do
+    use Chronicle.ReadModels.ReadModel
+    defstruct id: nil, event_counts: %{}
+    from(SomeEvent, set: [id: :event_source_id])
+    from_every(increment: [event_counts: {:event_context, :type}])
+  end
+
+  defmodule DictionaryDecrementReadModel do
+    use Chronicle.ReadModels.ReadModel
+    defstruct id: nil, event_stats: %{}
+    from(SomeEvent, set: [id: :event_source_id])
+    from_every(decrement: [event_stats: {:event_context, :type}])
+  end
+
+  defmodule SimplIncrementReadModel do
+    use Chronicle.ReadModels.ReadModel
+    defstruct id: nil, counter: 0
+    from(SomeEvent, set: [id: :event_source_id])
+    from_every(increment: [counter: 1])
+  end
+
+  defmodule SimpleDecrementReadModel do
+    use Chronicle.ReadModels.ReadModel
+    defstruct id: nil, balance: 100
+    from(SomeEvent, set: [id: :event_source_id])
+    from_every(decrement: [balance: 1])
+  end
+
+  defmodule MixedDictionaryOperationsReadModel do
+    use Chronicle.ReadModels.ReadModel
+    defstruct id: nil, increments: %{}, decrements: %{}, occurred: nil
+    from(SomeEvent, set: [id: :event_source_id])
+    from_every(increment: [increments: {:event_context, :type}])
+    from_every(decrement: [decrements: {:event_context, :type}])
+    from_every(set: [occurred: :occurred])
+  end
+
   describe "auto map" do
     test "a read model that declares nothing leaves the kernel default in place" do
       definition = Coordinator.build_projection_definition(DefaultReadModel)
@@ -125,6 +162,73 @@ defmodule Chronicle.Registration.ProjectionDefinitionTest do
                "name",
                "occurred"
              ]
+    end
+
+    test "increment with event context key produces the correct dictionary key format" do
+      definition = Coordinator.build_projection_definition(DictionaryIncrementReadModel)
+      properties = Map.get(Map.get(definition, :All), :Properties)
+
+      assert properties["event_counts.$eventContext.type"] == "$increment"
+    end
+
+    test "decrement with event context key produces the correct dictionary key format" do
+      definition = Coordinator.build_projection_definition(DictionaryDecrementReadModel)
+      properties = Map.get(Map.get(definition, :All), :Properties)
+
+      assert properties["event_stats.$eventContext.type"] == "$decrement"
+    end
+
+    test "increment without event context uses simple field name" do
+      definition = Coordinator.build_projection_definition(SimplIncrementReadModel)
+      properties = Map.get(Map.get(definition, :All), :Properties)
+
+      assert properties["counter"] == "$increment"
+    end
+
+    test "decrement without event context uses simple field name" do
+      definition = Coordinator.build_projection_definition(SimpleDecrementReadModel)
+      properties = Map.get(Map.get(definition, :All), :Properties)
+
+      assert properties["balance"] == "$decrement"
+    end
+
+    test "multiple from_every with mixed operations accumulate correctly" do
+      definition = Coordinator.build_projection_definition(MixedDictionaryOperationsReadModel)
+      properties = Map.get(Map.get(definition, :All), :Properties)
+
+      assert properties["increments.$eventContext.type"] == "$increment"
+      assert properties["decrements.$eventContext.type"] == "$decrement"
+      assert properties["occurred"] == "$occurred"
+      assert map_size(properties) == 3
+    end
+
+    test "dictionary key format matches Chronicle kernel expectations exactly" do
+      definition = Coordinator.build_projection_definition(DictionaryIncrementReadModel)
+      properties = Map.get(Map.get(definition, :All), :Properties)
+
+      # The kernel expects the exact format: "fieldName.$eventContext.propertyName"
+      assert Map.has_key?(properties, "event_counts.$eventContext.type")
+      assert properties["event_counts.$eventContext.type"] == "$increment"
+
+      # Verify the FromEveryDefinition structure matches the protobuf contract
+      from_every_def = Map.get(definition, :All)
+      assert is_struct(from_every_def, Cratis.Chronicle.Contracts.Projections.FromEveryDefinition)
+      assert is_map(Map.get(from_every_def, :Properties))
+    end
+
+    test "can use different event context properties for dictionary keys" do
+      # Test that we can use other event context properties besides :type
+      defmodule CorrelationKeyedReadModel do
+        use Chronicle.ReadModels.ReadModel
+        defstruct id: nil, correlation_stats: %{}
+        from(SomeEvent, set: [id: :event_source_id])
+        from_every(increment: [correlation_stats: {:event_context, :correlation_id}])
+      end
+
+      definition = Coordinator.build_projection_definition(CorrelationKeyedReadModel)
+      properties = Map.get(Map.get(definition, :All), :Properties)
+
+      assert properties["correlation_stats.$eventContext.correlation_id"] == "$increment"
     end
   end
 end

@@ -16,12 +16,12 @@ defmodule Chronicle.Projections.PassiveTest do
 
   defmodule ActiveProjection do
     use Chronicle.Projections.Projection, model: SomeReadModel
-    from SomeEvent, set: [id: :event_source_id, name: :name]
+    from(SomeEvent, set: [id: :event_source_id, name: :name])
   end
 
   defmodule PassiveProjection do
     use Chronicle.Projections.Projection, model: SomeReadModel, passive: true
-    from SomeEvent, set: [id: :event_source_id, name: :name]
+    from(SomeEvent, set: [id: :event_source_id, name: :name])
   end
 
   describe "passive declarative projections" do
