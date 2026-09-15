@@ -32,8 +32,8 @@ defmodule MyApp.ReadModels.CustomerActivity do
   from OrderShipped
   from OrderCancelled
 
-  # Increment a dictionary field keyed by the event type identifier
-  # This creates one counter per distinct event type observed for this customer
+  # Increment a dictionary field keyed by the event type identifier.
+  # This creates one counter per distinct event type observed for this customer.
   from_every increment: [event_counts: {:event_context, :type}],
              set: [last_activity: :occurred]
 end
@@ -45,25 +45,9 @@ The `increment: [event_counts: {:event_context, :type}]` declaration:
 - `{:event_context, :type}` tells Chronicle to use the event type identifier as the dictionary key
 - Each event increments its type's counter in the `event_counts` map
 
-Chronicle will produce entries like:
+For this example, Chronicle produces `event_counts` entries such as `"order-created-v1" => 15`,
+`"order-shipped-v1" => 12`, and `"order-cancelled-v1" => 3`.
 
-```elixir
-%{
-  "order-created-v1" => 15,
-  "order-shipped-v1" => 12,
-  "order-cancelled-v1" => 3
-}
-```
-
-Available event context properties for dictionary keys:
-
-- `:type` — the event type identifier
-- `:correlation_id` — the correlation identifier
-- `:causation_id` — the causation identifier
-- `:caused_by` — the principal that caused the event
-
-The `decrement:` option works identically:
-
-```elixir
-from_every decrement: [quota_remaining: {:event_context, :type}]
-```
+Available event context properties for dictionary keys are `:type` (the event type identifier),
+`:correlation_id`, `:causation_id`, and `:caused_by`. `decrement:` works identically to `increment:`,
+subtracting instead of adding.
