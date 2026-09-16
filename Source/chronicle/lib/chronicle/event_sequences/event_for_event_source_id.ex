@@ -4,6 +4,21 @@
 defmodule Chronicle.EventSequences.EventForEventSourceId do
   @moduledoc """
   Represents an event buffered for a specific event source within an event sequence.
+
+  Omitted, `nil`, or empty routing values defer to the kernel's source type,
+  stream type, and stream id defaults. Explicit nonempty routing is preserved.
+  `occurred: nil` leaves timestamp assignment to the kernel; an explicit
+  `DateTime` is preserved, including when the event is buffered in a transaction.
+
+  Concurrency scopes are independent filters, not routing defaults. A missing
+  scope sends no explicit constraint for this source; a scope, including `none()`,
+  is sent unchanged. For repeated sources, the first declared scope wins.
+
+  Rich batches carry routing, tags, subject, and occurred time per event. Their
+  causation and identity remain batch-level: explicit batch causation wins,
+  and the first resolved entry identity wins over the batch identity option.
+  Transaction commits use the first entry's causation and the same resolved-entry
+  identity precedence.
   """
 
   alias Chronicle.Auditing.CausationEntry

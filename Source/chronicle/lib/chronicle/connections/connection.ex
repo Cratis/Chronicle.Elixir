@@ -62,6 +62,7 @@ defmodule Chronicle.Connections.Connection do
   use GenServer
 
   alias Chronicle.Connections.{
+    AppendCompatibility,
     AuthInterceptor,
     ConnectionString,
     DnsResolver,
@@ -128,6 +129,12 @@ defmodule Chronicle.Connections.Connection do
     GenServer.call(connection, :channel)
   end
 
+  @doc false
+  @spec append_channel(GenServer.server()) :: {:ok, term()} | {:error, term()}
+  def append_channel(connection) do
+    GenServer.call(connection, :append_channel, :infinity)
+  end
+
   @doc """
   Drops the current channel and dials a fresh one.
 
@@ -163,6 +170,7 @@ defmodule Chronicle.Connections.Connection do
       token_provider: start_token_provider(connection_string),
       channel: nil,
       connected?: false,
+      append_compatible?: false,
       connect_fun: Keyword.get(options, :connect_fun, &default_connect/2),
       disconnect_fun: Keyword.get(options, :disconnect_fun, &default_disconnect/1),
       resolve_fun: Keyword.get(options, :resolve_fun, &DnsResolver.resolve/2),
@@ -217,6 +225,19 @@ defmodule Chronicle.Connections.Connection do
   end
 
   def handle_call(:channel, _from, state) do
+    {:reply, {:error, :not_connected}, state}
+  end
+
+  def handle_call(:append_channel, _from, %{connected?: true} = state) do
+    # Serialize the first check per channel across callers. Only success is
+    # retained: an unavailable compatibility endpoint must be retried, not cached.
+    case if(state.append_compatible?, do: :ok, else: AppendCompatibility.check(state.channel)) do
+      :ok -> {:reply, {:ok, state.channel}, %{state | append_compatible?: true}}
+      {:error, _} = error -> {:reply, error, state}
+    end
+  end
+
+  def handle_call(:append_channel, _from, state) do
     {:reply, {:error, :not_connected}, state}
   end
 
@@ -354,6 +375,7 @@ defmodule Chronicle.Connections.Connection do
     |> Map.merge(%{
       channel: channel,
       connected?: true,
+      append_compatible?: false,
       reconnect_attempt: 0,
       reconnect_timer: nil,
       connection_process: connection_process,

@@ -36,13 +36,11 @@ defmodule Chronicle.EventSequences.EventLog do
 
   alias Cratis.Chronicle.Contracts.Sequences.{
     AppendManyForEventSourcesRequest,
-    AppendManyRequest,
     AppendRequest,
     Causation,
     CompleteStreamRequest,
     EventSequences,
     EventSourceConcurrencyScope,
-    EventToAppend,
     EventType,
     ForEventSourceIdAndEventTypesRequest,
     FromSequenceNumberRequest,
@@ -69,6 +67,7 @@ defmodule Chronicle.EventSequences.EventLog do
   alias Chronicle.Events.ConcurrencyScope, as: ClientConcurrencyScope
 
   alias Chronicle.Connections.Connection
+  alias Chronicle.EventSequences.AppendResponse
   alias Chronicle.Transactions.UnitOfWork
 
   alias Bcl.Guid, as: BclGuid
@@ -85,9 +84,10 @@ defmodule Chronicle.EventSequences.EventLog do
     * `:client` — the client name (default: `Chronicle.Client`)
     * `:namespace` — overrides the client's default namespace
     * `:event_sequence_id` — event sequence id (default: `"event-log"`)
-    * `:event_source_type` — the event source type (default: `"Default"`)
-    * `:event_stream_type` — the event stream type (default: `"All"`)
-    * `:event_stream_id` — the event stream ID (default: `"Default"`)
+    * `:event_source_type` — explicit event source type, otherwise resolved by the kernel
+    * `:event_stream_type` — explicit event stream type, otherwise resolved by the kernel
+    * `:event_stream_id` — explicit event stream ID, otherwise resolved by the kernel
+    * `:occurred` — explicit `DateTime`; omission leaves the timestamp to the kernel
     * `:tags` — list of tag strings
     * `:subject` — the identity subject string
     * `:correlation_id` — correlation id override (`Chronicle.Correlation.CorrelationId` or string)
@@ -97,7 +97,19 @@ defmodule Chronicle.EventSequences.EventLog do
       `:sequence_number`, `:event_source_id`, `:event_stream_type`, `:event_stream_id`,
       `:event_source_type`, and `:event_types`
 
-  Returns `:ok` on success or `{:error, reason}` on failure.
+  Omitted, `nil`, and empty routing values travel as empty strings. The kernel
+  resolves these to `"Default"` / `"All"` / `"Default"`; nonempty values are exact.
+  Concurrency filters are independent of routing and are never filled from it.
+
+  Returns `:ok` on success or `{:error, reason}` on failure, including concurrency
+  and validation rejection. Append requests require a successful descriptor
+  compatibility check before they are sent. A successful check is shared by all
+  callers on that connection until it reconnects. Failed checks are retried on
+  the next append.
+
+  The check uses the installed 18.3.0 contract descriptor. It does not yet
+  distinguish older kernels from kernels implementing canonical append metadata;
+  that requires a future contracts pin carrying the new contract.
   """
   @spec append(String.t(), struct(), keyword()) :: :ok | {:error, term()}
   def append(event_source_id, event, opts \\ []) do
@@ -142,7 +154,9 @@ defmodule Chronicle.EventSequences.EventLog do
   @doc """
   Appends a list of `Chronicle.EventSequences.EventForEventSourceId` entries as a
   single atomic append-many, each carrying its own target event source id (and
-  other per-event metadata such as stream type/id, subject, and causation).
+  other per-event metadata such as stream type/id, subject, tags, and occurred
+  time). Identity and causation are batch-level; see
+  `Chronicle.EventSequences.EventForEventSourceId` for their precedence.
 
   Use this when a batch of events needs to target several, possibly different,
   event source ids in one transaction — e.g. reactor side-effect dispatch (see
@@ -176,7 +190,7 @@ defmodule Chronicle.EventSequences.EventLog do
 
       :ok
     else
-      with {:ok, channel, config} <- resolve_channel(opts) do
+      with {:ok, channel, config} <- resolve_append_channel(opts) do
         namespace = Keyword.get(opts, :namespace, config.namespace)
 
         request =
@@ -296,7 +310,7 @@ defmodule Chronicle.EventSequences.EventLog do
   def commit_transaction(%{event_sequence_id: event_sequence_id, events: events} = state) do
     client = Map.get(state, :client, Chronicle.Client)
 
-    with {:ok, channel, config} <- resolve_channel_for_client(client) do
+    with {:ok, channel, config} <- resolve_append_channel(client: client) do
       namespace = Map.get(state, :namespace) || config.namespace
       correlation_id = Map.fetch!(state, :correlation_id)
 
@@ -310,12 +324,23 @@ defmodule Chronicle.EventSequences.EventLog do
       case EventSequences.Stub.append_many_for_event_sources(channel, request) do
         {:ok, envelope} ->
           with {:ok, response} <- WireResult.unwrap(envelope) do
-            {:ok,
-             UnitOfWork.default_commit_result(
-               get_sequence_numbers(response),
-               get_constraint_violations(response),
-               get_append_errors(response)
-             )}
+            response_data = if is_map(response), do: response, else: %{}
+
+            result =
+              UnitOfWork.default_commit_result(
+                get_sequence_numbers(response_data),
+                Map.get(
+                  response_data,
+                  :ConstraintViolations,
+                  Map.get(response_data, :constraint_violations, [])
+                ),
+                Map.get(response_data, :Errors, Map.get(response_data, :errors, []))
+              )
+
+            case normalize_response(response) do
+              :ok -> {:ok, result}
+              {:error, reason} -> {:ok, %{result | success?: false, error: reason}}
+            end
           end
 
         {:error, reason} ->
@@ -632,7 +657,7 @@ defmodule Chronicle.EventSequences.EventLog do
   # like append_and_wait_for_completion/3 — don't have to duplicate the
   # request-building logic.
   defp raw_append(event_sequence_id, event_source_id, event, opts) do
-    with {:ok, channel, config} <- resolve_channel(opts) do
+    with {:ok, channel, config} <- resolve_append_channel(opts) do
       namespace = Keyword.get(opts, :namespace, config.namespace)
       event_to_append = build_event_for_event_source_id(event_source_id, event, opts, :append)
 
@@ -664,7 +689,7 @@ defmodule Chronicle.EventSequences.EventLog do
   end
 
   defp do_append_many(event_sequence_id, event_source_id, events, opts) do
-    with {:ok, channel, config} <- resolve_channel(opts) do
+    with {:ok, channel, config} <- resolve_append_channel(opts) do
       namespace = Keyword.get(opts, :namespace, config.namespace)
 
       events_to_append =
@@ -673,16 +698,15 @@ defmodule Chronicle.EventSequences.EventLog do
         end)
 
       request =
-        build_append_many_request(
+        build_append_many_for_event_sources_request(
           config,
           namespace,
           event_sequence_id,
-          event_source_id,
           events_to_append,
           opts
         )
 
-      case EventSequences.Stub.append_many(channel, request) do
+      case EventSequences.Stub.append_many_for_event_sources(channel, request) do
         {:ok, envelope} ->
           with {:ok, response} <- WireResult.unwrap(envelope) do
             normalize_response(response)
@@ -692,42 +716,6 @@ defmodule Chronicle.EventSequences.EventLog do
           {:error, reason}
       end
     end
-  end
-
-  defp build_append_many_request(
-         config,
-         namespace,
-         event_sequence_id,
-         event_source_id,
-         events,
-         opts
-       ) do
-    normalized_events = Enum.map(events, &normalize_event_for_batch/1)
-
-    request =
-      struct(AppendManyRequest,
-        EventStore: config.event_store,
-        Namespace: namespace,
-        EventSequenceId: event_sequence_id,
-        EventSourceId: event_source_id,
-        Events: Enum.map(normalized_events, &event_to_proto/1)
-      )
-
-    request
-    |> maybe_put(:CorrelationId, build_correlation_id(opts))
-    |> maybe_put(
-      :Causation,
-      causation_entries_to_proto(
-        Keyword.get(opts, :causation, build_causation_entries(opts, :append_many))
-      )
-    )
-    |> maybe_put_identity(
-      batch_identity(normalized_events) || Keyword.get(opts, :identity) || build_identity(opts)
-    )
-    |> maybe_put(
-      :ConcurrencyScope,
-      build_concurrency_scope(Keyword.get(opts, :concurrency_scope))
-    )
   end
 
   defp build_append_many_for_event_sources_request(
@@ -761,17 +749,13 @@ defmodule Chronicle.EventSequences.EventLog do
     |> maybe_put(:ConcurrencyScopes, build_concurrency_scope_entries(normalized_events))
   end
 
-  # Fills in the same per-event defaults `build_event_for_event_source_id/4` applies
-  # for append/append_many, so a caller-constructed `EventForEventSourceId` (e.g. a
-  # reactor side-effect return, see `Chronicle.Reactors.Handler`) that only set
-  # `event_source_id` and `event` still gets a resolved event source type, stream
-  # type/id, causation chain, and identity — instead of nils reaching the wire.
+  # Routing omission stays on the wire; only the kernel chooses routing defaults.
   defp normalize_event_for_batch(%EventForEventSourceId{} = event) do
     %{
       event
-      | event_source_type: event.event_source_type || "Default",
-        event_stream_type: event.event_stream_type || "All",
-        event_stream_id: event.event_stream_id || "Default",
+      | event_source_type: event.event_source_type || "",
+        event_stream_type: event.event_stream_type || "",
+        event_stream_id: event.event_stream_id || "",
         causation: normalize_batch_causation(event.causation),
         identity: event.identity || build_identity([])
     }
@@ -786,33 +770,19 @@ defmodule Chronicle.EventSequences.EventLog do
     %EventForEventSourceId{
       event_source_id: event_source_id,
       event: event,
-      event_source_type: Keyword.get(opts, :event_source_type, "Default"),
-      event_stream_type: Keyword.get(opts, :event_stream_type, "All"),
-      event_stream_id: Keyword.get(opts, :event_stream_id, "Default"),
+      event_source_type: Keyword.get(opts, :event_source_type) || "",
+      event_stream_type: Keyword.get(opts, :event_stream_type) || "",
+      event_stream_id: Keyword.get(opts, :event_stream_id) || "",
       tags: Keyword.get(opts, :tags, []),
       subject: Keyword.get(opts, :subject, ""),
-      occurred: Keyword.get(opts, :occurred, DateTime.utc_now()),
+      occurred: Keyword.get(opts, :occurred),
       concurrency_scope: Keyword.get(opts, :concurrency_scope),
       causation: build_causation_entries(opts, mode),
       identity: build_identity(opts)
     }
   end
 
-  # EventToAppend is the minimal per-event shape for a single-event-source AppendMany
-  # batch - the event source, stream, tags, causation, identity, concurrency scope,
-  # and occurred time are all shared, top-level fields on AppendManyRequest itself,
-  # set once for the whole batch rather than repeated per event.
-  defp event_to_proto(%EventForEventSourceId{} = event_to_append) do
-    struct(EventToAppend,
-      EventType: build_event_type(event_to_append.event),
-      Content: encode_event(event_to_append.event)
-    )
-    |> maybe_put(:Subject, event_to_append.subject || "")
-  end
-
-  # The rich per-event shape for an AppendManyForEventSources batch, where each event
-  # can target a different event source and stream - unlike EventToAppend above, those
-  # fields cannot be hoisted to the request level here.
+  # Rich entries preserve routing, tags, subject, and occurred time for every batch.
   defp event_for_event_source_to_proto(%EventForEventSourceId{} = event_to_append) do
     event =
       struct(WireEventForEventSourceId,
@@ -850,15 +820,20 @@ defmodule Chronicle.EventSequences.EventLog do
     |> Enum.join(",")
   end
 
+  defp resolve_append_channel(opts) do
+    client = Keyword.get(opts, :client, Chronicle.Client)
+    resolve_channel_for_client(client, &Connection.append_channel/1)
+  end
+
   defp resolve_channel(opts) do
     client = Keyword.get(opts, :client, Chronicle.Client)
     resolve_channel_for_client(client)
   end
 
-  defp resolve_channel_for_client(client) do
+  defp resolve_channel_for_client(client, channel_for \\ &Connection.channel/1) do
     case Chronicle.Client.config(client) do
       config when is_map(config) ->
-        case Connection.channel(config.connection) do
+        case channel_for.(config.connection) do
           {:ok, channel} -> {:ok, channel, config}
           error -> error
         end
@@ -889,13 +864,14 @@ defmodule Chronicle.EventSequences.EventLog do
         _ -> CorrelationIdManager.current()
       end
 
-    guid = struct(BclGuid)
+    # protobuf-net Guid carries Guid.ToByteArray() in two little-endian words.
+    <<first::32, second::16, third::16, remaining::binary-size(8)>> =
+      correlation_id.value |> String.replace("-", "") |> Base.decode16!(case: :mixed)
 
-    cond do
-      Map.has_key?(guid, :Value) -> Map.put(guid, :Value, correlation_id.value)
-      Map.has_key?(guid, :value) -> Map.put(guid, :value, correlation_id.value)
-      true -> guid
-    end
+    <<lo::little-64, hi::little-64>> =
+      <<first::little-32, second::little-16, third::little-16, remaining::binary>>
+
+    struct(BclGuid, lo: lo, hi: hi)
   end
 
   defp build_identity(opts) do
@@ -996,6 +972,8 @@ defmodule Chronicle.EventSequences.EventLog do
     |> maybe_put(:Properties, properties)
   end
 
+  defp build_concurrency_scope(nil), do: nil
+
   defp build_concurrency_scope(scope_or_opts) do
     scope = ClientConcurrencyScope.normalize(scope_or_opts)
 
@@ -1012,7 +990,7 @@ defmodule Chronicle.EventSequences.EventLog do
     datetime_offset_for(DateTime.utc_now())
   end
 
-  defp datetime_offset_for(nil), do: current_datetime_offset()
+  defp datetime_offset_for(nil), do: nil
 
   defp datetime_offset_for(%DateTime{} = occurred) do
     struct(SerializableDateTimeOffset, Value: DateTime.to_iso8601(occurred))
@@ -1072,29 +1050,12 @@ defmodule Chronicle.EventSequences.EventLog do
     end)
   end
 
-  defp normalize_response(response) do
-    violations = get_constraint_violations(response)
-    errors = get_append_errors(response)
-
-    cond do
-      violations != [] -> {:error, {:constraint_violations, violations}}
-      errors != [] -> {:error, {:append_errors, errors}}
-      true -> :ok
-    end
-  end
+  defp normalize_response(response), do: AppendResponse.normalize(response)
 
   defp get_sequence_numbers(response) do
     response
     |> Map.get(:SequenceNumbers, Map.get(response, :sequence_numbers, []))
     |> Enum.map(&normalize_sequence_number/1)
-  end
-
-  defp get_constraint_violations(response) do
-    Map.get(response, :ConstraintViolations, Map.get(response, :constraint_violations, []))
-  end
-
-  defp get_append_errors(response) do
-    Map.get(response, :Errors, Map.get(response, :errors, []))
   end
 
   defp normalize_sequence_number(@unavailable_sequence_number), do: 0
