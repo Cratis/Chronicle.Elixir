@@ -13,7 +13,7 @@ defmodule Chronicle.WireResult do
   `Data` field for queries. A bare `CommandResult` (e.g. `Redact`,
   `RegisterEventTypes`) carries no separate payload field at all.
 
-  `unwrap/1` centralizes the `IsAuthorized`/`ExceptionMessages` check so call
+  `unwrap/1` centralizes authorization, validation, and exception checks so call
   sites don't have to repeat it, and returns the unwrapped payload — or the
   envelope itself, when there is no separate payload field.
   """
@@ -26,6 +26,9 @@ defmodule Chronicle.WireResult do
 
       Map.get(envelope, :ExceptionMessages, []) not in [nil, []] ->
         {:error, {:exception, Map.get(envelope, :ExceptionMessages, [])}}
+
+      Map.get(envelope, :ValidationResults, []) not in [nil, []] ->
+        {:error, {:validation_results, Map.get(envelope, :ValidationResults)}}
 
       Map.has_key?(envelope, :Response) ->
         {:ok, Map.get(envelope, :Response)}

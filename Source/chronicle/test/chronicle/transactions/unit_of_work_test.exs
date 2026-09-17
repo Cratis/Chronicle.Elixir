@@ -73,6 +73,19 @@ defmodule Chronicle.Transactions.UnitOfWorkTest do
     refute UnitOfWork.has_current?()
   end
 
+  for result <- [%{}, %{success?: true}, %{append_results: [7], last_sequence_number: 7}] do
+    test "custom commit retains the legacy successful result #{inspect(result)}" do
+      unit_of_work =
+        UnitOfWork.begin(commit_fun: fn _state -> {:ok, unquote(Macro.escape(result))} end)
+
+      assert :ok = EventLog.append("account-1", %TestEvent{value: 42})
+      assert :ok = UnitOfWork.commit(unit_of_work)
+      assert UnitOfWork.is_completed?(unit_of_work)
+      assert UnitOfWork.is_success?(unit_of_work)
+      refute UnitOfWork.has_current?()
+    end
+  end
+
   test "append_many/3 buffers each event in insertion order" do
     unit_of_work =
       UnitOfWork.begin(
