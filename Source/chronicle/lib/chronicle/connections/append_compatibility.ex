@@ -9,7 +9,7 @@ defmodule Chronicle.Connections.AppendCompatibility do
 
   # The package's runtime version is 0.1.0 because of its build-time metadata
   # quirk. This is the actual published contracts version pinned in mix.lock.
-  @protocol_version "18.4.1"
+  @protocol_version "18.5.0"
   @external_resource Path.expand("../../../VERSION", __DIR__)
   @client_version @external_resource |> File.read!() |> String.trim()
 
