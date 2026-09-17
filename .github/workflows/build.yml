@@ -1,0 +1,74 @@
+# Copyright (c) Cratis. All rights reserved.
+# Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
+# Compiles and tests on the pull request itself.
+#
+# The same steps already existed in Publish, but that workflow runs on push to main and on manual
+# dispatch - both of which happen after a merge. So a pull request could be merged with a failing
+# suite and the breakage would surface on main, with the merge already done. Verification that only
+# runs after the decision it should inform is not verification.
+name: Build
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+env:
+  ELIXIR_VERSION: "1.19.5"
+  OTP_VERSION: "28.5"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Elixir and Erlang
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Cache Mix dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            Source/chronicle/deps
+            Source/chronicle/_build
+          key: ${{ runner.os }}-mix-${{ hashFiles('Source/chronicle/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Install Hex and Rebar
+        working-directory: ./Source/chronicle
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+
+      - name: Install dependencies
+        working-directory: ./Source/chronicle
+        run: mix deps.get
+
+      - name: Check formatting
+        working-directory: ./Source/chronicle
+        run: mix format --check-formatted
+
+      - name: Compile
+        working-directory: ./Source/chronicle
+        run: mix compile --warnings-as-errors
+
+      - name: Run tests
+        working-directory: ./Source/chronicle
+        run: mix test
