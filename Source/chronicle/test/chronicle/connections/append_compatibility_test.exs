@@ -7,12 +7,35 @@ defmodule Chronicle.Connections.AppendCompatibilityTest do
   alias Cratis.Chronicle.Contracts.Clients.{CompatibilityRequest, CompatibilityResponse}
   alias Cratis.Chronicle.Contracts.DescriptorSet
 
+  # The preflight must announce the contracts version this client is actually
+  # built against. The package self-reports "0.1.0" at runtime (its mix.exs
+  # reads a build-time env var downstream consumers never set), so the module
+  # carries a hand-written constant and mix.lock holds the real resolved
+  # version. Reading the lock here rather than repeating the literal is what
+  # catches the two drifting apart when the pin moves.
+  @lock_path Path.expand("../../../mix.lock", __DIR__)
+  @external_resource @lock_path
+  @pinned_contracts_version (case Map.fetch(Mix.Dep.Lock.read(), :cratis_chronicle_contracts) do
+                               {:ok, entry} when is_tuple(entry) and tuple_size(entry) > 2 ->
+                                 elem(entry, 2)
+
+                               _ ->
+                                 raise "cratis_chronicle_contracts is not pinned in #{@lock_path}"
+                             end)
+
+  test "the announced protocol version is the pinned contracts version" do
+    assert @pinned_contracts_version =~ ~r/^\d+\.\d+\.\d+/
+
+    assert Chronicle.Connections.AppendCompatibility.protocol_version() ==
+             @pinned_contracts_version
+  end
+
   for path <- [:single, :ordinary, :rich, :transaction] do
     test "#{path} sends the installed descriptor before append", %{opts: opts} do
       assert :ok = append(unquote(path), opts)
       assert_receive {:wire_request, %CompatibilityRequest{} = request}
       assert request."ClientType" == "Elixir"
-      assert request."ProtocolVersion" == "18.3.0"
+      assert request."ProtocolVersion" == @pinned_contracts_version
       assert request."DescriptorSet" == DescriptorSet.bytes()
       assert byte_size(request."DescriptorSet") > 0
       assert request."ClientVersion" != ""
