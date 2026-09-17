@@ -78,6 +78,11 @@ defmodule Chronicle.AppendWireCase do
             ServerProtocolVersion: "18.3.0"
           })
 
+        # Reads answer a query envelope rather than an append payload. Without this they fell to the
+        # append branch below, which builds a response whose fields the query envelope does not have.
+        %Wire.ForEventSourceIdAndEventTypesRequest{} ->
+          struct(stream.response_mod, IsAuthorized: true, Data: [])
+
         _ ->
           payload_module =
             if match?(%Wire.AppendRequest{}, request),

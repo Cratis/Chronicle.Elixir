@@ -372,7 +372,6 @@ defmodule Chronicle.EventSequences.EventLog do
       event_type_modules = Keyword.get(opts, :event_types, [])
 
       event_type_ids = join_event_type_ids(event_type_modules)
-      _event_source_type = Keyword.get(opts, :event_source_type, "")
 
       request =
         struct(ForEventSourceIdAndEventTypesRequest,
@@ -382,6 +381,7 @@ defmodule Chronicle.EventSequences.EventLog do
           EventSourceId: event_source_id,
           EventStreamType: Keyword.get(opts, :event_stream_type, ""),
           EventStreamId: Keyword.get(opts, :event_stream_id, ""),
+          EventSourceType: Keyword.get(opts, :event_source_type, ""),
           EventTypeIds: event_type_ids
         )
 
