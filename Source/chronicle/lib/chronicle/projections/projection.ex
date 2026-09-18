@@ -50,6 +50,9 @@ defmodule Chronicle.Projections.Projection do
   - `join/2` — joins a secondary event onto the model by a matching field.
   - `removed_with/1`, `removed_with/2` — removes the model instance when the given event occurs.
   - `from_every/1` — applies property mappings on every event, regardless of type.
+  - `variant_of/2` — declares this projection to be one of several mutually exclusive
+    representations of the same logical entity. See `Chronicle.ReadModels.ReadModel`.
+  - `enters_on/1`, `enters_on/2` — names the event(s) that may create or resurrect this variant.
 
   ## Registering with Chronicle.Client
 
@@ -78,15 +81,29 @@ defmodule Chronicle.Projections.Projection do
       Module.register_attribute(__MODULE__, :chronicle_projection_removed_with, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_from_every, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_no_auto_map, accumulate: true)
+      Module.register_attribute(__MODULE__, :chronicle_enters_on, accumulate: true)
+      Module.register_attribute(__MODULE__, :chronicle_variant_identity, [])
+      Module.register_attribute(__MODULE__, :chronicle_variant_key, [])
 
       @chronicle_projection_model Keyword.fetch!(opts, :model)
       @chronicle_projection_id Keyword.get(opts, :id, __MODULE__ |> Module.split() |> List.last())
       @chronicle_projection_passive Keyword.get(opts, :passive, false)
       @chronicle_projection_rewindable not Keyword.get(opts, :not_rewindable, false)
       @chronicle_projection_event_sequence Keyword.get(opts, :event_sequence, "event-log")
+      @chronicle_variant_identity nil
+      @chronicle_variant_key nil
 
       import Chronicle.Projections.Projection,
-        only: [from: 1, from: 2, join: 2, removed_with: 2, from_every: 1]
+        only: [
+          from: 1,
+          from: 2,
+          join: 2,
+          removed_with: 2,
+          from_every: 1,
+          variant_of: 2,
+          enters_on: 1,
+          enters_on: 2
+        ]
 
       import Chronicle.ReadModels.ReadModel, only: [no_auto_map: 0, no_auto_map: 1]
 
@@ -142,6 +159,27 @@ defmodule Chronicle.Projections.Projection do
     end
   end
 
+  @doc """
+  Declares this projection to be one of several mutually exclusive representations of the same
+  logical entity. See `Chronicle.ReadModels.ReadModel.variant_of/2` for full documentation.
+  """
+  defmacro variant_of(identity_module, opts) do
+    quote do
+      @chronicle_variant_identity unquote(identity_module)
+      @chronicle_variant_key unquote(Keyword.fetch!(opts, :key))
+    end
+  end
+
+  @doc """
+  Names an event that may create or resurrect this projection's variant. See
+  `Chronicle.ReadModels.ReadModel.enters_on/2` for full documentation.
+  """
+  defmacro enters_on(event_module, opts \\ []) do
+    quote do
+      @chronicle_enters_on {unquote(event_module), unquote(opts)}
+    end
+  end
+
   defmacro __before_compile__(_env) do
     quote do
       @doc false
@@ -171,6 +209,12 @@ defmodule Chronicle.Projections.Projection do
 
       def __chronicle_projection__(:from_every),
         do: @chronicle_projection_from_every
+
+      def __chronicle_projection__(:variant_identity), do: @chronicle_variant_identity
+
+      def __chronicle_projection__(:variant_key), do: @chronicle_variant_key
+
+      def __chronicle_projection__(:enters_on), do: @chronicle_enters_on |> Enum.reverse()
     end
   end
 end

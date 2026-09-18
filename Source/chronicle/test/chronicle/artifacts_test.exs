@@ -60,6 +60,7 @@ defmodule Chronicle.ArtifactsTest do
                [
                  :event_store_subscriptions,
                  :event_types,
+                 :global_handlers,
                  :migrations,
                  :projections,
                  :reactors,

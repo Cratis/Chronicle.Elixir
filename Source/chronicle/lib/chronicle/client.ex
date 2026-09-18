@@ -94,6 +94,10 @@ defmodule Chronicle.Client do
     * `:projections` — list of declarative projection modules (each
       `use Chronicle.Projections.Projection`). These are standalone projection definitions
       that reference a separate read model module.
+    * `:global_handlers` — list of shared handler modules (each
+      `use Chronicle.Projections.GlobalHandler`). Their mappings are merged into every read
+      model or declarative projection whose `variant_of/2` names the same identity; never
+      registered as a projection on their own.
     * `:seeders` — list of seeder modules (each `use Chronicle.Seeding.Seeder`). Seeders
       populate the event store with initial events during client startup.
     * `:webhooks` — list of discoverable webhook modules (each
@@ -179,7 +183,8 @@ defmodule Chronicle.Client do
           projections: [],
           seeders: [],
           webhooks: [],
-          event_store_subscriptions: []
+          event_store_subscriptions: [],
+          global_handlers: []
         }
       end
 
@@ -189,6 +194,10 @@ defmodule Chronicle.Client do
     reducers = Enum.uniq(Keyword.get(opts, :reducers, []) ++ discovered.reducers)
     read_models = Enum.uniq(Keyword.get(opts, :read_models, []) ++ discovered.read_models)
     projections = Enum.uniq(Keyword.get(opts, :projections, []) ++ discovered.projections)
+
+    global_handlers =
+      Enum.uniq(Keyword.get(opts, :global_handlers, []) ++ discovered.global_handlers)
+
     seeders = Enum.uniq(Keyword.get(opts, :seeders, []) ++ discovered.seeders)
     webhooks = Enum.uniq(Keyword.get(opts, :webhooks, []) ++ discovered.webhooks)
 
@@ -293,7 +302,8 @@ defmodule Chronicle.Client do
            migrations: migrations,
            read_models: read_models,
            reducers: reducers,
-           projections: projections
+           projections: projections,
+           global_handlers: global_handlers
          )}
       ] ++
         reactor_children ++

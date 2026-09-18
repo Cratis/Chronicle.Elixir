@@ -72,6 +72,7 @@ defmodule Chronicle.Registration.Coordinator do
       read_models: Keyword.get(opts, :read_models, []),
       reducers: Keyword.get(opts, :reducers, []),
       projections: Keyword.get(opts, :projections, []),
+      global_handlers: Keyword.get(opts, :global_handlers, []),
       default_sink_type_id: Keyword.get(opts, :default_sink_type_id, "MongoDB"),
       register_fun: Keyword.get(opts, :register_fun, &default_register/1),
       retry_timer: nil,
@@ -335,15 +336,34 @@ defmodule Chronicle.Registration.Coordinator do
   defp register_projections(_channel, %{read_models: [], projections: []}), do: :ok
 
   defp register_projections(channel, state) do
-    model_bound_definitions =
+    model_bound_entries =
       state.read_models
       |> Enum.filter(& &1.__chronicle_read_model__(:has_projection?))
-      |> Enum.map(&build_projection_definition/1)
+      |> Enum.map(fn module ->
+        definition =
+          module
+          |> build_projection_definition()
+          |> apply_entering_key_overrides(module.__chronicle_read_model__(:enters_on))
 
-    declarative_definitions =
-      Enum.map(state.projections, &build_declarative_projection_definition/1)
+        {module, module, definition, variant_metadata(module, :read_model)}
+      end)
 
-    definitions = model_bound_definitions ++ declarative_definitions
+    declarative_entries =
+      Enum.map(state.projections, fn module ->
+        definition =
+          module
+          |> build_declarative_projection_definition()
+          |> apply_entering_key_overrides(module.__chronicle_projection__(:enters_on))
+
+        {module, module.__chronicle_projection__(:model), definition,
+         variant_metadata(module, :projection)}
+      end)
+
+    definitions =
+      Chronicle.Projections.VariantReclassifier.apply(
+        model_bound_entries ++ declarative_entries,
+        state.global_handlers
+      )
 
     if Enum.empty?(definitions) do
       :ok
@@ -463,7 +483,9 @@ defmodule Chronicle.Registration.Coordinator do
   defp auto_map_value(:enabled), do: :Enabled
   defp auto_map_value(:disabled), do: :Disabled
 
-  defp build_declarative_projection_definition(projection_module) do
+  # Public for the same reason build_projection_definition/1 is.
+  @doc false
+  def build_declarative_projection_definition(projection_module) do
     projection_id = projection_module.__chronicle_projection__(:id)
     model_module = projection_module.__chronicle_projection__(:model)
     model_id = model_module.__chronicle_read_model__(:id)
@@ -549,6 +571,62 @@ defmodule Chronicle.Registration.Coordinator do
     )
   end
 
+  # Resolves what a module declared about being a variant, in the shape
+  # Chronicle.Projections.VariantReclassifier expects. Returns nil for an ordinary projection.
+  # Public so this exact resolution can be asserted against directly in a spec.
+  @doc false
+  def variant_metadata(module, kind) do
+    {identity, key, enters_on} =
+      case kind do
+        :read_model ->
+          {module.__chronicle_read_model__(:variant_identity),
+           module.__chronicle_read_model__(:variant_key),
+           module.__chronicle_read_model__(:enters_on)}
+
+        :projection ->
+          {module.__chronicle_projection__(:variant_identity),
+           module.__chronicle_projection__(:variant_key),
+           module.__chronicle_projection__(:enters_on)}
+      end
+
+    if identity do
+      %{
+        identity: identity,
+        key: key,
+        entering_event_types:
+          Enum.map(enters_on, fn {event_module, _opts} -> proto_event_type(event_module) end)
+      }
+    end
+  end
+
+  # An enters_on/2 :key option overrides the correlation key of that entering event's own From
+  # entry, exactly like an ordinary from/2 :key option would. Public for the same reason
+  # build_projection_definition/1 is.
+  @doc false
+  def apply_entering_key_overrides(definition, enters_on_declarations) do
+    Enum.reduce(enters_on_declarations, definition, fn {event_module, opts}, acc ->
+      case Keyword.get(opts, :key) do
+        nil ->
+          acc
+
+        key ->
+          event_type = proto_event_type(event_module)
+          key_expression = resolve_key_expression(key)
+
+          updated_from =
+            Enum.map(Map.get(acc, :From), fn entry ->
+              if Map.get(entry, :Key) == event_type do
+                %{entry | Value: %{Map.get(entry, :Value) | Key: key_expression}}
+              else
+                entry
+              end
+            end)
+
+          %{acc | From: updated_from}
+      end
+    end)
+  end
+
   # Converts set/add/subtract/count/increment/decrement opts into a Chronicle properties map.
   # The keys are read model field names (strings), the values are
   # Chronicle property expressions.
@@ -557,7 +635,10 @@ defmodule Chronicle.Registration.Coordinator do
   #   increment: [event_counts: {:event_context, :type}]
   # produces:
   #   {"event_counts.$eventContext.type", "$increment"}
-  defp build_properties(opts) do
+  # Public so Chronicle.Projections.VariantReclassifier can build a global handler's mapping
+  # entries using exactly the same property-expression rules as an ordinary from/join/from_every.
+  @doc false
+  def build_properties(opts) do
     set_props =
       opts
       |> Keyword.get(:set, [])
@@ -628,9 +709,13 @@ defmodule Chronicle.Registration.Coordinator do
   defp resolve_expression(int) when is_integer(int), do: "$value(#{int})"
   defp resolve_expression(str) when is_binary(str), do: str
 
-  defp resolve_key_expression(expr), do: resolve_expression(expr)
+  @doc false
+  def resolve_key_expression(expr), do: resolve_expression(expr)
 
-  defp proto_event_type(event_module) do
+  # Public so Chronicle.Projections.VariantReclassifier can build the same EventType identifiers
+  # used to key From/Join/RemovedWith entries, so its lookups compare equal.
+  @doc false
+  def proto_event_type(event_module) do
     struct(ProtoEventType,
       Id: event_module.__chronicle_event_type__(:id),
       Generation: event_module.__chronicle_event_type__(:generation)

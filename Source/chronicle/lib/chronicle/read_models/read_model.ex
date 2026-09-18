@@ -157,11 +157,16 @@ defmodule Chronicle.ReadModels.ReadModel do
       Module.register_attribute(__MODULE__, :chronicle_projection_no_auto_map, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_pii, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_subject, [])
+      Module.register_attribute(__MODULE__, :chronicle_enters_on, accumulate: true)
+      Module.register_attribute(__MODULE__, :chronicle_variant_identity, [])
+      Module.register_attribute(__MODULE__, :chronicle_variant_key, [])
 
       @chronicle_read_model_id Keyword.get(opts, :id, __MODULE__ |> Module.split() |> List.last())
       @chronicle_read_model_passive Keyword.get(opts, :passive, false)
       @chronicle_read_model_rewindable not Keyword.get(opts, :not_rewindable, false)
       @chronicle_read_model_event_sequence Keyword.get(opts, :event_sequence, "event-log")
+      @chronicle_variant_identity nil
+      @chronicle_variant_key nil
 
       import Chronicle.ReadModels.ReadModel,
         only: [
@@ -171,7 +176,10 @@ defmodule Chronicle.ReadModels.ReadModel do
           removed_with: 2,
           from_every: 1,
           no_auto_map: 0,
-          no_auto_map: 1
+          no_auto_map: 1,
+          variant_of: 2,
+          enters_on: 1,
+          enters_on: 2
         ]
 
       import Chronicle.Compliance, only: [pii: 1, pii: 2, subject: 1]
@@ -221,6 +229,43 @@ defmodule Chronicle.ReadModels.ReadModel do
   defmacro from_every(opts) do
     quote do
       @chronicle_projection_from_every unquote(opts)
+    end
+  end
+
+  @doc """
+  Declares this read model to be one of several mutually exclusive representations of the same
+  logical entity. Entering one variant removes the entity from every sibling variant of the same
+  identity.
+
+      variant_of MyApp.ReadModels.WorkItem, key: :id
+
+  Options:
+    * `:key` — **(required)** the field on this variant used as its own key, and as the
+      correlation property for reclassified joins.
+  """
+  defmacro variant_of(identity_module, opts) do
+    quote do
+      @chronicle_variant_identity unquote(identity_module)
+      @chronicle_variant_key unquote(Keyword.fetch!(opts, :key))
+    end
+  end
+
+  @doc """
+  Names an event that may create or resurrect this read model variant. Repeatable — a variant
+  may enter on more than one event. Every other event this variant projects from (whether
+  declared with `from/2` directly, or merged in from a `Chronicle.Projections.GlobalHandler`) is
+  automatically reclassified into an update-only join: it can bring an already-active instance
+  up to date, but it can never create or resurrect one.
+
+      enters_on MyApp.Events.IssueCreated
+
+  Options:
+    * `:key` — event property used as the key for this entering event. Defaults to
+      `:event_source_id`.
+  """
+  defmacro enters_on(event_module, opts \\ []) do
+    quote do
+      @chronicle_enters_on {unquote(event_module), unquote(opts)}
     end
   end
 
@@ -304,6 +349,12 @@ defmodule Chronicle.ReadModels.ReadModel do
       def __chronicle_read_model__(:pii), do: Enum.reverse(@chronicle_pii)
 
       def __chronicle_read_model__(:subject), do: @chronicle_subject
+
+      def __chronicle_read_model__(:variant_identity), do: @chronicle_variant_identity
+
+      def __chronicle_read_model__(:variant_key), do: @chronicle_variant_key
+
+      def __chronicle_read_model__(:enters_on), do: @chronicle_enters_on |> Enum.reverse()
 
       @doc false
       def __chronicle_pii__, do: Enum.reverse(@chronicle_pii)
