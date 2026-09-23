@@ -147,5 +147,53 @@ defmodule Chronicle.ConceptTest do
 
       assert Chronicle.ConceptTest.PlainSurrogateId.__chronicle_concept__(:event_source_id?)
     end
+
+    test "rejects encrypted/0,1 on a concept declared with event_source_id: true" do
+      assert_raise ArgumentError, ~r/encryption is not supported on a Chronicle\.Concept/, fn ->
+        Code.compile_string("""
+        defmodule Chronicle.ConceptTest.EncryptedEventSourceIdConcept do
+          use Chronicle.Concept, type: :uuid, event_source_id: true
+          encrypted(:subject, "should not be allowed")
+        end
+        """)
+      end
+    end
+
+    test "allows event_source_id: true when encrypted is never declared" do
+      Code.compile_string("""
+      defmodule Chronicle.ConceptTest.AnotherPlainSurrogateId do
+        use Chronicle.Concept, type: :uuid, event_source_id: true
+      end
+      """)
+
+      assert Chronicle.ConceptTest.AnotherPlainSurrogateId.__chronicle_concept__(
+               :event_source_id?
+             )
+    end
+
+    test "rejects a concept declaring both pii/0,1 and encrypted/0,1" do
+      assert_raise ArgumentError, ~r/cannot declare both pii\/0,1 and encrypted\/0,1/, fn ->
+        Code.compile_string("""
+        defmodule Chronicle.ConceptTest.PiiAndEncryptedConcept do
+          use Chronicle.Concept, type: :string
+          pii("should not be allowed together")
+          encrypted(:subject, "should not be allowed together")
+        end
+        """)
+      end
+    end
+
+    test "allows encrypted/0,1 alone, without pii" do
+      Code.compile_string("""
+      defmodule Chronicle.ConceptTest.EncryptedOnlyConcept do
+        use Chronicle.Concept, type: :string
+        encrypted(:namespace, "a webhook secret")
+      end
+      """)
+
+      assert Chronicle.ConceptTest.EncryptedOnlyConcept.__chronicle_concept__(:encrypted) == [
+               {:value, :namespace, "a webhook secret"}
+             ]
+    end
   end
 end

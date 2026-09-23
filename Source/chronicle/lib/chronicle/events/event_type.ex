@@ -62,7 +62,8 @@ defmodule Chronicle.Events.EventType do
 
   Accepts `:id`, `:generation`, or `:constraints` as the key.
   """
-  @callback __chronicle_event_type__(key :: :id | :generation | :constraints | :pii) :: term()
+  @callback __chronicle_event_type__(key :: :id | :generation | :constraints | :pii | :encrypted) ::
+              term()
 
   defmacro __using__(opts) do
     event_type_id = Keyword.fetch!(opts, :id)
@@ -75,6 +76,7 @@ defmodule Chronicle.Events.EventType do
       Module.register_attribute(__MODULE__, :remove_constraint, accumulate: true)
       Module.register_attribute(__MODULE__, :unique_event_type, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_pii, accumulate: true)
+      Module.register_attribute(__MODULE__, :chronicle_encrypted, accumulate: true)
 
       import Chronicle.Events.EventType,
         only: [
@@ -86,6 +88,7 @@ defmodule Chronicle.Events.EventType do
         ]
 
       import Chronicle.Compliance, only: [pii: 1, pii: 2]
+      import Chronicle.Confidentiality, only: [encrypted: 1, encrypted: 2, encrypted: 3]
 
       @chronicle_event_type_id unquote(event_type_id)
       @chronicle_event_type_generation unquote(generation)
@@ -117,9 +120,13 @@ defmodule Chronicle.Events.EventType do
       end
 
       def __chronicle_event_type__(:pii), do: Enum.reverse(@chronicle_pii)
+      def __chronicle_event_type__(:encrypted), do: Enum.reverse(@chronicle_encrypted)
 
       @doc false
       def __chronicle_pii__, do: Enum.reverse(@chronicle_pii)
+
+      @doc false
+      def __chronicle_encrypted__, do: Enum.reverse(@chronicle_encrypted)
     end
   end
 

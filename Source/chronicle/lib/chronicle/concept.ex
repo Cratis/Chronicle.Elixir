@@ -84,6 +84,21 @@ defmodule Chronicle.Concept do
   (`event_source_id: true`, no `pii`) as the event source id, and store the
   sensitive value in a separate PII-marked concept or event property.
 
+  ## Encrypted is not supported on an event source id either
+
+  Exactly the same reasoning applies to `Chronicle.Confidentiality.encrypted/0,1`:
+  Chronicle uses the event source id to look up the encryption key, so a
+  concept created with `event_source_id: true` cannot also declare
+  `encrypted/0,1` - it raises `ArgumentError` at compile time, mirroring
+  the restriction above.
+
+  ## PII and Encrypted are mutually exclusive
+
+  A concept cannot declare both `pii/0,1` and `Chronicle.Confidentiality.encrypted/0,1`.
+  A value needs exactly one protection - combining them would encrypt it
+  twice, under two different keys, and it could never be released
+  correctly. Declaring both raises `ArgumentError` at compile time.
+
   ## Registering a value
 
   A concept is a plain struct — construct it like any other:
@@ -96,9 +111,9 @@ defmodule Chronicle.Concept do
   @doc """
   Returns metadata for this concept module.
 
-  Accepts `:type`, `:event_source_id?`, or `:pii` as the key.
+  Accepts `:type`, `:event_source_id?`, `:pii`, or `:encrypted` as the key.
   """
-  @callback __chronicle_concept__(key :: :type | :event_source_id? | :pii) :: term()
+  @callback __chronicle_concept__(key :: :type | :event_source_id? | :pii | :encrypted) :: term()
 
   defmacro __using__(opts) do
     type = fetch_type!(opts)
@@ -109,13 +124,14 @@ defmodule Chronicle.Concept do
       @behaviour Chronicle.Concept
 
       Module.register_attribute(__MODULE__, :chronicle_pii, accumulate: true)
+      Module.register_attribute(__MODULE__, :chronicle_encrypted, accumulate: true)
 
       @chronicle_concept_type unquote(type)
       @chronicle_concept_event_source_id unquote(event_source_id?)
 
       defstruct value: unquote(default)
 
-      import Chronicle.Concept, only: [pii: 0, pii: 1]
+      import Chronicle.Concept, only: [pii: 0, pii: 1, encrypted: 0, encrypted: 1, encrypted: 2]
 
       @before_compile Chronicle.Concept
     end
@@ -127,11 +143,32 @@ defmodule Chronicle.Concept do
 
   `details` is an optional human-readable explanation of why the value is
   classified as PII and defaults to an empty string. Cannot be combined with
-  `event_source_id: true` — see the module documentation.
+  `event_source_id: true`, or with `encrypted/0,1` on the same concept — see
+  the module documentation.
   """
   defmacro pii(details \\ "") do
     quote do
       @chronicle_pii {:value, unquote(details)}
+    end
+  end
+
+  @doc """
+  Marks this concept's wrapped value as needing plain-confidentiality
+  encryption at rest - the concept-level counterpart to
+  `Chronicle.Confidentiality.encrypted/1,2,3`, mirroring how `pii/0,1` is the
+  concept-level counterpart to `Chronicle.Compliance.pii/1,2`.
+
+    * `scope` — the `EncryptionScope` the key is provisioned under: `:subject`
+      (default), `:namespace`, or `:global`.
+    * `details` — an optional human-readable explanation of why the value
+      needs encryption, and defaults to an empty string.
+
+  Cannot be combined with `event_source_id: true`, or with `pii/0,1` on the
+  same concept — see the module documentation.
+  """
+  defmacro encrypted(scope \\ :subject, details \\ "") do
+    quote do
+      @chronicle_encrypted {:value, unquote(scope), unquote(details)}
     end
   end
 
@@ -147,13 +184,35 @@ defmodule Chronicle.Concept do
                 "sensitive value in a separate PII-marked concept or event property."
       end
 
+      if @chronicle_concept_event_source_id and @chronicle_encrypted != [] do
+        raise ArgumentError,
+              "#{inspect(__MODULE__)} cannot declare encrypted/0,1: encryption is not " <>
+                "supported on a Chronicle.Concept declared with event_source_id: true. The " <>
+                "event source id is used to look up the encryption key, so it cannot itself " <>
+                "be an encrypted value. Use a non-sensitive surrogate as the event source id " <>
+                "and store the sensitive value in a separate encrypted concept or event property."
+      end
+
+      if @chronicle_pii != [] and @chronicle_encrypted != [] do
+        raise ArgumentError,
+              "#{inspect(__MODULE__)} cannot declare both pii/0,1 and encrypted/0,1: a value " <>
+                "needs exactly one protection - combining them would encrypt it twice, under " <>
+                "two different keys, and it could never be released correctly. Choose pii for " <>
+                "personal data with a lawful basis for erasure, or encrypted for an operational " <>
+                "secret with none."
+      end
+
       @impl Chronicle.Concept
       def __chronicle_concept__(:type), do: @chronicle_concept_type
       def __chronicle_concept__(:event_source_id?), do: @chronicle_concept_event_source_id
       def __chronicle_concept__(:pii), do: Enum.reverse(@chronicle_pii)
+      def __chronicle_concept__(:encrypted), do: Enum.reverse(@chronicle_encrypted)
 
       @doc false
       def __chronicle_pii__, do: Enum.reverse(@chronicle_pii)
+
+      @doc false
+      def __chronicle_encrypted__, do: Enum.reverse(@chronicle_encrypted)
 
       defimpl Jason.Encoder, for: __MODULE__ do
         @moduledoc false
