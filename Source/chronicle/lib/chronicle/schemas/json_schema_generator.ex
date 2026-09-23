@@ -8,19 +8,25 @@ defmodule Chronicle.Schemas.JsonSchemaGenerator do
   This is the single source of truth for schema generation shared by event type
   registration (`Chronicle.EventTypes`) and read model registration
   (`Chronicle.Registration.Coordinator`). Generating both through one path keeps
-  property typing consistent and ensures compliance (PII) metadata is always
-  embedded the same way.
+  property typing consistent and ensures compliance (PII) and security
+  (Encrypted) metadata are always embedded the same way.
 
-  PII is resolved from two places, mirroring the C# client's
-  `PIIMetadataProvider`:
+  PII and Encrypted are each resolved from two places, mirroring the C#
+  client's `PIIMetadataProvider`/`EncryptedMetadataProvider`:
 
     * **Property-level** — a field marked with `Chronicle.Compliance.pii/1,2`
-      on the event type or read model module itself.
+      or `Chronicle.Confidentiality.encrypted/1,2,3` on the event type or read
+      model module itself.
     * **Type-level** — a field whose value is a `Chronicle.Concept` module
-      that declared `pii/0,1` on itself (see that module's documentation).
-      The concept's compliance classification travels with it automatically
-      to every event and read model that uses it, without repeating the
-      annotation at every call site.
+      that declared `pii/0,1` or `encrypted/0,1` on itself (see that module's
+      documentation). The concept's classification travels with it
+      automatically to every event and read model that uses it, without
+      repeating the annotation at every call site.
+
+  PII and Encrypted are deliberately separate mechanisms sharing only this
+  generator: a field can carry one or the other, never both — see
+  `Chronicle.Confidentiality.PiiAndEncryptedCombinedNotSupported`, raised
+  here the moment both resolve for the same leaf.
 
   Nested structs (including concepts) are descended into recursively, and a
   `Chronicle.Concept` field is described by the schema of its **wrapped
@@ -28,21 +34,24 @@ defmodule Chronicle.Schemas.JsonSchemaGenerator do
   `Jason.Encoder` implementation, so the schema always matches what actually
   goes on the wire.
 
-  Compliance metadata is always written on schema **leaves**, never on a
-  container (`"type" => "object"`) node: a marker left on a container would
-  make Chronicle hand the whole JSON object to the PII handler and store one
-  opaque ciphertext string where the schema still says `object`, so a
-  released value comes back as a string instead of an object and the read
-  model fails to materialize. An array is the one exception — compliance
-  declared on the array *field itself* stays on the array (the collection is
-  blob-encrypted as a whole); compliance resolved from the array's *element
-  type* (a list of PII concepts) is attached to the `"items"` schema instead,
-  which is already a leaf. A leaf reachable through more than one path (for
-  example a PII concept nested inside a value object whose own field also
-  carries a property-level `pii/1,2`) is only ever marked once.
+  Compliance and security metadata are always written on schema **leaves**,
+  never on a container (`"type" => "object"`) node: a marker left on a
+  container would make Chronicle hand the whole JSON object to the handler
+  and store one opaque ciphertext string where the schema still says
+  `object`, so a released value comes back as a string instead of an object
+  and the read model fails to materialize. An array is the one exception —
+  metadata declared on the array *field itself* stays on the array (the
+  collection is blob-encrypted as a whole); metadata resolved from the
+  array's *element type* (a list of PII or Encrypted concepts) is attached to
+  the `"items"` schema instead, which is already a leaf. A leaf reachable
+  through more than one path (for example a PII concept nested inside a value
+  object whose own field also carries a property-level `pii/1,2`) is only
+  ever marked once.
   """
 
   alias Chronicle.Compliance.ComplianceMetadataType
+  alias Chronicle.Confidentiality.PiiAndEncryptedCombinedNotSupported
+  alias Chronicle.Confidentiality.SecurityMetadataType
 
   @opaque_struct_modules [DateTime, NaiveDateTime, Date, Time, MapSet, Range, URI, Regex, Version]
 
@@ -67,12 +76,15 @@ defmodule Chronicle.Schemas.JsonSchemaGenerator do
     key_transform = Keyword.get(opts, :key_transform, :identity)
     properties = struct_properties(module, key_transform)
 
+    check_no_conflicting_metadata!(properties)
+
     Jason.encode!(%{"type" => "object", "properties" => properties})
   end
 
   defp struct_properties(module, key_transform) do
     if function_exported?(module, :__struct__, 0) do
       pii = pii_for(module)
+      encrypted = encrypted_for(module)
 
       module.__struct__()
       |> Map.from_struct()
@@ -81,6 +93,7 @@ defmodule Chronicle.Schemas.JsonSchemaGenerator do
           default_value
           |> property_schema(key_transform)
           |> maybe_add_compliance(Map.get(pii, key))
+          |> maybe_add_security(Map.get(encrypted, key))
 
         {transform_key(key, key_transform), schema}
       end)
@@ -95,6 +108,49 @@ defmodule Chronicle.Schemas.JsonSchemaGenerator do
       Map.new(module.__chronicle_pii__())
     else
       %{}
+    end
+  end
+
+  defp encrypted_for(module) do
+    if function_exported?(module, :__chronicle_encrypted__, 0) do
+      module.__chronicle_encrypted__()
+      |> Map.new(fn {field, scope, details} -> {field, {scope, details}} end)
+    else
+      %{}
+    end
+  end
+
+  # Walks the fully-merged schema tree looking for a leaf that ended up with
+  # both "compliance" and "security" populated. Checking the merged result,
+  # rather than each resolution source individually, is what catches a
+  # cross-source combination correctly - for example a property marked
+  # pii/1,2 whose declared type is a concept marked encrypted/0,1: neither
+  # the property's own markers nor the concept's own markers conflict with
+  # themselves, only the union of what ends up on the leaf does. Mirrors the
+  # C# client's EncryptedMetadataProvider.ThrowIfAlsoPII, checked at the same
+  # point (schema generation), since this client has no compile-time
+  # analyzer for it either.
+  defp check_no_conflicting_metadata!(properties) when is_map(properties) do
+    Enum.each(properties, fn {key, schema} -> check_no_conflicting_metadata!(schema, key) end)
+  end
+
+  # A container node never carries compliance/security metadata itself - both
+  # are always pushed down onto leaves (see the moduledoc), so only the
+  # nested properties need checking, never the container.
+  defp check_no_conflicting_metadata!(%{"properties" => nested}, _key)
+       when map_size(nested) > 0 do
+    check_no_conflicting_metadata!(nested)
+  end
+
+  defp check_no_conflicting_metadata!(%{"items" => item_schema}, key) do
+    check_no_conflicting_metadata!(item_schema, key)
+  end
+
+  defp check_no_conflicting_metadata!(schema, key), do: check_leaf!(schema, key)
+
+  defp check_leaf!(schema, key) do
+    if Map.get(schema, "compliance", []) != [] and Map.get(schema, "security", []) != [] do
+      raise PiiAndEncryptedCombinedNotSupported, field: key
     end
   end
 
@@ -120,6 +176,7 @@ defmodule Chronicle.Schemas.JsonSchemaGenerator do
         value.value
         |> property_schema(key_transform)
         |> maybe_add_compliance(module |> pii_for() |> Map.get(:value))
+        |> maybe_add_security(module |> encrypted_for() |> Map.get(:value))
 
       module in @opaque_struct_modules ->
         %{"type" => "string"}
@@ -145,6 +202,7 @@ defmodule Chronicle.Schemas.JsonSchemaGenerator do
 
   defp struct_properties(module, key_transform, value) do
     pii = pii_for(module)
+    encrypted = encrypted_for(module)
 
     value
     |> Map.from_struct()
@@ -153,6 +211,7 @@ defmodule Chronicle.Schemas.JsonSchemaGenerator do
         default_value
         |> property_schema(key_transform)
         |> maybe_add_compliance(Map.get(pii, key))
+        |> maybe_add_security(Map.get(encrypted, key))
 
       {transform_key(key, key_transform), schema}
     end)
@@ -192,6 +251,44 @@ defmodule Chronicle.Schemas.JsonSchemaGenerator do
       Map.put(
         schema,
         "compliance",
+        existing ++ [%{"metadataType" => metadata_type, "details" => details || ""}]
+      )
+    end
+  end
+
+  defp maybe_add_security(schema, nil), do: schema
+
+  # Security metadata is pushed down onto every leaf of an object schema
+  # exactly as compliance metadata is - see the moduledoc for why. Written
+  # under its own "security" schema key, a sibling of "compliance" rather
+  # than a shared one, so the kernel routes a value into exactly one
+  # protection path.
+  defp maybe_add_security(%{"properties" => properties} = schema, metadata)
+       when map_size(properties) > 0 do
+    updated_properties =
+      Map.new(properties, fn {key, prop_schema} ->
+        {key, maybe_add_security(prop_schema, metadata)}
+      end)
+
+    %{schema | "properties" => updated_properties}
+  end
+
+  defp maybe_add_security(schema, metadata), do: add_security(schema, metadata)
+
+  # A leaf can be reached by more than one Encrypted-resolution path - for
+  # example a concept's type-level encrypted/0,1 and a property-level
+  # encrypted/1,2,3 on the same field. Recording the same metadata type twice
+  # adds nothing and makes the generated schema noisier to read and to diff.
+  defp add_security(schema, {scope, details}) do
+    metadata_type = SecurityMetadataType.for_scope(scope)
+    existing = Map.get(schema, "security", [])
+
+    if Enum.any?(existing, &(&1["metadataType"] == metadata_type)) do
+      schema
+    else
+      Map.put(
+        schema,
+        "security",
         existing ++ [%{"metadataType" => metadata_type, "details" => details || ""}]
       )
     end

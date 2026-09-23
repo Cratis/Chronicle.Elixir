@@ -156,6 +156,7 @@ defmodule Chronicle.ReadModels.ReadModel do
       Module.register_attribute(__MODULE__, :chronicle_projection_from_every, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_no_auto_map, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_pii, accumulate: true)
+      Module.register_attribute(__MODULE__, :chronicle_encrypted, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_subject, [])
       Module.register_attribute(__MODULE__, :chronicle_enters_on, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_variant_identity, [])
@@ -183,6 +184,7 @@ defmodule Chronicle.ReadModels.ReadModel do
         ]
 
       import Chronicle.Compliance, only: [pii: 1, pii: 2, subject: 1]
+      import Chronicle.Confidentiality, only: [encrypted: 1, encrypted: 2, encrypted: 3]
 
       @before_compile Chronicle.ReadModels.ReadModel
     end
@@ -348,6 +350,8 @@ defmodule Chronicle.ReadModels.ReadModel do
 
       def __chronicle_read_model__(:pii), do: Enum.reverse(@chronicle_pii)
 
+      def __chronicle_read_model__(:encrypted), do: Enum.reverse(@chronicle_encrypted)
+
       def __chronicle_read_model__(:subject), do: @chronicle_subject
 
       def __chronicle_read_model__(:variant_identity), do: @chronicle_variant_identity
@@ -358,6 +362,9 @@ defmodule Chronicle.ReadModels.ReadModel do
 
       @doc false
       def __chronicle_pii__, do: Enum.reverse(@chronicle_pii)
+
+      @doc false
+      def __chronicle_encrypted__, do: Enum.reverse(@chronicle_encrypted)
     end
   end
 end
