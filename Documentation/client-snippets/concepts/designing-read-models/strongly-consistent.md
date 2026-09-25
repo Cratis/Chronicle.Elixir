@@ -1,6 +1,8 @@
 ```elixir
 defmodule MyApp.ReadModels.DesigningReadModelsCustomerDetail do
-  defstruct [:id, :name]
+  use Chronicle.ReadModels.ReadModel
+
+  defstruct id: "", name: ""
 end
 
 defmodule MyApp.DesigningReadModelsCustomerDetailService do

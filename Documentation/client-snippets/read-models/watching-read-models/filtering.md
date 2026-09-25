@@ -1,6 +1,8 @@
 ```elixir
 defmodule MyApp.ReadModels.WatchingFilteringOrder do
-  defstruct [:id, :total_amount]
+  use Chronicle.ReadModels.ReadModel
+
+  defstruct id: "", total_amount: 0.0
 end
 
 defmodule MyApp.WatchingReadModelsFilteringMonitor do

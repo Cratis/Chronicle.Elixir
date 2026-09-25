@@ -6,6 +6,8 @@ defmodule MyApp.Events.EcCqsBookCreated do
 end
 
 defmodule MyApp.ReadModels.EcCqsBook do
+  use Chronicle.ReadModels.ReadModel
+
   defstruct id: "", title: ""
 end
 

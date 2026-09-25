@@ -1,6 +1,8 @@
 ```elixir
 defmodule MyApp.ReadModels.WatchingBasicOrder do
-  defstruct [:id, :status]
+  use Chronicle.ReadModels.ReadModel
+
+  defstruct id: "", status: ""
 end
 
 defmodule MyApp.WatchingReadModelsBasicMonitor do

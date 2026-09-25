@@ -5,15 +5,14 @@ defmodule ConsoleSample.Projections.EmployeeListProjection do
   @moduledoc """
   Declarative projection that populates the `EmployeeList` read model from employee events.
   The projection definition lives in a separate module from the read model. The projection
-  engine auto-maps properties with matching single-word names such as `title`. Multi-word
-  fields are mapped with their camelCase wire names, because in cratis_chronicle 3.5.0
-  neither auto-mapping nor atom expressions such as `:first_name` resolve them.
+  engine auto-maps properties with matching names; only `EmployeePromoted` needs an explicit
+  mapping because the event field is `new_title`.
   """
 
   use Chronicle.Projections.Projection, model: ConsoleSample.ReadModels.EmployeeList
 
   alias ConsoleSample.Events.{EmployeeHired, EmployeePromoted}
 
-  from EmployeeHired, set: [first_name: "firstName", last_name: "lastName"]
-  from EmployeePromoted, set: [title: "newTitle"]
+  from EmployeeHired
+  from EmployeePromoted, set: [title: :new_title]
 end

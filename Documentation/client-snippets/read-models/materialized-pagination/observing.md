@@ -12,7 +12,7 @@ defmodule MyApp.MaterializedPaginationObserving do
 
     receive do
       {:chronicle_read_model_changed, MaterializedPaginationOrder, _changeset} ->
-        {:ok, page} = ReadModels.query(MaterializedPaginationOrder, page: 1, page_size: 50)
+        {:ok, page} = ReadModels.query(MaterializedPaginationOrder, page: 0, page_size: 50)
         IO.puts("Orders updated: #{length(page.instances)} in view")
     after
       5_000 -> :timeout

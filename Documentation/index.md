@@ -13,21 +13,16 @@ Shared Chronicle concepts and workflows live in the main Chronicle docs and show
 
 | Requirement | Details |
 |---|---|
-| Package | [`cratis_chronicle`](https://hex.pm/packages/cratis_chronicle) on Hex. These pages describe version 3.5.0. |
-| Elixir | 1.18 or later. The package declares `~> 1.14`, but its dependencies need 1.18. CI uses Elixir 1.19.5 on Erlang/OTP 28.5. |
+| Package | [`cratis_chronicle`](https://hex.pm/packages/cratis_chronicle) on Hex. These pages describe version 3.5.1. |
+| Elixir | 1.18 or later. CI uses Elixir 1.19.5 on Erlang/OTP 28.5. |
 | Kernel | A kernel whose gRPC contracts match the `cratis_chronicle_contracts` version in your `mix.lock`. A mismatch returns `{:error, {:incompatible_server, ...}}`; see [Get started](get-started.md#troubleshooting). |
 | API reference | [HexDocs](https://hexdocs.pm/cratis_chronicle) |
 
-## Known limitations in 3.5.0
+## Known limitations
 
-Check these before you build on the client:
-
-- Reducers don't register with the 19.x contracts packages the client resolves: every attempt logs `Reducer ... failed to register` with an `UndefinedFunctionError` for `Cratis.Chronicle.Contracts.Observation.Reducers.SinkDefinition`, and the reducer's read model stays `{:ok, nil}`. Use read models with projections instead. See [Reducers](reducers.md).
-- Automatic mapping and atom expressions in read model projections don't resolve multi-word event fields; map them with camelCase strings. See [Get started](get-started.md#define-a-read-model).
-- Seeding appends seed events again every time the client registers. See [Seeding](seeding.md#how-it-runs).
-- Tail and next sequence number lookups return `{:ok, 0}` unless you pass empty `:event_source_type` and `:event_stream_type` filters. See [Event sequences](event-sequences.md#sequence-numbers).
 - The client doesn't validate the kernel's TLS certificate unless you set `skipTlsValidation=false`, and it has no client-certificate support. See [Connection strings](connections/connection-strings.md#tls).
 - `mix deps.get` reports security advisories for the `grpc 0.11.5` dependency, which can't be upgraded until the contracts package allows `grpc 1.x`.
+- Version 3.5.0 had defects in read model mappings, reducer registration, constraint registration, seeding, read model paging, and sequence number lookups. Upgrade to 3.5.1 or later.
 
 ## Shared Chronicle topics
 

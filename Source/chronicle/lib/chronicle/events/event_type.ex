@@ -31,14 +31,14 @@ defmodule Chronicle.Events.EventType do
 
       defmodule MyApp.Events.AccountOpened do
         use Chronicle.Events.EventType, id: "account-opened-v1"
-        defstruct [:account_id, :owner_name, :initial_balance]
+        defstruct account_id: "", owner_name: "", initial_balance: 0
       end
 
   With an explicit generation:
 
       defmodule MyApp.Events.FundsDeposited do
         use Chronicle.Events.EventType, id: "funds-deposited", generation: 2
-        defstruct [:account_id, :amount, :currency]
+        defstruct account_id: "", amount: 0, currency: ""
       end
 
   ## Introspection
@@ -52,9 +52,11 @@ defmodule Chronicle.Events.EventType do
       MyApp.Events.AccountOpened.__chronicle_event_type__(:generation)
       #=> 1
 
-  Chronicle also generates a `Jason.Encoder` implementation automatically so
-  events can be serialized to JSON for storage. Event fields are encoded using
-  their atom keys as-is (snake_case).
+  When you append an event, the client encodes its fields as camelCase JSON:
+  `owner_name` is stored as `ownerName`. Give every field a typed default, such
+  as `initial_balance: 0`; the JSON schema Chronicle validates appends against is
+  generated from the defaults, and a `nil` default registers the field as a
+  string.
   """
 
   @doc """

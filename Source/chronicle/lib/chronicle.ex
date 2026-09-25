@@ -50,7 +50,7 @@ defmodule Chronicle do
 
       defmodule MyApp.Events.AccountOpened do
         use Chronicle.Events.EventType, id: "account-opened-v1"
-        defstruct [:account_id, :owner_name, :initial_balance]
+        defstruct account_id: "", owner_name: "", initial_balance: 0
       end
 
   ## Appending Events

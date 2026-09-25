@@ -45,7 +45,8 @@ defmodule Chronicle.Connections.Connection do
     * `:load_balancer` — overrides the connection string's `loadBalancer` query
       option (`:least_connections`, `:round_robin`, or `:random`).
     * `:grpc_options` — additional options passed to `GRPC.Stub.connect/2`.
-    * `:retry_attempts` — maximum reconnect attempts before giving up (default: 5).
+    * `:retry_attempts` — accepted for backward compatibility and ignored. The
+      connection keeps reconnecting, with backoff, for as long as it runs.
     * `:reconnect_base_delay` — base reconnect delay in milliseconds (default: 1000).
     * `:reconnect_max_delay` — maximum reconnect delay in milliseconds (default: 10000).
     * `:auto_connect` — whether to connect immediately on start (default: `true`).
@@ -64,6 +65,7 @@ defmodule Chronicle.Connections.Connection do
   alias Chronicle.Connections.{
     AppendCompatibility,
     AuthInterceptor,
+    TransportFailureInterceptor,
     ConnectionString,
     DnsResolver,
     LoadBalancer,
@@ -491,6 +493,7 @@ defmodule Chronicle.Connections.Connection do
       ]
       |> Keyword.merge(grpc_options)
       |> add_auth_interceptor(token_provider)
+      |> add_transport_failure_interceptor()
 
     cond do
       connection_string.disable_tls or not Code.ensure_loaded?(GRPC.Credential) ->
@@ -542,6 +545,16 @@ defmodule Chronicle.Connections.Connection do
 
   defp stop_token_provider(nil), do: :ok
   defp stop_token_provider(provider), do: GenServer.stop(provider)
+
+  # Appended, so grpc-elixir runs it outermost around every other interceptor and the transport.
+  defp add_transport_failure_interceptor(options) do
+    Keyword.update(
+      options,
+      :interceptors,
+      [TransportFailureInterceptor],
+      &(&1 ++ [TransportFailureInterceptor])
+    )
+  end
 
   # Prepend rather than replace so caller-supplied interceptors survive.
   defp add_auth_interceptor(options, nil), do: options

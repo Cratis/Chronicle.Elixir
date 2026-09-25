@@ -4,9 +4,8 @@ defmodule MyApp.ReadModels.GetStartedBorrowedBook do
 
   defstruct id: "", member_name: ""
 
-  # member_name travels as camelCase JSON.
   from MyApp.Events.GetStartedBookBorrowed,
-    set: [id: :event_source_id, member_name: "memberName"]
+    set: [id: :event_source_id, member_name: :member_name]
 
   removed_with MyApp.Events.GetStartedBookReturned, []
 end

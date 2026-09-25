@@ -2,11 +2,18 @@ name: Update Packages
 
 on:
   schedule:
-    - cron: '0 6 * * *'
+    # Off the top of the hour, so this repository's update doesn't queue with every other one.
+    - cron: '17 4 * * *'
   workflow_dispatch:
 
 jobs:
   update:
     uses: Cratis/Workflows/.github/workflows/update-packages.yml@main
+    with:
+      # Open a pull request instead of pushing to main, so Build and test runs on the update.
+      # A direct push once moved the contracts pin without the specs that guard it running.
+      publication-mode: pull-request
+      # mix.lock is not part of the published package, so an update releases nothing.
+      pull-request-label: no-release
     secrets:
       PAT_WORKFLOWS: ${{ secrets.PAT_WORKFLOWS }}

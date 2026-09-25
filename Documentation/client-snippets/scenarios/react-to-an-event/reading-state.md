@@ -1,6 +1,8 @@
 ```elixir
 defmodule MyApp.ReadModels.ScenariosReactBook do
-  defstruct [:title]
+  use Chronicle.ReadModels.ReadModel
+
+  defstruct title: ""
 end
 
 defmodule MyApp.Reactors.ScenariosReactWaitlistNotifierWithTitle do

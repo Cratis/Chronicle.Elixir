@@ -13,7 +13,8 @@ defmodule Chronicle.MixProject do
     [
       app: :cratis_chronicle,
       version: @version,
-      elixir: "~> 1.14",
+      # grpc 0.11 depends on googleapis 0.1, which requires Elixir 1.18.
+      elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       # Protocol consolidation runs after `lib/` compiles, which would freeze the
       # Jason.Encoder dispatch table before ExUnit loads `test/**/*_test.exs`. Concept

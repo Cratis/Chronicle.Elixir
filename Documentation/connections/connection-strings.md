@@ -48,8 +48,8 @@ URL-encode reserved characters in a client id or secret, such as `@`, `:` and `/
 | `loadBalancer` | `least-connections` | How to pick among several hosts or SRV-resolved addresses: `least-connections`, `round-robin` or `random`. |
 | `srvNameServer` | system resolver | For `chronicle+srv://`, the DNS server to query, as `host` or `host:port`. |
 | `authPort` | the first host's port | Port for the `/connect/token` request, when it differs from the gRPC port. |
-| `certificatePath` | none | Parsed, but not applied in version 3.5.0. See [TLS](#tls). |
-| `certificatePassword` | none | Parsed, but not applied in version 3.5.0. |
+| `certificatePath` | none | Parsed, but not applied. See [TLS](#tls). |
+| `certificatePassword` | none | Parsed, but not applied. |
 
 A host without a port uses `35000`. IPv6 addresses use brackets, as in `chronicle://[::1]:35000`.
 
@@ -67,7 +67,7 @@ chronicle://client-id:client-secret@chronicle.example.com:35000?skipTlsValidatio
 With validation on, a self-signed or otherwise untrusted certificate fails the connection.
 :::
 
-The client has no client-certificate (mutual TLS) support in version 3.5.0. It parses `certificatePath` and `certificatePassword`, but doesn't use them to configure the connection.
+The client has no client-certificate (mutual TLS) support. It parses `certificatePath` and `certificatePassword`, but doesn't use them to configure the connection.
 
 To trust a private certificate authority, install it in the operating system's trust store and set `skipTlsValidation=false`. A gRPC credential passed as `:cred` through the `:grpc_options` client option replaces the default only for the gRPC channel: the client-credentials token request always follows `skipTlsValidation` and the system trust store.
 

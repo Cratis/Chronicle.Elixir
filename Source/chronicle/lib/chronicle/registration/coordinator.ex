@@ -393,10 +393,23 @@ defmodule Chronicle.Registration.Coordinator do
     identifier = read_model_module.__chronicle_read_model__(:id)
     model_name = identifier
 
+    {auto_map, no_auto_map_properties} = read_model_module.__chronicle_read_model__(:no_auto_map)
+
+    auto_map_fields = fn properties, event_module, kind ->
+      with_multi_word_auto_map(
+        properties,
+        event_module,
+        read_model_module,
+        auto_map,
+        no_auto_map_properties,
+        kind
+      )
+    end
+
     from_entries =
       read_model_module.__chronicle_read_model__(:from)
       |> Enum.map(fn {event_module, opts} ->
-        properties = build_properties(opts)
+        properties = opts |> build_properties() |> auto_map_fields.(event_module, :from)
         key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
         parent_key = Keyword.get(opts, :parent_key, "")
 
@@ -414,8 +427,9 @@ defmodule Chronicle.Registration.Coordinator do
     join_entries =
       read_model_module.__chronicle_read_model__(:join)
       |> Enum.map(fn {event_module, opts} ->
-        properties = build_properties(opts)
+        properties = opts |> build_properties() |> auto_map_fields.(event_module, :join)
         key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
+        # On names the read model property to join on, which keeps its snake_case name.
         on = opts |> Keyword.fetch!(:on) |> to_string()
 
         struct(KeyValuePair_EventType_JoinDefinition,
@@ -459,8 +473,6 @@ defmodule Chronicle.Registration.Coordinator do
           )
       end
 
-    {auto_map, no_auto_map_properties} = read_model_module.__chronicle_read_model__(:no_auto_map)
-
     struct(ProjectionDefinition,
       Identifier: identifier,
       ReadModel: model_name,
@@ -490,10 +502,23 @@ defmodule Chronicle.Registration.Coordinator do
     model_module = projection_module.__chronicle_projection__(:model)
     model_id = model_module.__chronicle_read_model__(:id)
 
+    {auto_map, no_auto_map_properties} = projection_module.__chronicle_projection__(:no_auto_map)
+
+    auto_map_fields = fn properties, event_module, kind ->
+      with_multi_word_auto_map(
+        properties,
+        event_module,
+        model_module,
+        auto_map,
+        no_auto_map_properties,
+        kind
+      )
+    end
+
     from_entries =
       projection_module.__chronicle_projection__(:from)
       |> Enum.map(fn {event_module, opts} ->
-        properties = build_properties(opts)
+        properties = opts |> build_properties() |> auto_map_fields.(event_module, :from)
         key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
         parent_key = Keyword.get(opts, :parent_key, "")
 
@@ -511,8 +536,9 @@ defmodule Chronicle.Registration.Coordinator do
     join_entries =
       projection_module.__chronicle_projection__(:join)
       |> Enum.map(fn {event_module, opts} ->
-        properties = build_properties(opts)
+        properties = opts |> build_properties() |> auto_map_fields.(event_module, :join)
         key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
+        # On names the read model property to join on, which keeps its snake_case name.
         on = opts |> Keyword.fetch!(:on) |> to_string()
 
         struct(KeyValuePair_EventType_JoinDefinition,
@@ -552,8 +578,6 @@ defmodule Chronicle.Registration.Coordinator do
             IncludeChildren: Enum.any?(declarations, &Keyword.get(&1, :include_children, false))
           )
       end
-
-    {auto_map, no_auto_map_properties} = projection_module.__chronicle_projection__(:no_auto_map)
 
     struct(ProjectionDefinition,
       Identifier: projection_id,
@@ -698,16 +722,79 @@ defmodule Chronicle.Registration.Coordinator do
     |> Map.new()
   end
 
-  defp resolve_expression(atom) when is_atom(atom) do
-    case atom do
-      :event_source_id -> "$eventSourceId"
-      :occurred -> "$occurred"
-      _ -> Atom.to_string(atom)
+  # Atoms name event fields. Events travel as camelCase JSON (see
+  # Chronicle.EventSequences.EventLog), so a multi-word field such as :owner_name has to be
+  # sent as "ownerName" for the kernel to find it. Booleans are atoms too, but they are
+  # constants, not field names. Strings are explicit Chronicle expressions and pass through.
+  defp resolve_expression(:event_source_id), do: "$eventSourceId"
+  defp resolve_expression(:occurred), do: "$occurred"
+  defp resolve_expression(bool) when is_boolean(bool), do: "$value(#{bool})"
+  defp resolve_expression(atom) when is_atom(atom), do: atom |> Atom.to_string() |> camelize()
+  defp resolve_expression(int) when is_integer(int), do: "$value(#{int})"
+  defp resolve_expression(float) when is_float(float), do: "$value(#{float})"
+  defp resolve_expression(str) when is_binary(str), do: str
+
+  # The kernel's AutoMap matches event and read model properties by name. Read models are stored
+  # with their snake_case field names while events travel as camelCase, so AutoMap only ever matches
+  # single-word names. For multi-word fields the read model shares with the event, add the mapping
+  # AutoMap would have made, following the kernel's own rules (ProjectionFactory in Chronicle):
+  # nothing for an aggregate-only from (every mapping is $count/$increment/$decrement/$add/$subtract),
+  # never over an explicit mapping or a no_auto_map field, and for joins never from an event field an
+  # explicit mapping already reads.
+  @aggregate_expressions ["$count", "$increment", "$decrement", "$add", "$subtract"]
+
+  @doc false
+  def with_multi_word_auto_map(
+        properties,
+        event_module,
+        model_module,
+        auto_map,
+        excluded,
+        kind \\ :from
+      ) do
+    if auto_map == :disabled or (kind == :from and aggregate_only?(properties)) do
+      properties
+    else
+      excluded = MapSet.new(excluded, &to_string/1)
+
+      consumed_event_fields =
+        if kind == :join, do: MapSet.new(Map.values(properties)), else: MapSet.new()
+
+      (struct_fields(model_module) -- [:__struct__])
+      |> Enum.filter(&(&1 in struct_fields(event_module)))
+      |> Enum.map(&Atom.to_string/1)
+      |> Enum.filter(&String.contains?(&1, "_"))
+      |> Enum.reject(fn field ->
+        Map.has_key?(properties, field) or MapSet.member?(excluded, field) or
+          MapSet.member?(consumed_event_fields, camelize(field))
+      end)
+      |> Enum.reduce(properties, fn field, acc -> Map.put(acc, field, camelize(field)) end)
     end
   end
 
-  defp resolve_expression(int) when is_integer(int), do: "$value(#{int})"
-  defp resolve_expression(str) when is_binary(str), do: str
+  defp aggregate_only?(properties) do
+    map_size(properties) > 0 and
+      Enum.all?(Map.values(properties), fn expression ->
+        is_binary(expression) and
+          Enum.any?(@aggregate_expressions, &String.starts_with?(expression, &1))
+      end)
+  end
+
+  defp struct_fields(module) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :__struct__, 0) do
+      module.__struct__() |> Map.keys()
+    else
+      []
+    end
+  end
+
+  @doc false
+  def camelize(name) when is_binary(name) do
+    case String.split(name, "_") do
+      [single] -> single
+      [head | tail] -> head <> Enum.map_join(tail, &String.capitalize/1)
+    end
+  end
 
   @doc false
   def resolve_key_expression(expr), do: resolve_expression(expr)

@@ -1,6 +1,8 @@
 ```elixir
 defmodule MyApp.ReadModels.MaterializedPaginationOrder do
-  defstruct [:customer_name, :total]
+  use Chronicle.ReadModels.ReadModel
+
+  defstruct customer_name: "", total: 0.0
 end
 
 defmodule MyApp.MaterializedPaginationAccessingApi do

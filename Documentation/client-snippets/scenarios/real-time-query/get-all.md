@@ -1,6 +1,8 @@
 ```elixir
 defmodule MyApp.ReadModels.ScenariosQueryGetAllBook do
-  defstruct [:title, :on_loan]
+  use Chronicle.ReadModels.ReadModel
+
+  defstruct title: "", on_loan: false
 end
 
 defmodule MyApp.ScenariosQueryOnLoanBooksService do

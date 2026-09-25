@@ -114,7 +114,7 @@ defmodule Chronicle.ConstraintsTest do
                  name: "email_per_tenant",
                  ignore_casing: false,
                  event_definitions: [%{event_type: AccountCreated, on: ["email", "tenant_id"]}],
-                 removed_with_event_type: UserDeleted
+                 removed_with_event_types: [UserDeleted]
                }
              ]
     end
@@ -246,6 +246,71 @@ defmodule Chronicle.ConstraintsTest do
       assert Map.get(scope, :EventStreamType) == "_scoped_"
       assert Map.get(scope, :EventStreamId) == "_scoped_"
       assert Map.get(scope, :EventSourceType) == ""
+    end
+  end
+
+  describe "removal events on the wire" do
+    alias Chronicle.Events.Constraints
+    alias Cratis.Chronicle.Contracts.Events.Constraints.Constraint
+
+    defmodule WireEmailRegistered do
+      use Chronicle.Events.EventType, id: "constraints-wire-email-registered"
+      defstruct email: ""
+      unique(:email, name: "WireEmail")
+    end
+
+    defmodule WireEmailReleased do
+      use Chronicle.Events.EventType, id: "constraints-wire-email-released"
+      defstruct []
+      remove_constraint("WireEmail")
+    end
+
+    defmodule WireAccountClosed do
+      use Chronicle.Events.EventType, id: "constraints-wire-account-closed"
+      defstruct []
+      remove_constraint("WireEmail")
+    end
+
+    test "sends every releasing event type as a list the contract can encode" do
+      [definition] =
+        Constraints.from_event_types([WireEmailRegistered, WireEmailReleased, WireAccountClosed])
+
+      {%Constraint{RemovedWith: removed_with} = wire, _message} =
+        Constraints.build_constraint(definition)
+
+      assert Enum.sort(removed_with) == [
+               "constraints-wire-account-closed",
+               "constraints-wire-email-released"
+             ]
+
+      assert byte_size(Constraint.encode(wire)) > 0
+    end
+
+    test "sends an empty list when nothing releases the constraint" do
+      [definition] = Constraints.from_event_types([WireEmailRegistered])
+
+      assert {%Constraint{RemovedWith: []}, _message} = Constraints.build_constraint(definition)
+    end
+  end
+
+  describe "unique properties on the wire" do
+    alias Chronicle.Events.Constraints
+    alias Cratis.Chronicle.Contracts.Events.Constraints.Constraint
+
+    defmodule WireOwnerEmailSet do
+      use Chronicle.Events.EventType, id: "constraints-wire-owner-email-set"
+      defstruct owner_email: ""
+      unique(:owner_email)
+    end
+
+    test "names multi-word properties the way the event is serialized, keeping the constraint name" do
+      [definition] = Constraints.from_event_types([WireOwnerEmailSet])
+
+      {%Constraint{Name: name, Definition: definition}, _message} =
+        Constraints.build_constraint(definition)
+
+      assert name == "owner_email"
+      assert [%{Properties: ["ownerEmail"]}] = definition."Value0"."EventDefinitions"
     end
   end
 end

@@ -83,6 +83,22 @@ defmodule Chronicle.AppendWireCase do
         %Wire.ForEventSourceIdAndEventTypesRequest{} ->
           struct(stream.response_mod, IsAuthorized: true, Data: [])
 
+        %Wire.HasEventsForEventSourceIdRequest{} ->
+          struct(stream.response_mod,
+            IsAuthorized: true,
+            Data: %Wire.EventSourceEventsResponse{
+              HasEvents: Map.get(responses, :has_events, false)
+            }
+          )
+
+        %Wire.TailSequenceNumberRequest{} ->
+          struct(stream.response_mod,
+            IsAuthorized: true,
+            Data: %Wire.EventSequenceTailResponse{
+              SequenceNumber: Map.get(responses, :tail_sequence_number, 0)
+            }
+          )
+
         _ ->
           payload_module =
             if match?(%Wire.AppendRequest{}, request),

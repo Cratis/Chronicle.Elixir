@@ -36,7 +36,7 @@ defp deps do
 end
 ```
 
-The client needs Elixir 1.18 or later: the package declares `~> 1.14`, but its `grpc` dependency pulls in `googleapis`, which requires 1.18. CI builds and tests with Elixir 1.19.5 on Erlang/OTP 28.5.
+The client needs Elixir 1.18 or later, because its `grpc` dependency pulls in `googleapis`, which requires 1.18. CI builds and tests with Elixir 1.19.5 on Erlang/OTP 28.5.
 
 ## Prerequisite: Chronicle running
 
@@ -108,16 +108,13 @@ alias Chronicle.Connections.Lifecycle
 {:ok, account} = Chronicle.read_model(MyApp.ReadModels.Account, "account-42")
 ```
 
-## Known limitations in 3.5.0
+## Known limitations
 
-- Reducers fail to register with the contracts versions the client resolves today (`UndefinedFunctionError` for `...Observation.Reducers.SinkDefinition`), so reducer read models stay empty. Use read models with projections instead.
-- Read model projections don't map multi-word event fields such as `owner_name` automatically or from atom expressions; use a camelCase string such as `set: [owner_name: "ownerName"]`.
-- Seeders append their events again every time the client registers.
-- Tail and next sequence number lookups return `{:ok, 0}` unless you pass `event_source_type: ""` and `event_stream_type: ""`.
 - The client skips TLS certificate validation unless the connection string sets `skipTlsValidation=false`.
 - `mix deps.get` reports advisories for `grpc 0.11.5`, which is pinned by the generated contracts package.
+- Version 3.5.0 had defects in read model mappings, reducer registration, constraint registration, seeding, read model paging, and sequence number lookups; use 3.5.1 or later.
 
-The [Elixir client documentation](Documentation/index.md) explains each one and its workaround.
+The [Elixir client documentation](Documentation/index.md) explains each one.
 
 ## Structure
 
