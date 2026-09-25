@@ -10,8 +10,7 @@ defmodule MyApp.ReadModels.MbNotRewindableAuditLog do
 
   defstruct id: "", message: "", timestamp: ""
 
-  # occurred_at travels as camelCase JSON.
   from MyApp.Events.MbNotRewindableAuditEvent,
-    set: [id: :event_source_id, message: :message, timestamp: "occurredAt"]
+    set: [id: :event_source_id, message: :message, timestamp: :occurred_at]
 end
 ```

@@ -4,14 +4,13 @@ defmodule MyApp.ReadModels.Book do
 
   defstruct id: "", title: "", isbn: "", on_loan: false, borrowed_by: ""
 
-  # Event fields travel as camelCase JSON, and constants use $value(...).
   from MyApp.Events.BookAdded,
-    set: [id: :event_source_id, title: :title, isbn: :isbn, on_loan: "$value(false)"]
+    set: [id: :event_source_id, title: :title, isbn: :isbn, on_loan: false]
 
   from MyApp.Events.BookBorrowed,
-    set: [on_loan: "$value(true)", borrowed_by: "memberName"]
+    set: [on_loan: true, borrowed_by: :member_name]
 
   from MyApp.Events.BookReturned,
-    set: [on_loan: "$value(false)"]
+    set: [on_loan: false]
 end
 ```

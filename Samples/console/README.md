@@ -7,7 +7,7 @@ An interactive, employee-focused console application built on the Chronicle Elix
 - Seeding Ada Lovelace, Grace Hopper, and Alan Turing through `EmployeeSeeder`
 - Employee lifecycle events: `EmployeeHired`, `EmployeePromoted`, `EmployeeMoved`, `EmployeeEmailSet`, and `EmployeeAddressSet`
 - A model-bound projection (`EmployeeDetails`) and a declarative projection (`EmployeeListProjection`)
-- Reducer-backed `EmployeeState` and `Customer` read models (see [Known issues](#known-issues))
+- Reducer-backed `EmployeeState` and `Customer` read models
 - Reacting to events in `HrNotificationReactor`, which prints console notifications
 - Model-bound constraints for unique employee hires and case-insensitive unique email addresses
 - Transactional multi-employee updates through `Chronicle.Transactions.UnitOfWork`
@@ -91,12 +91,3 @@ Two things are required for encryption to happen:
 
 - **A subject must be supplied on append.** The kernel derives the per-subject encryption key from it. The sample passes `subject: customer_id` when registering the customer. Without a subject, the kernel skips compliance.
 - **The event type must carry the PII metadata when it is first registered.** The kernel doesn't allow changing a registered event type's schema at the same generation (`EventTypeSchemaChanged`). If you ran the sample against a store before the PII markings were added, start from a clean store with `docker compose down -v`.
-
-## Known issues
-
-These come from `cratis_chronicle` 3.5.0 rather than from the sample:
-
-- **Reducers don't register.** The log repeats `Reducer ... failed to register` with an `UndefinedFunctionError` for `Cratis.Chronicle.Contracts.Observation.Reducers.SinkDefinition`. `R` and `V` report that no read model was found. `J` and `K` read projections, which work.
-- **Seeding repeats and seeded status reads as missing.** `Chronicle.has_events_for?/2` always returns `{:ok, false}`, so the seeder appends the employees' events again on every start, the start-up status shows each employee as `missing` after a 20-second wait, and `C` registers the customer again each time.
-- **Sequence numbers show as 0.** The sample reads tails with `Chronicle.get_tail_sequence_number/1`, which returns `{:ok, 0}` with its default filters, so messages report `at sequence 0` and `D` reports that the employee has no events yet.
-- **Projections map multi-word event fields with camelCase strings**, such as `first_name: "firstName"`, because automatic mapping and atom expressions don't resolve them. See `lib/console_sample/projections/`.
