@@ -71,9 +71,7 @@ The kernel sends the client a keepalive every second, and the client answers eac
 
 The channel reconnects with exponential backoff, starting at one second and capped at ten. Tune it with the `:reconnect_base_delay` and `:reconnect_max_delay` client options, in milliseconds. The client keeps retrying for as long as it runs.
 
-:::note[`:retry_attempts` has no effect in 3.5.0]
-`Chronicle.Client` accepts a `:retry_attempts` option, and the `Chronicle.Connections.Connection` documentation describes it as a maximum. Version 3.5.0 stores the value but never reads it, so reconnection doesn't give up after that number of attempts.
-:::
+The `:retry_attempts` option is accepted for backward compatibility and ignored; reconnection doesn't give up.
 
 Reactors register as replayable, and projections and reducers are rewindable. When an observer re-attaches, Chronicle resumes it from the last event it handled, so events appended while it was detached are delivered then, not skipped.
 
@@ -82,12 +80,12 @@ Reactors register as replayable, and projections and reducers are rewindable. Wh
 Appends and queries are not queued or retried while the client is disconnected. Treat them like any other remote call:
 
 - Expect `{:error, :not_connected}` while the client has no channel, and decide whether to retry, fail the request, or wait with `Lifecycle.wait_until/3`.
-- In version 3.5.0, a call that races a dying channel can exit the calling process instead of returning an error tuple, because the gRPC adapter's connection process is already gone. Make calls from supervised processes, or catch the exit where a crash is not acceptable.
+- A call that races a dying channel returns `{:error, %GRPC.RPCError{status: 14}}` (unavailable). A reply the gRPC transport can't read, such as the kernel rejecting an unauthenticated call, returns `{:error, %GRPC.RPCError{status: 13}}`. Version 3.5.0 raised or exited in the caller in both cases.
 - A successful `:ok` means Chronicle stored the event. An error from a call that timed out doesn't prove the write failed; see [Event sequences](../event-sequences.md#appending-and-waiting-for-observer-completion).
 
 ## Seeding waits for registration
 
-Seeders run each time the lifecycle reaches `:registered`: at startup and again after every reconnect. A failed seeding run is retried every five seconds. Seeding is designed to skip event sources that already have events, but in version 3.5.0 that check never finds any, so every run appends the seed events again. [Seeding](../seeding.md#how-it-runs) shows how to guard against duplicates.
+Seeders run each time the lifecycle reaches `:registered`: at startup and again after every reconnect. A failed seeding run is retried every five seconds. Seeding skips event sources that already have events, so running it again after a reconnect appends nothing new. See [Seeding](../seeding.md#how-it-runs).
 
 ## Failure isolation
 

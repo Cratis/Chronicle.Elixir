@@ -11,15 +11,6 @@ Reducers are shared Chronicle read-model behavior. Use the shared reducer docs f
 - [Reducer event processing](/chronicle/reducers/event-processing/)
 - [Elixir client setup](./get-started.md)
 
-:::caution[Reducers don't register in cratis_chronicle 3.5.0]
-Version 3.5.0 builds its reducer registration with a `SinkDefinition` message that the
-generated contracts it resolves (19.x) no longer contain. Every registration attempt logs
-`Reducer ... failed to register` with an `UndefinedFunctionError` for
-`Cratis.Chronicle.Contracts.Observation.Reducers.SinkDefinition` and retries, the reducer
-never receives events, and its read model reads as `{:ok, nil}`. Until a fixed client is
-released, build those read models with a [model-bound projection](/chronicle/projections/model-bound/)
-(`from/2` on a `Chronicle.ReadModels.ReadModel`) instead.
-:::
 
 ## Passive reducers
 

@@ -13,7 +13,7 @@ By the end, `iex -S mix` shows your read model coming back from Chronicle:
 
 ## Prerequisites
 
-- **Elixir 1.18 or later.** The package declares `~> 1.14`, but its current dependency graph needs more: `grpc 0.11.5` depends on `googleapis 0.1.0`, which requires Elixir `~> 1.18`. CI builds and tests the client with Elixir 1.19.5 on Erlang/OTP 28.5.
+- **Elixir 1.18 or later.** The client's `grpc` dependency pulls in `googleapis 0.1.0`, which requires Elixir `~> 1.18`. CI builds and tests the client with Elixir 1.19.5 on Erlang/OTP 28.5.
 - **Docker**, to run the Chronicle development kernel.
 - Basic familiarity with Mix projects and supervision trees.
 
@@ -94,11 +94,8 @@ defmodule MyApp.ReadModels.Account do
 end
 ```
 
-`owner` and `balance` have the same names on the event and the read model, so Chronicle maps them automatically. The only explicit mapping stores the event source id, the account id you append to, in `id`.
+`owner` and `balance` have the same names on the event and the read model, so they are mapped automatically. The only explicit mapping stores the event source id, the account id you append to, in `id`. When names differ, map the field yourself: `set: [owner: :owner_name]` reads the event's `owner_name` field.
 
-:::caution[Multi-word event fields need a camelCase expression in 3.5.0]
-Events travel to Chronicle as camelCase JSON, but version 3.5.0 sends atom expressions such as `:owner_name` unchanged. Automatic mapping and atom expressions therefore leave fields like `owner_name` or `initial_balance` empty, without an error. Until that is fixed, map them with the camelCase property name as a string, `set: [owner_name: "ownerName"]`, and use `"$value(true)"` rather than a bare `true` or `false` for a constant.
-:::
 
 ## Start the client
 
@@ -219,14 +216,14 @@ You now have a supervised client appending events and reading a projected read m
 
 **An append returns `{:error, {:constraint_violations, [...]}}` with `expected string but got number`.** A field on the event has no typed default. Give it one, such as `balance: 0`, and use a new event type id or a fresh event store, because the schema registered for the old id doesn't change.
 
-**The read model is `{:ok, nil}` or has empty fields.** Check, in order: the projection hasn't caught up yet (use `append_and_wait_for_completion/3`); the key you read with is the event source id you appended to; multi-word fields need the camelCase expression described in [Define a read model](#define-a-read-model).
+**The read model is `{:ok, nil}` or has empty fields.** Check, in order: the projection hasn't caught up yet (use `append_and_wait_for_completion/3`); the key you read with is the event source id you appended to; a field whose name differs between event and read model needs an explicit `set:` mapping, as described in [Define a read model](#define-a-read-model).
 
 **A call raises `ArgumentError` with `no persistent term stored with this key`.** No client with that name is running. Functions that take a `:client` option look it up by the `name:` the client was started with, which defaults to `Chronicle.Client`.
 
 ## Where to next
 
 - [Connections](connections/index.md) for connection strings, TLS, credentials and how the client recovers from dropped connections.
-- [Reactors](/chronicle/reactors/getting-started/) to react to events with side effects. The shared guides show Elixir tabs. Reducers don't register in version 3.5.0; see [Reducers](reducers.md).
+- [Reactors](/chronicle/reactors/getting-started/) and [Reducers](/chronicle/reducers/getting-started/) to react to events and build read models in your own process. The shared guides show Elixir tabs.
 - [Read models](/chronicle/read-models/) and [Projections](/chronicle/projections/) to query and shape projected state.
 - [Constraints](/chronicle/constraints/), [Concurrency](/chronicle/events/concurrency/) and [Transactions](/chronicle/events/transactions/) for append-time rules.
 - [Context management](context.md) to record who caused each event and why.

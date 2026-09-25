@@ -86,31 +86,7 @@ Mirrors the C# and TypeScript clients' `GetNextSequenceNumber()`.
 {:ok, next} = Chronicle.EventSequences.EventLog.get_next_sequence_number(event_source_id)
 ```
 
-:::caution[Pass empty stream filters in 3.5.0]
-Version 3.5.0 sends `"Default"` as the event source type and event stream type filter
-when you don't pass them. Against 19.4.8 and 19.6.1 kernels that filter matches nothing, so both
-functions return `{:ok, 0}` however many events are stored. Pass empty strings to look
-across all event source and stream types:
-
-```elixir
-alias Chronicle.EventSequences.EventLog
-
-{:ok, tail} =
-  EventLog.get_tail_sequence_number(event_source_id,
-    event_source_type: "",
-    event_stream_type: ""
-  )
-
-{:ok, next} =
-  EventLog.get_next_sequence_number(event_source_id,
-    event_source_type: "",
-    event_stream_type: ""
-  )
-```
-
-The same applies to `Chronicle.get_tail_sequence_number/2`, which delegates to
-`get_tail_sequence_number/2`.
-:::
+Leaving `:event_source_type` and `:event_stream_type` out looks across every source and stream type. Version 3.5.0 narrowed an omitted value to `"Default"` and returned `{:ok, 0}` however many events were stored; upgrade to 3.5.1 or later.
 
 `get_tail_sequence_number_for_observer/2` scopes the tail lookup to only the event types a
 reactor or reducer module subscribes to (its `@handles` declarations), instead of every
@@ -193,5 +169,4 @@ stored:
   is stored. Don't retry the append blindly on `{:error, _}`; check the event log or use a
   [concurrency scope](/chronicle/events/concurrency/) so a retry can't store the event twice.
 
-There is no append-many variant: waiting after `append_many/3` isn't supported in version
-3.5.0.
+There is no append-many variant: waiting after `append_many/3` isn't supported.
