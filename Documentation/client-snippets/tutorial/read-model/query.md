@@ -1,14 +1,11 @@
 ```elixir
-defmodule MyApp.ReadModels.TutorialQueryBook do
-  defstruct [:title, :on_loan]
-end
-
 defmodule MyApp.TutorialQueryBooksService do
-  alias MyApp.ReadModels.TutorialQueryBook
+  alias MyApp.ReadModels.Book
 
   def on_loan do
-    {:ok, books} = Chronicle.all(TutorialQueryBook)
-    Enum.filter(books, & &1.on_loan)
+    with {:ok, books} <- Chronicle.all(Book) do
+      {:ok, Enum.filter(books, & &1.on_loan)}
+    end
   end
 end
 ```
