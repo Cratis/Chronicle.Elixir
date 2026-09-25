@@ -12,6 +12,11 @@ defmodule MyApp.ScenariosQueryBookWatcher do
     end
   end
 
+  # The stream failed and the watch ended; call watch/0 again to resume.
+  def handle_message({:chronicle_read_model_watch_error, ScenariosQueryBook, reason}) do
+    IO.puts("Watch ended: #{inspect(reason)}")
+  end
+
   def stop(watcher), do: Chronicle.ReadModels.unwatch(watcher)
 end
 ```
