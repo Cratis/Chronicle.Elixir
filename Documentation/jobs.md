@@ -1,4 +1,7 @@
-# Jobs
+---
+title: Jobs
+description: List, inspect, stop, resume and delete Chronicle jobs such as replays from the Elixir client.
+---
 
 `Chronicle.Jobs` provides an idiomatic Elixir API for inspecting and controlling Chronicle jobs.
 
@@ -11,7 +14,7 @@ Start `Chronicle.Client` first:
 ```elixir
 children = [
   {Chronicle.Client,
-    connection_string: "chronicle://localhost:35000",
+    connection_string: "chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000",
     event_store: "banking",
     otp_app: :my_app}
 ]

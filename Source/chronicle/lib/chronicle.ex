@@ -13,7 +13,7 @@ defmodule Chronicle do
 
   Add the dependency to your `mix.exs`:
 
-      {:cratis_chronicle, "~> 0.1"}
+      {:cratis_chronicle, "~> 3.5"}
 
   Start `Chronicle.Client` in your application supervision tree:
 

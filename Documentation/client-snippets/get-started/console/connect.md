@@ -6,7 +6,8 @@ defmodule MyApp.Application do
   def start(_type, _args) do
     children = [
       {Chronicle.Client,
-       connection_string: "chronicle://localhost:35000",
+       # The local development kernel's well-known credentials.
+       connection_string: Chronicle.Connections.ConnectionString.development(),
        event_store: "quickstart",
        otp_app: :my_app}
     ]
@@ -17,8 +18,13 @@ end
 ```
 
 ```elixir title="Confirm the connection"
+alias Chronicle.Connections.Lifecycle
+
+# Wait until the client has connected and registered its event types and read models.
+:ok = Lifecycle.wait_until(Lifecycle.name_for(Chronicle.Client), :registered)
+
 {:ok, event_stores} = Chronicle.get_event_stores()
-IO.puts("Connected to event store: #{Enum.at(event_stores, 0)}")
+IO.puts("Event stores: #{Enum.join(event_stores, ", ")}")
 
 # Use Chronicle.* functions for the lifetime of your program — appending, querying, and so on.
 ```

@@ -1,4 +1,7 @@
-# External Services
+---
+title: External services
+description: Register HTTP and database external service definitions with Chronicle from the Elixir client.
+---
 
 `Chronicle.ExternalServices` provides an idiomatic Elixir API for registering external service definitions with Chronicle.
 

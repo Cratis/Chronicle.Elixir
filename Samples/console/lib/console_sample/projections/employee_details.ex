@@ -4,8 +4,12 @@
 defmodule ConsoleSample.Projections.EmployeeDetails do
   @moduledoc """
   Model-bound projection — the projection definition lives directly inside the read model
-  via `from` macros. The projection engine auto-maps properties with matching names; only
-  `EmployeePromoted` needs an explicit mapping because the event field is `new_title`.
+  via `from` macros. The projection engine auto-maps properties with matching single-word
+  names such as `title` and `city`.
+
+  Multi-word fields are mapped explicitly with their camelCase wire names: events travel as
+  camelCase JSON, and in cratis_chronicle 3.5.0 neither auto-mapping nor atom expressions
+  such as `:first_name` resolve them.
   """
 
   use Chronicle.ReadModels.ReadModel
@@ -26,8 +30,8 @@ defmodule ConsoleSample.Projections.EmployeeDetails do
             zip_code: "",
             country: ""
 
-  from EmployeeHired
-  from EmployeePromoted, set: [title: :new_title]
-  from EmployeeAddressSet
-  from EmployeeMoved
+  from EmployeeHired, set: [first_name: "firstName", last_name: "lastName"]
+  from EmployeePromoted, set: [title: "newTitle"]
+  from EmployeeAddressSet, set: [zip_code: "zipCode"]
+  from EmployeeMoved, set: [zip_code: "zipCode"]
 end
