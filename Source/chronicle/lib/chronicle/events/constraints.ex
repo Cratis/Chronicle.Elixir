@@ -28,6 +28,8 @@ defmodule Chronicle.Events.Constraints do
   during client startup via `Chronicle.Client`.
   """
 
+  alias Chronicle.Registration.Coordinator
+
   alias Cratis.Chronicle.Contracts.Events.Constraints.{
     Constraints,
     RegisterConstraintsRequest,
@@ -95,7 +97,8 @@ defmodule Chronicle.Events.Constraints do
         |> Map.get(:remove_constraint, [])
         |> Enum.map(&{normalize_constraint_name(&1), event_type})
       end)
-      |> Map.new()
+      # Several event types can release the same constraint.
+      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
 
     unique_constraints =
       event_types
@@ -185,7 +188,7 @@ defmodule Chronicle.Events.Constraints do
       struct(Constraint,
         Name: name,
         Type: :Unique,
-        RemovedWith: removed_with_event_type_id(constraint),
+        RemovedWith: removed_with_event_type_ids(constraint),
         Definition: definition,
         Scope: build_constraint_scope(Map.get(constraint, :scope, []))
       )
@@ -205,7 +208,7 @@ defmodule Chronicle.Events.Constraints do
       struct(Constraint,
         Name: name,
         Type: :UniqueEventType,
-        RemovedWith: removed_with_event_type_id(constraint),
+        RemovedWith: removed_with_event_type_ids(constraint),
         Definition: definition
       )
 
@@ -234,16 +237,21 @@ defmodule Chronicle.Events.Constraints do
   defp build_unique_event_definition(%{event_type_id: event_type_id, on: properties}) do
     struct(UniqueConstraintEventDefinition,
       EventTypeId: event_type_id,
-      Properties: List.wrap(properties)
+      Properties: wire_properties(properties)
     )
   end
 
   defp build_unique_event_definition(%{event_type: event_type, on: properties}) do
     struct(UniqueConstraintEventDefinition,
       EventTypeId: event_type.__chronicle_event_type__(:id),
-      Properties: List.wrap(properties)
+      Properties: wire_properties(properties)
     )
   end
+
+  # Events travel as camelCase JSON, so the kernel must look for owner_email as ownerEmail.
+  # Only the wire value changes; constraint names keep the declared field name.
+  defp wire_properties(properties),
+    do: properties |> List.wrap() |> Enum.map(&(&1 |> to_string() |> Coordinator.camelize()))
 
   # Mirrors C#'s IConstraintBuilder.PerEventSourceType()/PerEventStreamType()/
   # PerEventStreamId(): each dimension is a boolean flag, encoded on the wire
@@ -391,14 +399,17 @@ defmodule Chronicle.Events.Constraints do
 
   defp with_removed_with_event_type(definition, nil), do: definition
 
-  defp with_removed_with_event_type(definition, event_type) do
-    Map.put(definition, :removed_with_event_type, event_type)
+  defp with_removed_with_event_type(definition, event_types) do
+    Map.put(definition, :removed_with_event_types, List.wrap(event_types))
   end
 
-  defp removed_with_event_type_id(%{removed_with_event_type: event_type})
-       when not is_nil(event_type) do
-    event_type.__chronicle_event_type__(:id)
-  end
+  # RemovedWith is a repeated field: every event type that releases the constraint.
+  defp removed_with_event_type_ids(%{removed_with_event_types: event_types}),
+    do: Enum.map(event_types, & &1.__chronicle_event_type__(:id))
 
-  defp removed_with_event_type_id(_), do: ""
+  defp removed_with_event_type_ids(%{removed_with_event_type: event_type})
+       when not is_nil(event_type),
+       do: [event_type.__chronicle_event_type__(:id)]
+
+  defp removed_with_event_type_ids(_), do: []
 end

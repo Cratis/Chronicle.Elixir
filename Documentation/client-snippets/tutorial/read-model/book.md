@@ -2,7 +2,7 @@
 defmodule MyApp.ReadModels.Book do
   use Chronicle.ReadModels.ReadModel
 
-  defstruct id: nil, title: nil, isbn: nil, on_loan: false, borrowed_by: nil
+  defstruct id: "", title: "", isbn: "", on_loan: false, borrowed_by: ""
 
   from MyApp.Events.BookAdded,
     set: [id: :event_source_id, title: :title, isbn: :isbn, on_loan: false]

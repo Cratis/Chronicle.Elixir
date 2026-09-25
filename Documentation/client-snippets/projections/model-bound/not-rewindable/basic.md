@@ -1,3 +1,16 @@
-```text
-Elixir does not support this workflow yet.
+```elixir
+defmodule MyApp.Events.MbNotRewindableAuditEvent do
+  use Chronicle.Events.EventType, id: "mb-not-rewindable-audit-event"
+
+  defstruct message: "", occurred_at: ""
+end
+
+defmodule MyApp.ReadModels.MbNotRewindableAuditLog do
+  use Chronicle.ReadModels.ReadModel, not_rewindable: true
+
+  defstruct id: "", message: "", timestamp: ""
+
+  from MyApp.Events.MbNotRewindableAuditEvent,
+    set: [id: :event_source_id, message: :message, timestamp: :occurred_at]
+end
 ```

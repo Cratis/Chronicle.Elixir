@@ -1,14 +1,9 @@
 ```elixir
-defmodule MyApp.ReadModels.TutorialBorrowedBook do
-  defstruct [:member_name]
-end
-
 defmodule MyApp.TutorialBorrowedBooksService do
-  alias MyApp.ReadModels.TutorialBorrowedBook
+  alias MyApp.ReadModels.BorrowedBook
 
   def all do
-    {:ok, borrowed_books} = Chronicle.all(TutorialBorrowedBook)
-    borrowed_books
+    Chronicle.all(BorrowedBook)
   end
 end
 ```

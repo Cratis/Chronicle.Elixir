@@ -23,8 +23,7 @@ defmodule Chronicle.Reducers.Handler do
     RegisterReducer,
     ReducerResult,
     EventTypeWithKeyExpression,
-    ObserverFilters,
-    SinkDefinition
+    ObserverFilters
   }
 
   alias Cratis.Chronicle.Contracts.Observation.Reducers.EventType, as: ProtoEventType
@@ -172,7 +171,11 @@ defmodule Chronicle.Reducers.Handler do
     end
   end
 
-  defp build_registration(state, conn_id) do
+  # The reducer's sink is part of its read model's registration (see
+  # Chronicle.Registration.Coordinator); the reducer definition itself carries none.
+  # Public so the registration message can be asserted directly in a spec.
+  @doc false
+  def build_registration(state, conn_id) do
     event_types =
       Enum.map(state.event_type_map, fn {id, module} ->
         struct(EventTypeWithKeyExpression,
@@ -203,7 +206,6 @@ defmodule Chronicle.Reducers.Handler do
                   EventTypes: event_types,
                   ReadModel: model_id,
                   IsActive: state.module.__chronicle_reducer__(:active),
-                  Sink: struct(SinkDefinition, TypeId: state.default_sink_type_id),
                   Tags: [],
                   Filters: struct(ObserverFilters)
                 )

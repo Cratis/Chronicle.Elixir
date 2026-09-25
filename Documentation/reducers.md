@@ -11,6 +11,7 @@ Reducers are shared Chronicle read-model behavior. Use the shared reducer docs f
 - [Reducer event processing](/chronicle/reducers/event-processing/)
 - [Elixir client setup](./get-started.md)
 
+
 ## Passive reducers
 
 `use Chronicle.Reducers.Reducer` accepts an `:active` option, defaulting to `true`. Set it

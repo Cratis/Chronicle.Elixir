@@ -415,12 +415,16 @@ defmodule Chronicle.Connections.ConnectionTest do
 
       # The token travels per RPC via the interceptor — never as a channel
       # header, where its expiry would silently invalidate the channel.
-      assert [{Chronicle.Connections.AuthInterceptor, provider: provider}] = opts[:interceptors]
+      assert [
+               {Chronicle.Connections.AuthInterceptor, provider: provider},
+               Chronicle.Connections.TransportFailureInterceptor
+             ] = opts[:interceptors]
+
       assert is_pid(provider) and Process.alive?(provider)
       assert opts[:headers] == []
     end
 
-    test "keeps the static api-key as a channel header without an interceptor" do
+    test "keeps the static api-key as a channel header without an auth interceptor" do
       test_pid = self()
       channel = channel_with_conn(self())
 
@@ -437,7 +441,7 @@ defmodule Chronicle.Connections.ConnectionTest do
       assert Connection.connect(conn, 1_000) == :ok
       assert_receive {:opts, opts}
       assert opts[:headers] == [{"api-key", "abc"}]
-      refute Keyword.has_key?(opts, :interceptors)
+      assert opts[:interceptors] == [Chronicle.Connections.TransportFailureInterceptor]
     end
 
     test "adds no auth at all without credentials" do
@@ -456,7 +460,7 @@ defmodule Chronicle.Connections.ConnectionTest do
       assert Connection.connect(conn, 1_000) == :ok
       assert_receive {:opts, opts}
       assert opts[:headers] == []
-      refute Keyword.has_key?(opts, :interceptors)
+      assert opts[:interceptors] == [Chronicle.Connections.TransportFailureInterceptor]
     end
   end
 

@@ -16,9 +16,10 @@ Elixir client and not yet covered by the shared docs above.
 
 ## Redacting events
 
-Redaction permanently erases an event's content for compliance/GDPR erasure. Unlike
-compliance encryption (reversible via key rotation), this overwrites the event's content
-in the log for good. Mirrors the C# and TypeScript clients' `IEventSequence.Redact()`.
+Redaction permanently erases an event's content, for example to honor a GDPR erasure
+request. It works on events, not on keys: [compliance](/chronicle/compliance/) encrypts
+PII and makes it unreadable by deleting a subject's key, while redaction overwrites the
+stored event itself. Neither can be undone. Mirrors the C# and TypeScript clients' `IEventSequence.Redact()`.
 
 Redact a single event by its sequence number, with a reason:
 
@@ -49,8 +50,10 @@ the third argument:
   )
 ```
 
-Both functions accept the same options as `append/3` (`:client`, `:namespace`,
-`:event_sequence_id`).
+Both functions accept `:client`, `:namespace` and `:event_sequence_id`, plus the
+`:correlation_id`, `:identity` and `:causation` context overrides described in
+[Context management](context.md). They ignore the other `append/3` options, such as
+`:tags`, `:subject` and `:concurrency_scope`.
 
 ## Reading forward from a sequence number
 
@@ -66,6 +69,10 @@ TypeScript clients' `GetFromSequenceNumber()`.
   )
 ```
 
+The list holds the generated contract structs,
+`%Cratis.Chronicle.Contracts.Sequences.AppendedEventResponse{}`, not your event structs.
+Each carries its metadata in `Context` and the event's JSON in its content field.
+
 ## Sequence numbers
 
 `get_tail_sequence_number/2` returns the sequence number of the last appended event.
@@ -78,6 +85,8 @@ Mirrors the C# and TypeScript clients' `GetNextSequenceNumber()`.
 {:ok, tail} = Chronicle.EventSequences.EventLog.get_tail_sequence_number(event_source_id)
 {:ok, next} = Chronicle.EventSequences.EventLog.get_next_sequence_number(event_source_id)
 ```
+
+Leaving `:event_source_type` and `:event_stream_type` out looks across every source and stream type. Version 3.5.0 narrowed an omitted value to `"Default"` and returned `{:ok, 0}` however many events were stored; upgrade to 3.5.1 or later.
 
 `get_tail_sequence_number_for_observer/2` scopes the tail lookup to only the event types a
 reactor or reducer module subscribes to (its `@handles` declarations), instead of every
@@ -111,11 +120,14 @@ appended to it. The default stream can never be completed.
 
 ```elixir
 case Chronicle.EventSequences.EventLog.complete_stream("audit-trail", "2024") do
-  {:ok, tail_sequence_number} -> :ok
+  {:ok, _tail_sequence_number} -> :ok
   {:error, :default_stream_cannot_be_completed} -> :error
   {:error, :already_completed} -> :ok
+  {:error, reason} -> {:error, reason}
 end
 ```
+
+The last clause covers transport errors such as `{:error, :not_connected}`.
 
 ## Appending and waiting for observer completion
 
@@ -132,14 +144,29 @@ case Chronicle.EventSequences.EventLog.append_and_wait_for_completion(
   {:ok, %{success: true, failed_partitions: []}} ->
     :ok
 
-  {:ok, %{success: false, failed_partitions: failed_partitions}} ->
-    # One or more observers failed or timed out — inspect failed_partitions
+  {:ok, %{success: false, failed_partitions: _failed_partitions}} ->
+    # One or more observers failed on the event — inspect failed_partitions
     # (a list of `Chronicle.FailedPartitions.FailedPartition`).
     :error
 
   {:error, reason} ->
-    :error
+    # The append failed, or it succeeded and the wait failed. See below.
+    {:error, reason}
 end
 ```
 
 Pass `:timeout` (milliseconds) to override the default wait.
+
+Read the three outcomes carefully, because an error doesn't always mean the event wasn't
+stored:
+
+- `{:ok, %{success: true}}`: the event is stored and every affected observer has processed it.
+- `{:ok, %{success: false, failed_partitions: ...}}`: the event is stored, but at least one
+  observer failed on it.
+- `{:error, reason}`: either the append failed, or the append succeeded and the wait itself
+  failed. A wait that runs past the gRPC deadline returns
+  `{:error, %GRPC.RPCError{status: 4, message: "Deadline Exceeded"}}` even though the event
+  is stored. Don't retry the append blindly on `{:error, _}`; check the event log or use a
+  [concurrency scope](/chronicle/events/concurrency/) so a retry can't store the event twice.
+
+There is no append-many variant: waiting after `append_many/3` isn't supported.

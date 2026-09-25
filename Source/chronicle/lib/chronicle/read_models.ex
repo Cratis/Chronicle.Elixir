@@ -67,7 +67,7 @@ defmodule Chronicle.ReadModels do
     """
 
     @enforce_keys [:instances, :total_count, :page, :page_size]
-    defstruct instances: [], total_count: 0, page: 1, page_size: 50
+    defstruct instances: [], total_count: 0, page: 0, page_size: 50
 
     @type t :: %__MODULE__{
             instances: [struct()],
@@ -230,7 +230,8 @@ defmodule Chronicle.ReadModels do
 
   @event_log_id "event-log"
   @unlimited_event_count 18_446_744_073_709_551_615
-  @default_page 1
+  # The kernel skips page * page_size instances, so page 0 is the first page.
+  @default_page 0
   @default_page_size 50
 
   @doc """
@@ -372,7 +373,7 @@ defmodule Chronicle.ReadModels do
     * `:client` — the client name (default: `Chronicle.Client`)
     * `:namespace` — overrides the client's default namespace
     * `:occurrence` — optional occurrence/container name for a replayed read model
-    * `:page` — page number (default: `1`)
+    * `:page` — zero-based page number (default: `0`, the first page)
     * `:page_size` — page size (default: `50`)
   """
   @spec query(module(), keyword()) :: {:ok, QueryResult.t()} | {:error, term()}
@@ -381,7 +382,7 @@ defmodule Chronicle.ReadModels do
       namespace = Keyword.get(opts, :namespace, config.namespace)
       model_id = read_model_id(model_module)
       occurrence = Keyword.get(opts, :occurrence, "")
-      page = positive_integer_option(opts, :page, @default_page)
+      page = non_negative_integer_option(opts, :page, @default_page)
       page_size = positive_integer_option(opts, :page_size, @default_page_size)
 
       request =
@@ -843,6 +844,17 @@ defmodule Chronicle.ReadModels do
   defp decode_source(1), do: :code
   defp decode_source(2), do: :user
   defp decode_source(_), do: :unknown
+
+  defp non_negative_integer_option(opts, key, default) do
+    case Keyword.get(opts, key, default) do
+      value when is_integer(value) and value >= 0 ->
+        value
+
+      value ->
+        raise ArgumentError,
+              "expected #{inspect(key)} to be a non-negative integer, got: #{inspect(value)}"
+    end
+  end
 
   defp positive_integer_option(opts, key, default) do
     case Keyword.get(opts, key, default) do

@@ -48,4 +48,45 @@ defmodule Chronicle.EventSequences.ReadNarrowingTest do
       assert request."EventSourceType" == " Account "
     end
   end
+
+  describe "get_tail_sequence_number/2" do
+    test "leaves the source and stream type unnarrowed when none is given", %{opts: opts} do
+      EventLog.get_tail_sequence_number("source", opts)
+      request = take_request()
+
+      assert [request."EventSourceType", request."EventStreamType", request."EventStreamId"] ==
+               ["", "", ""]
+    end
+
+    test "sends the source and stream type it was given", %{opts: opts} do
+      EventLog.get_tail_sequence_number(
+        "source",
+        opts ++ [event_source_type: "Order", event_stream_type: "Audit"]
+      )
+
+      request = take_request()
+
+      assert [request."EventSourceType", request."EventStreamType"] == ["Order", "Audit"]
+    end
+
+    test "returns the sequence number from the query result", %{opts: opts} do
+      put_response(:tail_sequence_number, 41)
+
+      assert EventLog.get_tail_sequence_number("source", opts) == {:ok, 41}
+    end
+  end
+
+  describe "has_events_for?/2" do
+    test "reads the answer from the query result envelope", %{opts: opts} do
+      put_response(:has_events, true)
+
+      assert EventLog.has_events_for?("source", opts) == {:ok, true}
+    end
+
+    test "reports false when the event source has no events", %{opts: opts} do
+      put_response(:has_events, false)
+
+      assert EventLog.has_events_for?("source", opts) == {:ok, false}
+    end
+  end
 end

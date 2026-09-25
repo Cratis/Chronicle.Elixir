@@ -165,7 +165,9 @@ defmodule Chronicle.Projections.VariantReclassifierTest do
       join_value = field(build_completed_join, :Value)
       assert field(join_value, :On) == "id"
       assert field(join_value, :Key) == "$eventSourceId"
-      assert field(join_value, :Properties)["build_status"] == "build_status"
+      # The read model property keeps its snake_case name; the event field is read by its
+      # camelCase wire name.
+      assert field(join_value, :Properties)["build_status"] == "buildStatus"
     end
   end
 

@@ -1,4 +1,7 @@
-# Event Store Discovery
+---
+title: Event store discovery
+description: List the event stores on a Chronicle kernel and the namespaces in an event store from the Elixir client.
+---
 
 Chronicle Elixir provides APIs to query information about available event stores and their namespaces from the Chronicle kernel. This is useful for administrative tasks, multi-tenant applications, and debugging. See [Event Store](/chronicle/concepts/event-store/) and [Namespaces](/chronicle/concepts/namespaces/) for what these concepts mean and how they relate to multi-tenancy — this page covers the Elixir-specific discovery APIs for listing and verifying them at runtime.
 
@@ -120,31 +123,38 @@ end
 
 ### Multi-Store Operations
 
+`get_event_stores/1` lists every event store on the kernel, but reading from one still goes through a client. The `:client` option on reads and appends names a running `Chronicle.Client`, by the `name:` it was started with; it doesn't accept an event store name. To work with several event stores, start one named client per store and pass that name:
+
+```elixir
+children = [
+  Supervisor.child_spec(
+    {Chronicle.Client, name: :orders, connection_string: connection_string, event_store: "orders"},
+    id: :orders
+  ),
+  Supervisor.child_spec(
+    {Chronicle.Client, name: :billing, connection_string: connection_string, event_store: "billing"},
+    id: :billing
+  )
+]
+
+Supervisor.start_link(children, strategy: :one_for_one)
+```
+
+Each client needs its own child id, because every `Chronicle.Client` child spec defaults to the same id. Once the clients are running, pass the name to target one:
+
+```elixir
+{:ok, orders} = Chronicle.all(MyApp.ReadModels.Order, client: :orders)
+```
+
+Namespaces are different: `get_namespaces/1` takes an `:event_store` option directly, so one client can inspect any store:
+
 ```elixir
 defmodule MyApp.MultiStore do
-  def list_all_entities() do
-    with {:ok, stores} <- Chronicle.get_event_stores() do
-      Enum.flat_map(stores, fn store_name ->
-        case Chronicle.all(MyApp.ReadModels.Entity, client: store_name) do
-          {:ok, entities} -> entities
-          {:error, _} -> []
-        end
-      end)
-    else
-      {:error, _} -> []
-    end
-  end
-
-  def get_global_stats() do
+  def namespace_counts do
     with {:ok, stores} <- Chronicle.get_event_stores() do
       Enum.map(stores, fn store_name ->
-        with {:ok, namespaces} <- Chronicle.get_namespaces(event_store: store_name) do
-          %{
-            store: store_name,
-            namespace_count: Enum.count(namespaces),
-            namespaces: namespaces
-          }
-        else
+        case Chronicle.get_namespaces(event_store: store_name) do
+          {:ok, namespaces} -> %{store: store_name, namespace_count: length(namespaces)}
           {:error, reason} -> %{store: store_name, error: reason}
         end
       end)
@@ -173,24 +183,27 @@ Chronicle.get_namespaces(client: :analytics, event_store: "analytics")
 
 ## Error Handling
 
-Both functions return `{:ok, list}` on success or `{:error, reason}` on failure:
+Both functions return `{:ok, list}` on success or `{:error, reason}` on failure. `{:error, :not_connected}` means the client hasn't connected yet or is reconnecting; see [Resilience](connections/resilience.md).
 
 ```elixir
 case Chronicle.get_namespaces() do
   {:ok, namespaces} ->
     IO.puts("Namespaces: #{inspect(namespaces)}")
+
+  {:error, :not_connected} ->
+    IO.puts("Chronicle is not connected yet")
+
   {:error, reason} ->
-    case reason do
-      :no_client -> IO.puts("Chronicle.Client not started")
-      _ -> IO.puts("Error: #{inspect(reason)}")
-    end
+    IO.puts("Error: #{inspect(reason)}")
 end
 ```
+
+Passing a `:client` name that no running client uses raises `ArgumentError` (`no persistent term stored with this key`) instead of returning an error tuple.
 
 ## See Also
 
 - `Chronicle.EventStores` — low-level event store discovery
 - `Chronicle` — high-level API
-- `README.md` — quick start guide
-- Configuration options in `Chronicle.Client`
+- [Get started](get-started.md): install the client and start `Chronicle.Client`
+- `Chronicle.Client`: client configuration options
 - [Event Store](/chronicle/concepts/event-store/) and [Namespaces](/chronicle/concepts/namespaces/) — the shared concepts behind event stores and namespace-scoped tenancy

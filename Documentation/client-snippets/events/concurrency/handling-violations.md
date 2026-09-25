@@ -2,7 +2,7 @@
 defmodule MyApp.Events.ConcurrencySafeAccountOpened do
   use Chronicle.Events.EventType, id: "concurrency-safe-account-opened"
 
-  defstruct [:account_name]
+  defstruct account_name: ""
 end
 
 defmodule MyApp.ConcurrencySafeAccountService do
@@ -23,9 +23,9 @@ defmodule MyApp.ConcurrencySafeAccountService do
         :ok ->
           true
 
-        {:error, {:append_errors, _errors}} ->
-          # A concurrency violation surfaces as an append error — retry against
-          # the state the winner produced, or surface the conflict.
+        {:error, {:concurrency_violations, _violations}} ->
+          # Another append got there first — retry against the state the winner
+          # produced, or surface the conflict.
           false
 
         {:error, _reason} ->

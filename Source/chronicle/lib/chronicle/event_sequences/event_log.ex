@@ -440,8 +440,8 @@ defmodule Chronicle.EventSequences.EventLog do
     * `:client` — the client name (default: `Chronicle.Client`)
     * `:namespace` — overrides the client's default namespace
     * `:event_sequence_id` — event sequence id (default: `"event-log"`)
-    * `:event_source_type` — the event source type to filter by (default: `"Default"`)
-    * `:event_stream_type` — the event stream type to filter by (default: `"Default"`)
+    * `:event_source_type` — the event source type to filter by (default: all)
+    * `:event_stream_type` — the event stream type to filter by (default: all)
     * `:event_stream_id` — the event stream id to filter by (default: all)
     * `:event_types` — list of event type modules to filter by (default: all)
   """
@@ -634,16 +634,23 @@ defmodule Chronicle.EventSequences.EventLog do
           EventSourceId: event_source_id
         )
 
+      # The kernel wraps the answer in a query result envelope; HasEvents lives on its Data.
       case EventSequences.Stub.has_events_for_event_source_id(channel, request) do
-        {:ok, response} ->
-          has_events = Map.get(response, :HasEvents, Map.get(response, :has_events, false))
-          {:ok, has_events}
+        {:ok, envelope} ->
+          with {:ok, data} <- WireResult.unwrap(envelope) do
+            {:ok, has_events?(data)}
+          end
 
         {:error, reason} ->
           {:error, reason}
       end
     end
   end
+
+  defp has_events?(%{} = data),
+    do: Map.get(data, :HasEvents, Map.get(data, :has_events, false)) == true
+
+  defp has_events?(_), do: false
 
   defp do_append(event_sequence_id, event_source_id, event, opts) do
     case raw_append(event_sequence_id, event_source_id, event, opts) do
@@ -1079,9 +1086,11 @@ defmodule Chronicle.EventSequences.EventLog do
           EventSequenceId: event_sequence_id,
           EventSourceId: event_source_id || "",
           EventTypeIds: event_type_ids,
-          EventSourceType: Keyword.get(opts, :event_source_type, "Default"),
+          # An omitted dimension stays empty so the lookup isn't narrowed to the legacy
+          # "Default" route, which matches no event appended without an explicit route.
+          EventSourceType: Keyword.get(opts, :event_source_type, ""),
           EventStreamId: Keyword.get(opts, :event_stream_id, ""),
-          EventStreamType: Keyword.get(opts, :event_stream_type, "Default")
+          EventStreamType: Keyword.get(opts, :event_stream_type, "")
         )
 
       case EventSequences.Stub.tail_sequence_number(channel, request) do

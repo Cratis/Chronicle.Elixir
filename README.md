@@ -31,82 +31,99 @@ Add `cratis_chronicle` to your `mix.exs` dependencies:
 ```elixir
 defp deps do
   [
-    {:cratis_chronicle, "~> 2.2"}
+    {:cratis_chronicle, "~> 3.5"}
   ]
 end
 ```
+
+The client needs Elixir 1.18 or later, because its `grpc` dependency pulls in `googleapis`, which requires 1.18. CI builds and tests with Elixir 1.19.5 on Erlang/OTP 28.5.
+
+## Prerequisite: Chronicle running
+
+You need a Chronicle kernel before running samples or application code. For local development, pull and run the development image, which bundles MongoDB:
+
+```bash
+docker pull cratis/chronicle:latest-development
+docker run -d --name chronicle \
+  -p 127.0.0.1:35000:35000 \
+  -p 127.0.0.1:27017:27017 \
+  cratis/chronicle:latest-development
+```
+
+The `127.0.0.1:` prefixes keep both ports on your machine: the development kernel accepts well-known credentials and its MongoDB has no authentication. Pull before you run, because the kernel must understand the `cratis_chronicle_contracts` version that `mix deps.get` resolves.
+
+## Getting started
+
+[Get started with the Elixir client](Documentation/get-started.md) walks through installation, connecting, appending an event and reading a read model, including the failure results to expect along the way. The published documentation is at [cratis.io](https://www.cratis.io/chronicle/clients/elixir/), and the API reference is on [HexDocs](https://hexdocs.pm/cratis_chronicle).
+
+## Quick example
+
+```elixir
+defmodule MyApp.Events.AccountOpened do
+  use Chronicle.Events.EventType, id: "account-opened"
+
+  # Typed defaults: the client derives the event's JSON schema from them.
+  defstruct owner: "", balance: 0
+end
+
+defmodule MyApp.ReadModels.Account do
+  use Chronicle.ReadModels.ReadModel
+
+  defstruct id: "", owner: "", balance: 0
+
+  # owner and balance are mapped by name; id comes from the event source id.
+  from MyApp.Events.AccountOpened, set: [id: :event_source_id]
+end
+
+defmodule MyApp.Application do
+  use Application
+
+  @impl true
+  def start(_type, _args) do
+    children = [
+      {Chronicle.Client,
+       # Development-only credentials for the local development kernel.
+       connection_string: "chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000",
+       event_store: "my-app",
+       otp_app: :my_app}
+    ]
+
+    Supervisor.start_link(children, strategy: :one_for_one, name: MyApp.Supervisor)
+  end
+end
+```
+
+Then, with the application running (for example in `iex -S mix`):
+
+```elixir
+alias Chronicle.Connections.Lifecycle
+
+# The client connects and registers in the background; until then, calls return
+# {:error, :not_connected}.
+:ok = Lifecycle.wait_until(Lifecycle.name_for(Chronicle.Client), :registered)
+
+:ok = Chronicle.append("account-42", %MyApp.Events.AccountOpened{owner: "Alice", balance: 1000})
+
+# Projections run asynchronously: this can be {:ok, nil} until the projection catches up.
+{:ok, account} = Chronicle.read_model(MyApp.ReadModels.Account, "account-42")
+```
+
+## Known limitations
+
+- The client skips TLS certificate validation unless the connection string sets `skipTlsValidation=false`.
+- `mix deps.get` reports advisories for `grpc 0.11.5`, which is pinned by the generated contracts package.
+- Version 3.5.0 had defects in read model mappings, reducer registration, constraint registration, seeding, read model paging, and sequence number lookups; use 3.5.1 or later.
+
+The [Elixir client documentation](Documentation/index.md) explains each one.
 
 ## Structure
 
 ```text
 Source/
   chronicle/       ← cratis_chronicle Hex package
-Documentation/     ← User-facing documentation
+Documentation/     ← Elixir client documentation and client-owned snippets
 Samples/
-  console/         ← Runnable console example
-```
-
-## Prerequisite: Chronicle Running
-
-You need a Chronicle Kernel available before running samples or application code.
-
-The easiest local setup is the development Docker image:
-
-```bash
-docker run -p 35000:35000 cratis/chronicle:latest-development
-```
-
-## Getting Started
-
-See [Documentation/get-started.md](./Documentation/get-started.md) for installation and usage instructions.
-
-## Quick Example
-
-```elixir
-defmodule MyApp.Events.AccountOpened do
-  use Chronicle.Events.EventType, id: "account-opened-v1"
-  defstruct [:account_id, :owner_name, :initial_balance]
-end
-
-defmodule MyApp.ReadModels.Account do
-  use Chronicle.ReadModels.ReadModel
-
-  alias MyApp.Events.AccountOpened
-
-  defstruct account_id: nil, owner_name: nil, balance: 0
-
-  from AccountOpened,
-    set: [
-      account_id: :event_source_id,
-      owner_name: :owner_name,
-      balance: :initial_balance
-    ]
-end
-
-defmodule MyApp.Application do
-  use Application
-
-  def start(_type, _args) do
-    children = [
-      {Chronicle.Client,
-        connection_string: "chronicle://localhost:35000",
-        event_store: "my-app",
-        otp_app: :my_app}
-    ]
-
-    Supervisor.start_link(children, strategy: :one_for_one)
-  end
-end
-
-# Append an event
-:ok = Chronicle.append("account-42", %MyApp.Events.AccountOpened{
-  account_id: "account-42",
-  owner_name: "Alice",
-  initial_balance: 1000
-})
-
-# Read back the current read model
-{:ok, account} = Chronicle.read_model(MyApp.ReadModels.Account, "account-42")
+  console/         ← Runnable interactive console sample
 ```
 
 ## Building
@@ -115,24 +132,24 @@ end
 cd Source/chronicle
 mix deps.get
 mix compile
+mix test
 ```
 
-## Running the Console Sample
+## Running the console sample
 
-A working example is in the [`Samples/console`](Samples/console) directory.
-
-**Prerequisites:** A Chronicle kernel running locally on port 35000.
+A working example is in the [`Samples/console`](Samples/console) directory. It uses the client from `Source/chronicle` and starts its own kernel with Docker Compose; see its [README](Samples/console/README.md) for controls and details.
 
 ```bash
 cd Samples/console
+docker compose up -d
 mix deps.get
 mix run --no-halt
 ```
 
-Set `CHRONICLE_CONNECTION_STRING` to override the default connection:
+Set `CHRONICLE_CONNECTION_STRING` to connect to another kernel:
 
 ```bash
-CHRONICLE_CONNECTION_STRING="chronicle://myserver:35000?apiKey=secret" mix run --no-halt
+CHRONICLE_CONNECTION_STRING="chronicle://client-id:client-secret@myserver:35000?skipTlsValidation=false" mix run --no-halt
 ```
 
 ## The Cratis ecosystem

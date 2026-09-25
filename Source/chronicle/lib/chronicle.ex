@@ -13,7 +13,7 @@ defmodule Chronicle do
 
   Add the dependency to your `mix.exs`:
 
-      {:cratis_chronicle, "~> 0.1"}
+      {:cratis_chronicle, "~> 3.5"}
 
   Start `Chronicle.Client` in your application supervision tree:
 
@@ -50,7 +50,7 @@ defmodule Chronicle do
 
       defmodule MyApp.Events.AccountOpened do
         use Chronicle.Events.EventType, id: "account-opened-v1"
-        defstruct [:account_id, :owner_name, :initial_balance]
+        defstruct account_id: "", owner_name: "", initial_balance: 0
       end
 
   ## Appending Events
