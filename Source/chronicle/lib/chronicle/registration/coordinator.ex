@@ -395,20 +395,21 @@ defmodule Chronicle.Registration.Coordinator do
 
     {auto_map, no_auto_map_properties} = read_model_module.__chronicle_read_model__(:no_auto_map)
 
-    auto_map_fields = fn properties, event_module ->
+    auto_map_fields = fn properties, event_module, kind ->
       with_multi_word_auto_map(
         properties,
         event_module,
         read_model_module,
         auto_map,
-        no_auto_map_properties
+        no_auto_map_properties,
+        kind
       )
     end
 
     from_entries =
       read_model_module.__chronicle_read_model__(:from)
       |> Enum.map(fn {event_module, opts} ->
-        properties = opts |> build_properties() |> auto_map_fields.(event_module)
+        properties = opts |> build_properties() |> auto_map_fields.(event_module, :from)
         key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
         parent_key = Keyword.get(opts, :parent_key, "")
 
@@ -426,9 +427,10 @@ defmodule Chronicle.Registration.Coordinator do
     join_entries =
       read_model_module.__chronicle_read_model__(:join)
       |> Enum.map(fn {event_module, opts} ->
-        properties = opts |> build_properties() |> auto_map_fields.(event_module)
+        properties = opts |> build_properties() |> auto_map_fields.(event_module, :join)
         key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
-        on = opts |> Keyword.fetch!(:on) |> resolve_join_on()
+        # On names the read model property to join on, which keeps its snake_case name.
+        on = opts |> Keyword.fetch!(:on) |> to_string()
 
         struct(KeyValuePair_EventType_JoinDefinition,
           Key: proto_event_type(event_module),
@@ -502,20 +504,21 @@ defmodule Chronicle.Registration.Coordinator do
 
     {auto_map, no_auto_map_properties} = projection_module.__chronicle_projection__(:no_auto_map)
 
-    auto_map_fields = fn properties, event_module ->
+    auto_map_fields = fn properties, event_module, kind ->
       with_multi_word_auto_map(
         properties,
         event_module,
         model_module,
         auto_map,
-        no_auto_map_properties
+        no_auto_map_properties,
+        kind
       )
     end
 
     from_entries =
       projection_module.__chronicle_projection__(:from)
       |> Enum.map(fn {event_module, opts} ->
-        properties = opts |> build_properties() |> auto_map_fields.(event_module)
+        properties = opts |> build_properties() |> auto_map_fields.(event_module, :from)
         key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
         parent_key = Keyword.get(opts, :parent_key, "")
 
@@ -533,9 +536,10 @@ defmodule Chronicle.Registration.Coordinator do
     join_entries =
       projection_module.__chronicle_projection__(:join)
       |> Enum.map(fn {event_module, opts} ->
-        properties = opts |> build_properties() |> auto_map_fields.(event_module)
+        properties = opts |> build_properties() |> auto_map_fields.(event_module, :join)
         key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
-        on = opts |> Keyword.fetch!(:on) |> resolve_join_on()
+        # On names the read model property to join on, which keeps its snake_case name.
+        on = opts |> Keyword.fetch!(:on) |> to_string()
 
         struct(KeyValuePair_EventType_JoinDefinition,
           Key: proto_event_type(event_module),
@@ -730,27 +734,50 @@ defmodule Chronicle.Registration.Coordinator do
   defp resolve_expression(float) when is_float(float), do: "$value(#{float})"
   defp resolve_expression(str) when is_binary(str), do: str
 
-  defp resolve_join_on(on) when is_atom(on), do: on |> Atom.to_string() |> camelize()
-  defp resolve_join_on(on) when is_binary(on), do: on
-
   # The kernel's AutoMap matches event and read model properties by name. Read models are stored
-  # with their snake_case field names while events travel as camelCase, so AutoMap can only ever
-  # match single-word names. For every multi-word field the read model shares with the event, and
-  # that the declaration doesn't map explicitly, add the mapping AutoMap would have made.
+  # with their snake_case field names while events travel as camelCase, so AutoMap only ever matches
+  # single-word names. For multi-word fields the read model shares with the event, add the mapping
+  # AutoMap would have made, following the kernel's own rules (ProjectionFactory in Chronicle):
+  # nothing for an aggregate-only from (every mapping is $count/$increment/$decrement/$add/$subtract),
+  # never over an explicit mapping or a no_auto_map field, and for joins never from an event field an
+  # explicit mapping already reads.
+  @aggregate_expressions ["$count", "$increment", "$decrement", "$add", "$subtract"]
+
   @doc false
-  def with_multi_word_auto_map(properties, event_module, model_module, auto_map, excluded) do
-    if auto_map == :disabled do
+  def with_multi_word_auto_map(
+        properties,
+        event_module,
+        model_module,
+        auto_map,
+        excluded,
+        kind \\ :from
+      ) do
+    if auto_map == :disabled or (kind == :from and aggregate_only?(properties)) do
       properties
     else
       excluded = MapSet.new(excluded, &to_string/1)
+
+      consumed_event_fields =
+        if kind == :join, do: MapSet.new(Map.values(properties)), else: MapSet.new()
 
       (struct_fields(model_module) -- [:__struct__])
       |> Enum.filter(&(&1 in struct_fields(event_module)))
       |> Enum.map(&Atom.to_string/1)
       |> Enum.filter(&String.contains?(&1, "_"))
-      |> Enum.reject(&(Map.has_key?(properties, &1) or MapSet.member?(excluded, &1)))
+      |> Enum.reject(fn field ->
+        Map.has_key?(properties, field) or MapSet.member?(excluded, field) or
+          MapSet.member?(consumed_event_fields, camelize(field))
+      end)
       |> Enum.reduce(properties, fn field, acc -> Map.put(acc, field, camelize(field)) end)
     end
+  end
+
+  defp aggregate_only?(properties) do
+    map_size(properties) > 0 and
+      Enum.all?(Map.values(properties), fn expression ->
+        is_binary(expression) and
+          Enum.any?(@aggregate_expressions, &String.starts_with?(expression, &1))
+      end)
   end
 
   defp struct_fields(module) do

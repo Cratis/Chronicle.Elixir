@@ -138,6 +138,24 @@ defmodule Chronicle.Registration.ProjectionDefinitionTest do
     join(MultiWordEvent, on: :account_id, key: :account_id)
   end
 
+  defmodule DepartmentRenamed do
+    use Chronicle.Events.EventType, id: "projection-definition-test-department-renamed"
+    defstruct display_name: "", department_id: ""
+  end
+
+  defmodule AggregateOnlyMultiWordReadModel do
+    use Chronicle.ReadModels.ReadModel
+    defstruct owner_name: nil, initial_balance: 0
+    from(MultiWordEvent, add: [initial_balance: :initial_balance])
+  end
+
+  defmodule RedirectedJoinReadModel do
+    use Chronicle.ReadModels.ReadModel
+    defstruct id: nil, display_name: nil, department_name: nil, department_id: nil
+    from(SomeEvent, set: [id: :event_source_id])
+    join(DepartmentRenamed, on: :department_id, set: [department_name: :display_name])
+  end
+
   describe "auto map" do
     test "a read model that declares nothing leaves the kernel default in place" do
       definition = Coordinator.build_projection_definition(DefaultReadModel)
@@ -214,7 +232,7 @@ defmodule Chronicle.Registration.ProjectionDefinitionTest do
       refute Map.has_key?(properties, "owner_name")
     end
 
-    test "join on and key atoms are sent as camelCase event fields" do
+    test "join key is an event field, on is the read model property" do
       join =
         MultiWordJoinReadModel
         |> Coordinator.build_projection_definition()
@@ -222,7 +240,7 @@ defmodule Chronicle.Registration.ProjectionDefinitionTest do
         |> hd()
         |> Map.get(:Value)
 
-      assert Map.get(join, :On) == "accountId"
+      assert Map.get(join, :On) == "account_id"
       assert Map.get(join, :Key) == "accountId"
       assert Map.get(join, :Properties)["owner_name"] == "ownerName"
     end
@@ -331,6 +349,30 @@ defmodule Chronicle.Registration.ProjectionDefinitionTest do
       properties = Map.get(Map.get(definition, :All), :Properties)
 
       assert properties["correlation_stats.$eventContext.correlation_id"] == "$increment"
+    end
+  end
+
+  describe "auto map rules shared with the kernel" do
+    test "an aggregate-only from gets no automatic mappings" do
+      [from] =
+        AggregateOnlyMultiWordReadModel
+        |> Coordinator.build_projection_definition()
+        |> Map.get(:From)
+
+      assert from |> Map.get(:Value) |> Map.get(:Properties) == %{
+               "initial_balance" => "$add(initialBalance)"
+             }
+    end
+
+    test "a join doesn't also map an event field an explicit mapping already reads" do
+      [join] =
+        RedirectedJoinReadModel |> Coordinator.build_projection_definition() |> Map.get(:Join)
+
+      properties = join |> Map.get(:Value) |> Map.get(:Properties)
+
+      assert properties["department_name"] == "displayName"
+      refute Map.has_key?(properties, "display_name")
+      assert properties["department_id"] == "departmentId"
     end
   end
 end
