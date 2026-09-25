@@ -96,6 +96,48 @@ defmodule Chronicle.Registration.ProjectionDefinitionTest do
     from_every(set: [occurred: :occurred])
   end
 
+  defmodule MultiWordEvent do
+    use Chronicle.Events.EventType, id: "projection-definition-test-multi-word-event"
+    defstruct owner_name: "", initial_balance: 0, name: "", account_id: ""
+  end
+
+  defmodule ExplicitMultiWordReadModel do
+    use Chronicle.ReadModels.ReadModel
+    defstruct id: nil, owner: nil, balance: 0, on_loan: false, rate: 0.0
+
+    from(MultiWordEvent,
+      set: [id: :event_source_id, owner: :owner_name, on_loan: true, rate: 1.5],
+      add: [balance: :initial_balance]
+    )
+  end
+
+  defmodule AutoMappedMultiWordReadModel do
+    use Chronicle.ReadModels.ReadModel
+    defstruct id: nil, owner_name: nil, initial_balance: 0, name: nil
+    from(MultiWordEvent, set: [id: :event_source_id])
+  end
+
+  defmodule AutoMapExclusionsReadModel do
+    use Chronicle.ReadModels.ReadModel
+    defstruct id: nil, owner_name: nil, initial_balance: 0
+    from(MultiWordEvent, set: [id: :event_source_id, owner_name: "legacyOwner"])
+    no_auto_map([:initial_balance])
+  end
+
+  defmodule AutoMapDisabledReadModel do
+    use Chronicle.ReadModels.ReadModel
+    defstruct id: nil, owner_name: nil
+    from(MultiWordEvent, set: [id: :event_source_id])
+    no_auto_map()
+  end
+
+  defmodule MultiWordJoinReadModel do
+    use Chronicle.ReadModels.ReadModel
+    defstruct id: nil, owner_name: nil
+    from(SomeEvent, set: [id: :event_source_id])
+    join(MultiWordEvent, on: :account_id, key: :account_id)
+  end
+
   describe "auto map" do
     test "a read model that declares nothing leaves the kernel default in place" do
       definition = Coordinator.build_projection_definition(DefaultReadModel)
@@ -123,6 +165,66 @@ defmodule Chronicle.Registration.ProjectionDefinitionTest do
 
       assert Map.get(definition, :AutoMap) == :Enabled
       assert Map.get(definition, :NoAutoMapProperties) == ["balance", "name"]
+    end
+  end
+
+  describe "event field expressions" do
+    defp from_properties(read_model, event) do
+      read_model
+      |> Coordinator.build_projection_definition()
+      |> Map.get(:From)
+      |> Enum.find(&(Map.get(Map.get(&1, :Key), :Id) == event.__chronicle_event_type__(:id)))
+      |> Map.get(:Value)
+      |> Map.get(:Properties)
+    end
+
+    test "a multi-word event field is read by its camelCase wire name" do
+      properties = from_properties(ExplicitMultiWordReadModel, MultiWordEvent)
+
+      assert properties["owner"] == "ownerName"
+      assert properties["balance"] == "$add(initialBalance)"
+    end
+
+    test "booleans and floats are sent as constants, not field names" do
+      properties = from_properties(ExplicitMultiWordReadModel, MultiWordEvent)
+
+      assert properties["on_loan"] == "$value(true)"
+      assert properties["rate"] == "$value(1.5)"
+    end
+
+    test "multi-word fields shared with the event are mapped the way AutoMap would" do
+      properties = from_properties(AutoMappedMultiWordReadModel, MultiWordEvent)
+
+      assert properties["owner_name"] == "ownerName"
+      assert properties["initial_balance"] == "initialBalance"
+      # Single-word names are left to the kernel's own AutoMap.
+      refute Map.has_key?(properties, "name")
+    end
+
+    test "explicit mappings and no_auto_map fields are not overridden" do
+      properties = from_properties(AutoMapExclusionsReadModel, MultiWordEvent)
+
+      assert properties["owner_name"] == "legacyOwner"
+      refute Map.has_key?(properties, "initial_balance")
+    end
+
+    test "no_auto_map() adds no multi-word mappings" do
+      properties = from_properties(AutoMapDisabledReadModel, MultiWordEvent)
+
+      refute Map.has_key?(properties, "owner_name")
+    end
+
+    test "join on and key atoms are sent as camelCase event fields" do
+      join =
+        MultiWordJoinReadModel
+        |> Coordinator.build_projection_definition()
+        |> Map.get(:Join)
+        |> hd()
+        |> Map.get(:Value)
+
+      assert Map.get(join, :On) == "accountId"
+      assert Map.get(join, :Key) == "accountId"
+      assert Map.get(join, :Properties)["owner_name"] == "ownerName"
     end
   end
 
