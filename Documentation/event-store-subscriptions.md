@@ -1,4 +1,7 @@
-# Event Store Subscriptions
+---
+title: Event store subscriptions
+description: Import selected events from another event store's outbox with discoverable or imperative Elixir subscriptions.
+---
 
 Chronicle.Elixir supports event store subscriptions for importing events from one event store into another event store.
 
@@ -41,7 +44,7 @@ end
 The `define/1` callback receives a `Chronicle.EventStoreSubscriptions.DefinitionBuilder`.
 Return the builder after selecting event types.
 
-If you do not specify any event types, Chronicle.Elixir uses all registered event types available to the client.
+If you don't select any event types, the subscription uses the event types the client was given in `:event_types` or discovered in your application. When that list is empty, for example with `discover: false` and no `:event_types`, it falls back to every event type module loaded in the VM. Select event types explicitly to control exactly what the subscription receives.
 
 ## Auto-registration with `Chronicle.Client`
 
@@ -50,7 +53,7 @@ Start `Chronicle.Client` with discovery enabled:
 ```elixir
 children = [
   {Chronicle.Client,
-   connection_string: "chronicle://localhost:35000",
+   connection_string: "chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000",
    event_store: "target-store",
    otp_app: :my_app}
 ]
@@ -61,10 +64,12 @@ If your OTP application includes modules that use `Chronicle.EventStoreSubscript
 You can also register discoverable subscriptions manually:
 
 ```elixir
-:ok = Chronicle.register_event_store_subscription(MyApp.EventStoreSubscriptions.DefaultAccountEvents, client: MyApp.Chronicle)
+:ok = Chronicle.register_event_store_subscription(MyApp.EventStoreSubscriptions.DefaultAccountEvents)
 
-:ok = Chronicle.register_discovered_event_store_subscriptions(client: MyApp.Chronicle)
+:ok = Chronicle.register_discovered_event_store_subscriptions()
 ```
+
+Both accept `client:` with the `name:` of another running client, when you start more than one.
 
 ## Imperative registration
 
@@ -92,7 +97,7 @@ The arguments are:
 - subscription id
 - source event store
 - a function that configures the definition builder
-- optional keyword options such as `client: MyApp.Chronicle`
+- optional keyword options, such as `client:` with the name of a non-default client
 
 ## Removing subscriptions
 
@@ -157,4 +162,4 @@ Explicit subscriptions are merged with discovered ones.
 - Event store subscriptions are registered against the client's target event store.
 - The source event store is defined per subscription.
 - `:namespace` is accepted in the API option list for consistency with other Chronicle APIs, but it is not currently used by the subscription registration request.
-- The current Chronicle contracts expose add/remove operations, so Chronicle.Elixir focuses on registration and removal APIs.
+- The client can add, remove and list subscriptions. There is no separate update call.

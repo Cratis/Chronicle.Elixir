@@ -1,4 +1,7 @@
-# WebHooks
+---
+title: Webhooks
+description: Register Chronicle webhooks from Elixir, as discoverable modules or at runtime, and inspect the registered webhooks.
+---
 
 `Chronicle.WebHooks` provides an idiomatic Elixir API for registering and inspecting Chronicle webhooks.
 
@@ -32,7 +35,7 @@ When `Chronicle.Client` starts with `otp_app: :my_app`, discoverable webhooks ar
 
 ```elixir
 {Chronicle.Client,
-  connection_string: "chronicle://localhost:35000",
+  connection_string: "chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000",
   event_store: "banking",
   otp_app: :my_app}
 ```
@@ -41,7 +44,7 @@ You can also register explicit modules:
 
 ```elixir
 {Chronicle.Client,
-  connection_string: "chronicle://localhost:35000",
+  connection_string: "chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000",
   event_store: "banking",
   webhooks: [MyApp.WebHooks.AccountEvents]}
 ```
@@ -58,7 +61,7 @@ Register a webhook without defining a module:
     fn builder ->
       builder
       |> Chronicle.WebHooks.DefinitionBuilder.with_event_type(MyApp.Events.AccountOpened)
-      |> Chronicle.WebHooks.DefinitionBuilder.with_basic_auth("chronicle", "secret")
+      |> Chronicle.WebHooks.DefinitionBuilder.with_basic_auth("chronicle", System.fetch_env!("WEBHOOK_PASSWORD"))
       |> Chronicle.WebHooks.DefinitionBuilder.with_header("x-source", "my-app")
     end
   )
@@ -80,7 +83,7 @@ builder
 |> DefinitionBuilder.not_active()
 ```
 
-If no event types are configured explicitly, the builder uses all event types registered for the current client.
+If you don't select any event types, the webhook uses the event types the client was given in `:event_types` or discovered in your application. When that list is empty, for example with `discover: false` and no `:event_types`, it falls back to every event type module loaded in the VM. Select event types explicitly to control exactly what the webhook receives.
 
 ## Query and remove webhooks
 
@@ -104,12 +107,14 @@ The nested `%Chronicle.WebHooks.Target{}` contains:
 - `:headers`
 - `:authorization`
 
-Authorization is normalized to one of:
+When you build a definition locally, authorization is one of:
 
 - `{:basic, %{username: ..., password: ...}}`
 - `{:bearer, %{token: ...}}`
 - `{:oauth, %{authority: ..., client_id: ..., client_secret: ...}}`
 - `nil`
+
+Chronicle doesn't return credentials when you read webhooks back, so `:authorization` is always `nil` on definitions from `Chronicle.WebHooks.all/1`.
 
 ## Manual discovery
 

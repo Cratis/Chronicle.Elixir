@@ -11,6 +11,25 @@ Read models are shared Chronicle concepts. Querying, snapshots, watching, and co
 - [Getting read model collections](/chronicle/read-models/getting-collection-instances/)
 - [Elixir client setup](./get-started.md)
 
+## Missing and not-yet-projected read models
+
+`Chronicle.read_model/3`, and `Chronicle.ReadModels.get/3` which it calls, return `{:ok, nil}`
+when no instance exists for the key. That is also what you get right after an append whose
+projection hasn't run yet, because Chronicle projects asynchronously:
+
+```elixir
+case Chronicle.read_model(MyApp.ReadModels.AccountInfo, account_id) do
+  {:ok, nil} -> :not_found_or_not_projected_yet
+  {:ok, account} -> {:ok, account}
+  {:error, reason} -> {:error, reason}
+end
+```
+
+When you need to read your own write, append with
+`Chronicle.EventSequences.EventLog.append_and_wait_for_completion/3`, which returns once the
+affected observers have processed the event. See
+[Event sequences](./event-sequences.md#appending-and-waiting-for-observer-completion).
+
 ## Watching for live changes
 
 `Chronicle.ReadModels.watch/2` subscribes the calling process to live changesets for a read

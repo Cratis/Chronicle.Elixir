@@ -1,4 +1,7 @@
-# Concepts
+---
+title: Concepts
+description: Give Elixir domain values their own types with Chronicle.Concept, and classify them as PII once for every event and read model.
+---
 
 A `String.t()` is a `String.t()` is a `String.t()`. Nothing stops an employee id
 being passed where a customer id was expected, or a plain email address
