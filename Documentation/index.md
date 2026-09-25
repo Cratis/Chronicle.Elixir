@@ -22,7 +22,7 @@ Shared Chronicle concepts and workflows live in the main Chronicle docs and show
 
 - The client doesn't validate the kernel's TLS certificate unless you set `skipTlsValidation=false`, and it has no client-certificate support. See [Connection strings](connections/connection-strings.md#tls).
 - `mix deps.get` reports security advisories for the `grpc 0.11.5` dependency, which can't be upgraded until the contracts package allows `grpc 1.x`.
-- Version 3.5.0 had defects in read model mappings, reducer registration, seeding, and sequence number lookups. Upgrade to 3.5.1 or later.
+- Version 3.5.0 had defects in read model mappings, reducer registration, constraint registration, seeding, and sequence number lookups. Upgrade to 3.5.1 or later.
 
 ## Shared Chronicle topics
 

@@ -112,7 +112,7 @@ alias Chronicle.Connections.Lifecycle
 
 - The client skips TLS certificate validation unless the connection string sets `skipTlsValidation=false`.
 - `mix deps.get` reports advisories for `grpc 0.11.5`, which is pinned by the generated contracts package.
-- Version 3.5.0 had defects in read model mappings, reducer registration, seeding, and sequence number lookups; use 3.5.1 or later.
+- Version 3.5.0 had defects in read model mappings, reducer registration, constraint registration, seeding, and sequence number lookups; use 3.5.1 or later.
 
 The [Elixir client documentation](Documentation/index.md) explains each one.
 
