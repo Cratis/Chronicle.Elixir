@@ -1,33 +1,34 @@
-# Connections
+---
+title: Connections
+description: How the Elixir client holds a long-lived gRPC connection to a Chronicle kernel, and where to configure credentials, TLS and recovery.
+---
 
-A Chronicle client maintains a long-lived gRPC connection to a Chronicle
-kernel. Everything the client does — appending events, projecting read models,
-running reactors and reducers, seeding — flows over that one connection. Because
-it is long-lived, it *will* be interrupted: kernels restart, networks blip, load
-balancers recycle. The client is built to treat those interruptions as normal
-and recover from them without losing observers or dropping into a broken state.
-
-These guides explain how the connection is established, how it is described, and
-how the client stays resilient when it drops.
+A Chronicle client keeps one long-lived gRPC connection to a Chronicle kernel. Everything the client does flows over it: appending events, registering projections, running reactors and reducers, seeding. Because it is long-lived, it *will* be interrupted: kernels restart, networks blip, load balancers recycle connections. The client treats those interruptions as normal and recovers from them without losing observers.
 
 ## Guides
 
-- [Resilience and the Connection Lifecycle](resilience.md) — How the client
-  connects, detects a dead connection, reconnects, and re-registers every
-  observer in the correct order.
-- [Connection Strings](connection-strings.md) — The `chronicle://` URL format,
-  authentication modes, and the available options.
+- [Connection strings](connection-strings.md): the `chronicle://` and `chronicle+srv://` formats, client credentials and API keys, TLS validation, and the other options.
+- [Resilience and the connection lifecycle](resilience.md): how the client connects, registers your artifacts, detects a dead session and reconnects, and what your calls return while it does.
 
 ## At a glance
 
-Start a client by pointing it at a kernel with a connection string:
+Start a client in your supervision tree with a connection string:
 
 ```elixir
 {Chronicle.Client,
-  connection_string: "chronicle://localhost:35000",
-  event_store: "store",
-  otp_app: :my_app}
+ connection_string: "chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000",
+ event_store: "my-app",
+ otp_app: :my_app}
 ```
 
-The client connects in the background. Calls such as `Chronicle.append/3` work as
-soon as the connection is ready; you never manage the socket yourself.
+That connection string carries the development kernel's well-known credentials. Use real credentials, and `skipTlsValidation=false`, for any other kernel.
+
+The client connects in the background. Until it has a channel, appends and most other calls return `{:error, :not_connected}` rather than waiting, and registration of your artifacts finishes a little later. Wait for readiness before your first call:
+
+```elixir
+alias Chronicle.Connections.Lifecycle
+
+:ok = Lifecycle.wait_until(Lifecycle.name_for(Chronicle.Client), :registered)
+```
+
+You never manage the socket, the session, or re-registration yourself.
