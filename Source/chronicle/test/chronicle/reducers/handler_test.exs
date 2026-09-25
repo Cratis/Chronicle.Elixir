@@ -168,4 +168,33 @@ defmodule Chronicle.Reducers.HandlerTest do
       assert_receive {:partition_replay_end, "account-1"}, 1_000
     end
   end
+
+  describe "build_registration/2" do
+    setup do
+      state = %{
+        module: TestReducer,
+        model_module: MyReadModel,
+        event_type_map: %{"my-event" => MyEvent},
+        event_store: "store",
+        namespace: "Default",
+        default_sink_type_id: "MongoDB"
+      }
+
+      %{message: Handler.build_registration(state, "connection-1")}
+    end
+
+    test "builds a registration the generated contracts can encode", %{message: message} do
+      encoded = message.__struct__.encode(message)
+
+      assert byte_size(encoded) > 0
+    end
+
+    test "registers the reducer for its read model and event types", %{message: message} do
+      reducer = message."Content"."Value0"."Reducer"
+
+      assert reducer."ReducerId" == TestReducer.__chronicle_reducer__(:id)
+      assert reducer."ReadModel" == MyReadModel.__chronicle_read_model__(:id)
+      assert [%{EventType: %{Id: "my-event"}}] = reducer."EventTypes"
+    end
+  end
 end
