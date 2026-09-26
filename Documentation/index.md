@@ -53,3 +53,4 @@ Shared Chronicle concepts and workflows live in the main Chronicle docs and show
 - [Webhooks](webhooks.md): registering webhooks from Elixir
 - [External services](external-services.md): registering HTTP and database external services
 - [Failed partitions](failed-partitions.md): inspecting observers whose partitions have failed
+- [Observers](observers.md): listing observers and removing one whose declaring code is gone

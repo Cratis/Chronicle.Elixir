@@ -78,3 +78,6 @@ end)
 ```elixir
 {:ok, failed_partitions} = Chronicle.FailedPartitions.get_all(client: :bank_chronicle)
 ```
+
+See [Observers](observers.md) for the observer's own state — including removing one whose
+declaring code is gone, which also clears any failed partitions kept for it.
