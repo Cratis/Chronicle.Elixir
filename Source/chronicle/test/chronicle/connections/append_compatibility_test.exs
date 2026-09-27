@@ -7,12 +7,9 @@ defmodule Chronicle.Connections.AppendCompatibilityTest do
   alias Cratis.Chronicle.Contracts.Clients.{CompatibilityRequest, CompatibilityResponse}
   alias Cratis.Chronicle.Contracts.DescriptorSet
 
-  # The preflight must announce the contracts version this client is actually
-  # built against. The package self-reports "0.1.0" at runtime (its mix.exs
-  # reads a build-time env var downstream consumers never set), so the module
-  # carries a hand-written constant and mix.lock holds the real resolved
-  # version. Reading the lock here rather than repeating the literal is what
-  # catches the two drifting apart when the pin moves.
+  # The preflight must announce the installed contracts version. The package's
+  # mix.exs self-reports 0.1.0 in consumers, but Hex metadata holds the real
+  # published version. Check it against our resolved lock as well.
   @lock_path Path.expand("../../../mix.lock", __DIR__)
   @external_resource @lock_path
   @pinned_contracts_version (case Map.fetch(Mix.Dep.Lock.read(), :cratis_chronicle_contracts) do
@@ -25,6 +22,16 @@ defmodule Chronicle.Connections.AppendCompatibilityTest do
 
   test "the announced protocol version is the pinned contracts version" do
     assert @pinned_contracts_version =~ ~r/^\d+\.\d+\.\d+/
+
+    metadata_path =
+      Path.join(Mix.Project.deps_paths()[:cratis_chronicle_contracts], "hex_metadata.config")
+
+    assert {:ok, metadata} = :file.consult(metadata_path)
+    assert {"version", @pinned_contracts_version} = List.keyfind(metadata, "version", 0)
+
+    assert metadata_path in Chronicle.Connections.AppendCompatibility.module_info(:attributes)[
+             :external_resource
+           ]
 
     assert Chronicle.Connections.AppendCompatibility.protocol_version() ==
              @pinned_contracts_version

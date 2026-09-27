@@ -7,12 +7,26 @@ defmodule Chronicle.Connections.AppendCompatibility do
   alias Cratis.Chronicle.Contracts.Clients.{CompatibilityRequest, ConnectionService}
   alias Cratis.Chronicle.Contracts.DescriptorSet
 
-  # The package's runtime version is 0.1.0 because of its build-time metadata
-  # quirk. This is the actual published contracts version pinned in mix.lock.
-  # Update it together with the pin: append_compatibility_test.exs compares the two.
-  @protocol_version "19.6.1"
-  @external_resource Path.expand("../../../VERSION", __DIR__)
-  @client_version @external_resource |> File.read!() |> String.trim()
+  # The contracts package's mix.exs reports 0.1.0 in downstream projects;
+  # Hex's package metadata records the actual version of the installed contracts.
+  @contracts_metadata Path.join(
+                        Mix.Project.deps_paths()[:cratis_chronicle_contracts],
+                        "hex_metadata.config"
+                      )
+  @external_resource @contracts_metadata
+  @protocol_version (case :file.consult(@contracts_metadata) do
+                       {:ok, metadata} ->
+                         case List.keyfind(metadata, "version", 0) do
+                           {"version", version} when is_binary(version) -> version
+                           _ -> raise "contracts package has no version in #{@contracts_metadata}"
+                         end
+
+                       {:error, reason} ->
+                         raise "cannot read contracts package metadata #{@contracts_metadata}: #{inspect(reason)}"
+                     end)
+  @client_version_path Path.expand("../../../VERSION", __DIR__)
+  @external_resource @client_version_path
+  @client_version @client_version_path |> File.read!() |> String.trim()
 
   @doc false
   @spec protocol_version() :: String.t()
