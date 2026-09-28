@@ -182,6 +182,9 @@ defmodule Chronicle.Connections.Connection do
     validate_push_options!(grpc_options)
 
     {:ok, transport} = Transport.start(self())
+    # Not linked: a link would take the transport owner down before it can close
+    # the channels of a killed connection. A dead owner stops us instead.
+    transport_monitor = Process.monitor(transport)
 
     connect_fun =
       Keyword.get(options, :connect_fun, fn target, opts ->
@@ -198,6 +201,7 @@ defmodule Chronicle.Connections.Connection do
 
     state = %{
       transport: transport,
+      transport_monitor: transport_monitor,
       connection_string: connection_string,
       client_certificate: client_certificate,
       token_provider: start_token_provider(connection_string, client_certificate),
@@ -455,6 +459,12 @@ defmodule Chronicle.Connections.Connection do
   # channel came up.
   def handle_info({:DOWN, ref, :process, _pid, _reason}, %{connection_monitor: ref} = state) do
     {:noreply, handle_connection_down(state)}
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{transport_monitor: ref} = state) do
+    # The owner's supervisor took its channels down with it; there is nothing
+    # left to release, so terminate must not call into the dead owner.
+    {:stop, {:transport_down, reason}, %{state | channel: nil}}
   end
 
   # Trapping exits for shutdown cleanup must not turn linked provider or signer

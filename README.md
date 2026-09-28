@@ -36,7 +36,7 @@ defp deps do
 end
 ```
 
-The client needs Elixir 1.18 or later (`googleapis` requires 1.18). It uses `grpc ~> 1.0`, Mint 1.11 or later, and contracts 19.19 or later. CI builds and tests with Elixir 1.19.5 on Erlang/OTP 28.5. If your application also connects to gRPC independently, explicitly pass `adapter: GRPC.Client.Adapters.Mint` to `GRPC.Stub.connect/2` (or add Gun as a direct dependency); grpc 1.x no longer starts via an application-owned `GRPC.Client.Supervisor` child. Chronicle disables Mint server push; if your application sets `config :grpc, GRPC.Client.Adapters.Mint, client_settings: [...]`, it must include `enable_push: false` or the client rejects connection startup.
+The client needs Elixir 1.18 or later (`googleapis` requires 1.18). It uses `grpc ~> 1.0`, Mint 1.11 or later, and contracts 19.19 or later. CI builds and tests with Elixir 1.19.5 on Erlang/OTP 28.5. If your application also connects to gRPC independently, explicitly pass `adapter: GRPC.Client.Adapters.Mint` to `GRPC.Stub.connect/2` (or add Gun as a direct dependency); grpc 1.x no longer requires you to supervise `GRPC.Client.Supervisor`. Chronicle disables Mint server push; if your application sets `config :grpc, GRPC.Client.Adapters.Mint, client_settings: [...]`, it must include `enable_push: false` or the client rejects connection startup.
 
 ## Prerequisite: Chronicle running
 

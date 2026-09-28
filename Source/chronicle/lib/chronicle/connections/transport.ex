@@ -114,12 +114,29 @@ defmodule Chronicle.Connections.Transport do
     {:stop, :normal, state}
   end
 
-  def handle_info({:DOWN, _, :process, pid, _}, state) do
+  def handle_info({:DOWN, _, :process, pid, reason}, state) do
     Enum.each(state.channels, fn {ref, {child, _}} ->
-      if child == pid, do: send(state.owner, {:grpc_transport_down, ref})
+      if child == pid do
+        # grpc 1.0.5 keeps the channel and load-balancer state in node-wide
+        # :persistent_term entries and only erases them on a normal shutdown,
+        # expecting a restart otherwise. Children here are :temporary and never
+        # restart, so erase the entries ourselves (keys: Connection's private
+        # channel_key/1 and lb_key/1, pinned by a spec).
+        if not normal_exit?(reason), do: erase_grpc_entries(ref)
+        send(state.owner, {:grpc_transport_down, ref})
+      end
     end)
 
     {:noreply, state}
+  end
+
+  defp normal_exit?(reason), do: reason in [:normal, :shutdown] or match?({:shutdown, _}, reason)
+
+  @doc false
+  def erase_grpc_entries(ref) do
+    :persistent_term.erase({GRPC.Client.Connection, :channel, ref})
+    :persistent_term.erase({GRPC.Client.Connection, :lb, ref})
+    :ok
   end
 
   @impl true

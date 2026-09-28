@@ -45,6 +45,7 @@ defmodule Chronicle.MixProject do
       {:cratis_chronicle_contracts, "~> 19.19"},
       {:grpc, "~> 1.0"},
       {:mint, "~> 1.11"},
+      {:telemetry, "~> 1.0"},
       {:jason, "~> 1.4"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]

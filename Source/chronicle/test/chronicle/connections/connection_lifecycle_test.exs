@@ -148,6 +148,60 @@ defmodule Chronicle.Connections.ConnectionLifecycleTest do
     assert_child_count(before_count, System.monotonic_time(:millisecond) + 2_000)
   end
 
+  test "a dead transport owner stops its connection" do
+    {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true])
+    {:ok, {_, port}} = :inet.sockname(listener)
+    on_exit(fn -> :gen_tcp.close(listener) end)
+
+    {:ok, connection} =
+      Connection.start_link(connection_string: "chronicle://localhost:#{port}?disableTls=true")
+
+    Process.unlink(connection)
+    {:ok, socket} = :gen_tcp.accept(listener, 5_000)
+    on_exit(fn -> :gen_tcp.close(socket) end)
+    assert :ok = Connection.connect(connection, 5_000)
+    transport = :sys.get_state(connection).transport
+    owner_monitor = Process.monitor(connection)
+
+    Process.exit(transport, :kill)
+
+    assert_receive {:DOWN, ^owner_monitor, :process, ^connection, {:transport_down, :killed}},
+                   2_000
+  end
+
+  test "an abnormally exiting gRPC orchestrator does not leave node-wide channel state" do
+    {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true])
+    {:ok, {_, port}} = :inet.sockname(listener)
+    on_exit(fn -> :gen_tcp.close(listener) end)
+
+    {:ok, connection} =
+      Connection.start_link(connection_string: "chronicle://localhost:#{port}?disableTls=true")
+
+    Process.unlink(connection)
+
+    on_exit(fn ->
+      try do
+        GenServer.stop(connection)
+      catch
+        :exit, _ -> :ok
+      end
+    end)
+
+    {:ok, socket} = :gen_tcp.accept(listener, 5_000)
+    on_exit(fn -> :gen_tcp.close(socket) end)
+    assert :ok = Connection.connect(connection, 5_000)
+    {:ok, channel} = Connection.channel(connection)
+    ref = channel.ref
+    # Pins grpc 1.0.5's private keys; if grpc renames them this fails instead of leaking silently.
+    assert :persistent_term.get({GRPC.Client.Connection, :channel, ref}, nil) != nil
+
+    [{orchestrator, _}] =
+      Registry.lookup(GRPC.Client.Registry, {GRPC.Client.Connection, ref})
+
+    Process.exit(orchestrator, :kill)
+    assert_erased(ref, System.monotonic_time(:millisecond) + 2_000)
+  end
+
   test "a crashing gRPC orchestrator cannot restart an orphan during teardown" do
     {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true])
     {:ok, {_, port}} = :inet.sockname(listener)
@@ -281,6 +335,21 @@ defmodule Chronicle.Connections.ConnectionLifecycleTest do
 
         Process.sleep(10)
         await_replacement(supervisor, previous, deadline)
+    end
+  end
+
+  defp assert_erased(ref, deadline) do
+    cond do
+      :persistent_term.get({GRPC.Client.Connection, :channel, ref}, nil) == nil and
+          :persistent_term.get({GRPC.Client.Connection, :lb, ref}, nil) == nil ->
+        :ok
+
+      System.monotonic_time(:millisecond) > deadline ->
+        flunk("grpc channel state for #{inspect(ref)} was not erased")
+
+      true ->
+        Process.sleep(20)
+        assert_erased(ref, deadline)
     end
   end
 
