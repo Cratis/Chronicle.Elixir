@@ -71,7 +71,8 @@ defmodule Chronicle.Connections.Connection do
     DnsResolver,
     LoadBalancer,
     Status,
-    TokenProvider
+    TokenProvider,
+    Transport
   }
 
   alias Chronicle.Connections.ConnectionString.ServerAddress
@@ -180,15 +181,32 @@ defmodule Chronicle.Connections.Connection do
     validate_certificate_options!(grpc_options, client_certificate)
     validate_push_options!(grpc_options)
 
+    {:ok, transport} = Transport.start(self())
+
+    connect_fun =
+      Keyword.get(options, :connect_fun, fn target, opts ->
+        Transport.connect(transport, target, opts)
+      end)
+
+    disconnect_fun =
+      Keyword.get(options, :disconnect_fun, fn channel ->
+        case Transport.release(transport, channel) do
+          :not_owned -> default_disconnect(channel)
+          :ok -> :ok
+        end
+      end)
+
     state = %{
+      transport: transport,
       connection_string: connection_string,
       client_certificate: client_certificate,
       token_provider: start_token_provider(connection_string, client_certificate),
       channel: nil,
       connected?: false,
       append_compatible?: false,
-      connect_fun: Keyword.get(options, :connect_fun, &default_connect/2),
-      disconnect_fun: Keyword.get(options, :disconnect_fun, &default_disconnect/1),
+      append_check: nil,
+      connect_fun: connect_fun,
+      disconnect_fun: disconnect_fun,
       resolve_fun: Keyword.get(options, :resolve_fun, &DnsResolver.resolve/2),
       probe_fun: Keyword.get(options, :probe_fun, &LoadBalancer.default_probe/3),
       grpc_options: grpc_options,
@@ -223,6 +241,7 @@ defmodule Chronicle.Connections.Connection do
       connection_string: :redacted,
       client_certificate: :redacted,
       grpc_options: :redacted,
+      append_check: if(state.append_check, do: :in_progress, else: nil),
       channel: if(state.channel, do: :connected, else: nil)
     )
   end
@@ -255,13 +274,29 @@ defmodule Chronicle.Connections.Connection do
     {:reply, {:error, :not_connected}, state}
   end
 
-  def handle_call(:append_channel, _from, %{connected?: true} = state) do
-    # Serialize the first check per channel across callers. Only success is
-    # retained: an unavailable compatibility endpoint must be retried, not cached.
-    case if(state.append_compatible?, do: :ok, else: AppendCompatibility.check(state.channel)) do
-      :ok -> {:reply, {:ok, state.channel}, %{state | append_compatible?: true}}
-      {:error, _} = error -> {:reply, error, state}
-    end
+  def handle_call(:append_channel, _from, %{connected?: true, append_compatible?: true} = state) do
+    {:reply, {:ok, state.channel}, state}
+  end
+
+  def handle_call(:append_channel, from, %{connected?: true, append_check: nil} = state) do
+    channel = state.channel
+    owner = self()
+
+    {:ok, worker} =
+      Task.start(fn ->
+        send(owner, {:append_check_result, self(), AppendCompatibility.check(channel)})
+      end)
+
+    ref = Process.monitor(worker)
+    {:noreply, %{state | append_check: {worker, ref, channel, [from]}}}
+  end
+
+  def handle_call(
+        :append_channel,
+        from,
+        %{connected?: true, append_check: {worker, ref, channel, waiters}} = state
+      ) do
+    {:noreply, %{state | append_check: {worker, ref, channel, [from | waiters]}}}
   end
 
   def handle_call(:append_channel, _from, state) do
@@ -271,6 +306,7 @@ defmodule Chronicle.Connections.Connection do
   def handle_call(:disconnect, _from, state) do
     state = disconnect_channel(state)
     state = fail_pending_connects(state, {:error, :disconnected})
+    state = cancel_append_check(state)
     # The provider is linked, but a :normal stop does not propagate over the
     # link — stop it explicitly so it does not outlive the connection.
     stop_token_provider(state.token_provider)
@@ -287,6 +323,7 @@ defmodule Chronicle.Connections.Connection do
   @impl true
   def terminate(_reason, state) do
     disconnect_channel(state)
+    cancel_append_check(state)
     stop_token_provider(state.token_provider)
     :ok
   end
@@ -301,6 +338,7 @@ defmodule Chronicle.Connections.Connection do
     state =
       state
       |> disconnect_channel()
+      |> cancel_append_check()
       |> Map.merge(%{connected?: false, channel: nil, connection_process: nil})
 
     # Dial immediately rather than through the backoff: the caller has already
@@ -356,6 +394,32 @@ defmodule Chronicle.Connections.Connection do
     {:noreply, state}
   end
 
+  def handle_info(
+        {:append_check_result, worker, result},
+        %{append_check: {worker, ref, channel, waiters}} = state
+      ) do
+    Process.demonitor(ref, [:flush])
+
+    Enum.each(waiters, fn from ->
+      GenServer.reply(from, if(result == :ok, do: {:ok, channel}, else: result))
+    end)
+
+    {:noreply, %{state | append_check: nil, append_compatible?: result == :ok}}
+  end
+
+  def handle_info({:append_check_result, _worker, _result}, state), do: {:noreply, state}
+
+  def handle_info(
+        {:DOWN, ref, :process, worker, reason},
+        %{append_check: {worker, ref, _channel, waiters}} = state
+      ) do
+    Enum.each(waiters, fn from ->
+      GenServer.reply(from, {:error, {:compatibility_check_failed, reason}})
+    end)
+
+    {:noreply, %{state | append_check: nil}}
+  end
+
   def handle_info({:connect_timeout, from}, state) do
     {matches, remaining} =
       Enum.split_with(state.pending_connects, fn {pending_from, _} -> pending_from == from end)
@@ -379,6 +443,10 @@ defmodule Chronicle.Connections.Connection do
 
   def handle_info({:gun_down, pid, _protocol, _reason, _streams}, state)
       when pid == state.connection_process do
+    {:noreply, handle_connection_down(state)}
+  end
+
+  def handle_info({:grpc_transport_down, ref}, %{channel: %GRPC.Channel{ref: ref}} = state) do
     {:noreply, handle_connection_down(state)}
   end
 
@@ -476,6 +544,7 @@ defmodule Chronicle.Connections.Connection do
 
     state
     |> disconnect_channel()
+    |> cancel_append_check()
     |> Map.merge(%{
       channel: channel,
       connected?: true,
@@ -491,6 +560,7 @@ defmodule Chronicle.Connections.Connection do
   defp handle_connection_down(state) do
     state
     |> disconnect_channel()
+    |> cancel_append_check()
     |> Map.merge(%{connected?: false, channel: nil, connection_process: nil})
     |> schedule_reconnect()
   end
@@ -519,6 +589,15 @@ defmodule Chronicle.Connections.Connection do
   end
 
   defp fail_pending_connects(state, reply), do: reply_pending_connects(state, reply)
+
+  defp cancel_append_check(%{append_check: nil} = state), do: state
+
+  defp cancel_append_check(%{append_check: {worker, ref, _channel, waiters}} = state) do
+    Process.demonitor(ref, [:flush])
+    Process.exit(worker, :kill)
+    Enum.each(waiters, fn from -> GenServer.reply(from, {:error, :not_connected}) end)
+    %{state | append_check: nil, append_compatible?: false}
+  end
 
   defp disconnect_orphan(channel, disconnect_fun) do
     disconnect_fun.(channel)
@@ -795,10 +874,17 @@ defmodule Chronicle.Connections.Connection do
 
   defp stop_token_provider(provider) do
     if Process.alive?(provider) do
-      GenServer.stop(provider)
+      ref = Process.monitor(provider)
+      Process.exit(provider, :shutdown)
+
+      receive do
+        {:DOWN, ^ref, :process, ^provider, _} -> :ok
+      after
+        1_000 ->
+          Process.demonitor(ref, [:flush])
+          Process.exit(provider, :kill)
+      end
     end
-  catch
-    :exit, {:noproc, _} -> :ok
   end
 
   # Appended, so grpc-elixir runs it outermost around every other interceptor and the transport.
@@ -836,6 +922,5 @@ defmodule Chronicle.Connections.Connection do
   defp call_timeout(:infinity), do: :infinity
   defp call_timeout(timeout) when is_integer(timeout), do: timeout + 100
 
-  defp default_connect(target, options), do: apply(GRPC.Stub, :connect, [target, options])
   defp default_disconnect(channel), do: apply(GRPC.Stub, :disconnect, [channel])
 end
