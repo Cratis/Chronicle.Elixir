@@ -73,7 +73,7 @@ With a client certificate, put server-verification options on the `GRPC.Credenti
 
 A client certificate does not validate the *server*. To trust a private certificate authority, install it in the operating system's trust store and set `skipTlsValidation=false`, or supply its certificate in `:cacerts` on a gRPC credential with `verify: :verify_peer`. For example, pass `grpc_options: [cred: GRPC.Credential.new(ssl: [verify: :verify_peer, cacerts: [trusted_der]])]`, where `trusted_der` is the DER-encoded trusted certificate. A gRPC credential controls server trust only for the gRPC channel: the client-credentials token request always follows `skipTlsValidation` and the system trust store. When `certificatePath` is configured, the client certificate is added to the gRPC credential even if you pass your own `:cred`.
 
-The client requires grpc 1.x, Mint 1.11 or later, and Elixir 1.18 or later. It explicitly selects the Mint adapter; grpc 1.x makes Gun optional and no longer requires you to supervise `GRPC.Client.Supervisor`. If your application calls `GRPC.Stub.connect/2` independently, select `adapter: GRPC.Client.Adapters.Mint` there too (or add Gun as a direct dependency).
+The client requires grpc 1.x, Mint 1.11 or later, contracts 19.19 or later, and Elixir 1.18 or later. It explicitly selects the Mint adapter; grpc 1.x makes Gun optional and no longer requires you to supervise `GRPC.Client.Supervisor`. If your application calls `GRPC.Stub.connect/2` independently, select `adapter: GRPC.Client.Adapters.Mint` there too (or add Gun as a direct dependency).
 
 ## Several hosts and DNS SRV
 
