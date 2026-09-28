@@ -36,7 +36,7 @@ defp deps do
 end
 ```
 
-The client needs Elixir 1.18 or later, because its `grpc` dependency pulls in `googleapis`, which requires 1.18. CI builds and tests with Elixir 1.19.5 on Erlang/OTP 28.5.
+The client needs Elixir 1.18 or later (`googleapis` requires 1.18). It uses `grpc ~> 1.0`, Mint 1.11 or later, and contracts 19.19 or later. CI builds and tests with Elixir 1.19.5 on Erlang/OTP 28.5. If your application also connects to gRPC independently, explicitly pass `adapter: GRPC.Client.Adapters.Mint` to `GRPC.Stub.connect/2` (or add Gun as a direct dependency); grpc 1.x no longer starts via an application-owned `GRPC.Client.Supervisor` child.
 
 ## Prerequisite: Chronicle running
 
@@ -111,7 +111,6 @@ alias Chronicle.Connections.Lifecycle
 ## Known limitations
 
 - The client skips TLS certificate validation unless the connection string sets `skipTlsValidation=false`.
-- `mix deps.get` reports advisories for `grpc 0.11.5`, which is pinned by the generated contracts package.
 - Version 3.5.0 had defects in read model mappings, reducer registration, constraint registration, seeding, read model paging, and sequence number lookups; use 3.5.1 or later.
 
 The [Elixir client documentation](Documentation/index.md) explains each one.

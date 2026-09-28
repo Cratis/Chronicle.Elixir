@@ -291,7 +291,6 @@ defmodule Chronicle.Client do
 
     children =
       [
-        GRPC.Client.Supervisor,
         {Chronicle.Connections.Lifecycle, client: name},
         {Connection, connection_opts},
         {Chronicle.Connections.Session,

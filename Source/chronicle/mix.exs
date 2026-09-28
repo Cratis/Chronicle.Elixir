@@ -13,7 +13,7 @@ defmodule Chronicle.MixProject do
     [
       app: :cratis_chronicle,
       version: @version,
-      # grpc 0.11 depends on googleapis 0.1, which requires Elixir 1.18.
+      # googleapis 0.1 requires Elixir 1.18.
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       # Protocol consolidation runs after `lib/` compiles, which would freeze the
@@ -42,18 +42,9 @@ defmodule Chronicle.MixProject do
 
   defp deps do
     [
-      # Kept as a loose lower bound (rather than tightening to ">= 16.3.0", the
-      # first version whose ConnectRequest carries ProcessId, ProcessPath,
-      # MachineName, and ClientType — see Session.start_session/2): the
-      # published package's own mix.exs reads its @version from a
-      # CHRONICLE_VERSION build-time env var that isn't set for downstream
-      # consumers, so it self-reports "0.1.0" locally regardless of the tarball
-      # actually fetched. A tighter local constraint fails Mix's dependency
-      # version check even though the fetched code is correct. mix.lock pins
-      # the real resolved version (16.3.1 as of this change) instead.
-      {:cratis_chronicle_contracts, ">= 0.1.0"},
-      {:grpc, "~> 0.11"},
-      {:mint, "~> 1.7"},
+      {:cratis_chronicle_contracts, "~> 19.19"},
+      {:grpc, "~> 1.0"},
+      {:mint, "~> 1.11"},
       {:jason, "~> 1.4"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]

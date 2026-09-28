@@ -126,6 +126,9 @@ defmodule Chronicle.Connections.Auth do
         other ->
           {:error, {:http_error, other, resp_body}}
       end
+    else
+      {:error, _conn, reason} -> {:error, {:request_error, reason}}
+      {:error, reason} -> {:error, reason}
     end
   rescue
     e -> {:error, {:exception, e}}

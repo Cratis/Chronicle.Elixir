@@ -462,6 +462,7 @@ defmodule Chronicle.Connections.ConnectionTest do
       assert_receive {:opts, opts}
       assert opts[:headers] == []
       assert opts[:interceptors] == [Chronicle.Connections.TransportFailureInterceptor]
+      assert opts[:adapter] == GRPC.Client.Adapters.Mint
     end
   end
 
@@ -844,6 +845,7 @@ defmodule Chronicle.Connections.ConnectionTest do
     assert opts[:cred].ssl[:cert]
     [{Chronicle.Connections.AuthInterceptor, provider: provider} | _] = opts[:interceptors]
     assert %{} = Chronicle.Connections.TokenProvider.authorization_headers(provider)
+    assert Process.alive?(provider)
     assert_receive {:oauth_peer, peer}, 5_000
     assert peer == opts[:cred].ssl[:cert]
     assert :ok = Task.await(server, 6_000)
@@ -1138,11 +1140,10 @@ defmodule Chronicle.Connections.ConnectionTest do
 
         monitor = Process.monitor(response)
 
-        assert catch_exit(
+        assert {:error, _reason} =
                  StreamResponseProcess.consume(response, :trailers, [
                    {"grpc-status", "not-an-integer"}
                  ])
-               )
 
         assert_receive {:DOWN, ^monitor, :process, ^response, _reason}, 2_000
         Logger.flush()

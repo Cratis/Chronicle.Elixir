@@ -592,7 +592,7 @@ defmodule Chronicle.Connections.Connection do
 
     adapter_opts = Keyword.get(options, :adapter_opts, [])
     transport_opts = Keyword.get(adapter_opts, :transport_opts, [])
-    # grpc 0.11.5 merges module options after the credential's SSL settings;
+    # grpc 1.0.5 merges module options after the credential's SSL settings;
     # any module transport_opts replaces the entire list, including cert/key.
     module_opts =
       Application.get_env(
@@ -610,7 +610,7 @@ defmodule Chronicle.Connections.Connection do
       raise ArgumentError, "client certificate conflicts with existing gRPC TLS identity options"
     end
 
-    # grpc 0.11.5 merges credential SSL after adapter transport_opts, so
+    # grpc 1.0.5 merges credential SSL after adapter transport_opts, so
     # adapter-level verification can be silently overridden by the credential.
     if Enum.any?(transport_opts, fn {key, _} ->
          key in @server_verification_options or
