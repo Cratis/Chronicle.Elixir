@@ -103,6 +103,7 @@ defmodule Chronicle.Connections.ConnectionString do
           }
   end
 
+  @derive {Inspect, except: [:password, :api_key, :certificate_password, :query_parameters]}
   defstruct scheme: "chronicle",
             server_addresses: [],
             username: nil,

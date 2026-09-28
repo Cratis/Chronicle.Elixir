@@ -564,7 +564,7 @@ defmodule Chronicle.Connections.ConnectionTest do
       conn =
         start(
           connection_string:
-            "chronicle://localhost:35000?certificatePath=#{URI.encode_www_form(path)}&certificatePassword=secret",
+            "chronicle://localhost:35000?certificatePath=#{URI.encode_www_form(path)}&certificatePassword=secret&skipTlsValidation=false",
           grpc_options: [cred: custom],
           connect_fun: fn _target, opts ->
             send(test_pid, {:opts, opts})
@@ -577,6 +577,7 @@ defmodule Chronicle.Connections.ConnectionTest do
       assert_receive {:opts, opts}
       assert opts[:cred].ssl[:verify] == :verify_peer
       assert opts[:cred].ssl[:cacerts] == []
+      assert match?({fun, false} when is_function(fun, 4), opts[:cred].ssl[:verify_fun])
       assert is_binary(opts[:cred].ssl[:cert])
       assert match?({:PrivateKeyInfo, key} when is_binary(key), opts[:cred].ssl[:key])
     end
@@ -652,6 +653,243 @@ defmodule Chronicle.Connections.ConnectionTest do
 
       assert message =~ "certificatePath"
     end
+  end
+
+  @tag :tmp_dir
+  @tag capture_log: true
+  test "the OAuth token provider presents the configured client certificate", %{tmp_dir: tmp_dir} do
+    path = certificate_fixture(tmp_dir)
+    cert_path = Path.join(tmp_dir, "cert.pem")
+    key_path = Path.join(tmp_dir, "key.pem")
+
+    [{:Certificate, expected_peer, _}] = :public_key.pem_decode(File.read!(cert_path))
+
+    verify_peer = fn _cert, der, event, state ->
+      case event do
+        {:bad_cert, :selfsigned_peer} ->
+          if der == expected_peer, do: {:valid, state}, else: {:fail, :unexpected_peer}
+
+        {:bad_cert, _} = reason ->
+          {:fail, reason}
+
+        {:extension, _} ->
+          {:unknown, state}
+
+        _ ->
+          {:valid, state}
+      end
+    end
+
+    {:ok, listener} =
+      :ssl.listen(0,
+        certfile: cert_path,
+        keyfile: key_path,
+        cacertfile: cert_path,
+        verify: :verify_peer,
+        verify_fun: {verify_peer, nil},
+        fail_if_no_peer_cert: true,
+        alpn_preferred_protocols: ["h2"],
+        active: false
+      )
+
+    {:ok, {_, port}} = :ssl.sockname(listener)
+    parent = self()
+
+    server =
+      Task.async(fn ->
+        {:ok, socket} = :ssl.transport_accept(listener, 5_000)
+
+        result =
+          with {:ok, tls} <- :ssl.handshake(socket, 5_000),
+               {:ok, peer} <- :ssl.peercert(tls) do
+            send(parent, {:oauth_peer, peer})
+            :ssl.close(tls)
+            :ok
+          end
+
+        :ssl.close(listener)
+        result
+      end)
+
+    conn =
+      start(
+        connection_string:
+          "chronicle://user:pass@localhost:#{port}?certificatePath=#{URI.encode_www_form(path)}&certificatePassword=secret",
+        connect_fun: fn _target, opts ->
+          send(parent, {:grpc_opts, opts})
+          {:ok, channel_with_conn(parent)}
+        end,
+        auto_connect: true
+      )
+
+    assert :ok = Connection.connect(conn, 1_000)
+    assert_receive {:grpc_opts, opts}
+    assert opts[:cred].ssl[:cert]
+    [{Chronicle.Connections.AuthInterceptor, provider: provider} | _] = opts[:interceptors]
+    assert %{} = Chronicle.Connections.TokenProvider.authorization_headers(provider)
+    assert_receive {:oauth_peer, peer}, 5_000
+    assert peer == opts[:cred].ssl[:cert]
+    assert :ok = Task.await(server, 6_000)
+  end
+
+  @tag :tmp_dir
+  test "rejects unsupported adapter and credential before dialing", %{tmp_dir: tmp_dir} do
+    path = certificate_fixture(tmp_dir)
+
+    cs =
+      "chronicle://localhost:35000?certificatePath=#{URI.encode_www_form(path)}&certificatePassword=secret"
+
+    Process.flag(:trap_exit, true)
+
+    for opts <- [[adapter: GRPC.Client.Adapters.Gun], [cred: :invalid]] do
+      assert {:error, {%ArgumentError{}, _}} =
+               Connection.start_link(
+                 connection_string: cs,
+                 grpc_options: opts,
+                 auto_connect: false
+               )
+    end
+  end
+
+  @tag :tmp_dir
+  test "rejects conflicting identity from credential or Mint transport", %{tmp_dir: tmp_dir} do
+    path = certificate_fixture(tmp_dir)
+
+    cs =
+      "chronicle://localhost:35000?certificatePath=#{URI.encode_www_form(path)}&certificatePassword=secret"
+
+    Process.flag(:trap_exit, true)
+
+    for opts <- [
+          [cred: GRPC.Credential.new(ssl: [certs_keys: []])],
+          [adapter_opts: [transport_opts: [certs_keys: []]]]
+        ] do
+      assert {:error, {%ArgumentError{message: message}, _}} =
+               Connection.start_link(
+                 connection_string: cs,
+                 grpc_options: opts,
+                 auto_connect: false
+               )
+
+      assert message =~ "conflicts"
+    end
+  end
+
+  test "empty certificate path is absent even with a password" do
+    conn =
+      start(
+        connection_string:
+          "chronicle://localhost:35000?certificatePath=&certificatePassword=unused"
+      )
+
+    refute Connection.connected?(conn)
+  end
+
+  @tag :tmp_dir
+  test "accepts an encrypted PEM key with a UTF-8 password", %{tmp_dir: tmp_dir} do
+    certificate_fixture(tmp_dir)
+    encrypted = Path.join(tmp_dir, "unicode-key.pem")
+    bundle = Path.join(tmp_dir, "unicode.pem")
+
+    {_, 0} =
+      System.cmd(
+        "openssl",
+        [
+          "pkcs8",
+          "-topk8",
+          "-in",
+          Path.join(tmp_dir, "key.pem"),
+          "-out",
+          encrypted,
+          "-passout",
+          "pass:pässword"
+        ],
+        stderr_to_stdout: true
+      )
+
+    File.write!(bundle, File.read!(Path.join(tmp_dir, "cert.pem")) <> File.read!(encrypted))
+
+    cs =
+      "chronicle://localhost:35000?certificatePath=#{URI.encode_www_form(bundle)}&certificatePassword=#{URI.encode_www_form("pässword")}"
+      |> ConnectionString.parse()
+
+    assert [cert: _, key: {:PrivateKeyInfo, _}] = ClientCertificate.load!(cs)
+  end
+
+  @tag :tmp_dir
+  test "accepts PEM preamble and whitespace", %{tmp_dir: tmp_dir} do
+    certificate_fixture(tmp_dir)
+    bundle = Path.join(tmp_dir, "preamble.pem")
+
+    File.write!(
+      bundle,
+      " \nBag Attributes\n    friendlyName: client\n" <>
+        File.read!(Path.join(tmp_dir, "cert.pem")) <> File.read!(Path.join(tmp_dir, "key.pem"))
+    )
+
+    assert [cert: _, key: _] =
+             ClientCertificate.load!(
+               ConnectionString.parse(
+                 "chronicle://localhost?certificatePath=#{URI.encode_www_form(bundle)}"
+               )
+             )
+  end
+
+  @tag :tmp_dir
+  test "loads a PKCS#12 export using legacy encryption", %{tmp_dir: tmp_dir} do
+    certificate_fixture(tmp_dir)
+    legacy = Path.join(tmp_dir, "legacy.p12")
+
+    {_, 0} =
+      System.cmd(
+        "openssl",
+        [
+          "pkcs12",
+          "-export",
+          "-legacy",
+          "-certpbe",
+          "PBE-SHA1-RC2-40",
+          "-inkey",
+          Path.join(tmp_dir, "key.pem"),
+          "-in",
+          Path.join(tmp_dir, "cert.pem"),
+          "-out",
+          legacy,
+          "-passout",
+          "pass:secret"
+        ],
+        stderr_to_stdout: true
+      )
+
+    cs =
+      ConnectionString.parse(
+        "chronicle://localhost?certificatePath=#{URI.encode_www_form(legacy)}&certificatePassword=secret"
+      )
+
+    assert [cert: _, key: _] = ClientCertificate.load!(cs)
+  end
+
+  test "redacts secrets from inspected and process status" do
+    cs =
+      ConnectionString.parse(
+        "chronicle://user:private-pass@localhost?apiKey=private-api&certificatePassword=private-cert"
+      )
+
+    inspected = inspect(cs)
+    refute inspected =~ "private-pass"
+    refute inspected =~ "private-api"
+    refute inspected =~ "private-cert"
+
+    conn =
+      start(
+        connection_string: "chronicle://user:private-pass@localhost?apiKey=private-api",
+        grpc_options: [headers: [{"secret", "private-header"}]]
+      )
+
+    status = :sys.get_status(conn) |> inspect(limit: :infinity)
+    refute status =~ "private-pass"
+    refute status =~ "private-api"
+    refute status =~ "private-header"
   end
 
   defp start_invalid(connection_string) do

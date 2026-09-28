@@ -6,6 +6,8 @@ defmodule Chronicle.Connections.Auth do
 
   # Fetches OAuth2 Bearer tokens using the client credentials grant via HTTP/2.
 
+  alias Chronicle.Connections.ClientCertificate
+
   @doc """
   Fetches an OAuth2 access token using the client credentials grant.
 
@@ -159,7 +161,8 @@ defmodule Chronicle.Connections.Auth do
   def transport_opts(false, false, client_certificate),
     do: [
       transport_opts:
-        [verify: :verify_peer, cacerts: :public_key.cacerts_get()] ++ client_certificate
+        [verify: :verify_peer, cacerts: :public_key.cacerts_get()] ++
+          ClientCertificate.server_verify_options(client_certificate) ++ client_certificate
     ]
 
   defp receive_response(conn, status \\ nil, body \\ "") do

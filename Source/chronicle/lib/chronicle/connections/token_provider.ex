@@ -80,6 +80,14 @@ defmodule Chronicle.Connections.TokenProvider do
   end
 
   @impl true
+  def format_status(%{state: state} = status) do
+    %{
+      status
+      | state: %{state | connection_string: :redacted, fetch_fun: :redacted, token: :redacted}
+    }
+  end
+
+  @impl true
   def handle_call(:authorization_headers, _from, state) do
     state = ensure_fresh_token(state)
 

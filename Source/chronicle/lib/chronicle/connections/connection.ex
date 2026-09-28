@@ -168,6 +168,8 @@ defmodule Chronicle.Connections.Connection do
   def init(options) do
     connection_string = connection_string_from(options)
     client_certificate = ClientCertificate.load!(connection_string)
+    grpc_options = Keyword.get(options, :grpc_options, [])
+    validate_certificate_options!(grpc_options, client_certificate)
 
     state = %{
       connection_string: connection_string,
@@ -180,7 +182,7 @@ defmodule Chronicle.Connections.Connection do
       disconnect_fun: Keyword.get(options, :disconnect_fun, &default_disconnect/1),
       resolve_fun: Keyword.get(options, :resolve_fun, &DnsResolver.resolve/2),
       probe_fun: Keyword.get(options, :probe_fun, &LoadBalancer.default_probe/3),
-      grpc_options: Keyword.get(options, :grpc_options, []),
+      grpc_options: grpc_options,
       retry_attempts: Keyword.get(options, :retry_attempts, @default_retry_attempts),
       reconnect_base_delay:
         Keyword.get(options, :reconnect_base_delay, @default_reconnect_base_delay),
@@ -203,6 +205,19 @@ defmodule Chronicle.Connections.Connection do
     end
 
     {:ok, state}
+  end
+
+  @impl true
+  def format_status(%{state: state} = status) do
+    %{
+      status
+      | state: %{
+          state
+          | connection_string: :redacted,
+            client_certificate: :redacted,
+            grpc_options: :redacted
+        }
+    }
   end
 
   @impl true
@@ -518,9 +533,33 @@ defmodule Chronicle.Connections.Connection do
       true ->
         add_credential(
           options,
-          [verify: :verify_peer, cacerts: :public_key.cacerts_get()],
+          [verify: :verify_peer, cacerts: :public_key.cacerts_get()] ++
+            ClientCertificate.server_verify_options(client_certificate),
           client_certificate
         )
+    end
+  end
+
+  @identity_options [:certs_keys, :cert, :key, :certfile, :keyfile, :password]
+
+  defp validate_certificate_options!(_options, []), do: :ok
+
+  defp validate_certificate_options!(options, _certificate) do
+    if Keyword.get(options, :adapter, GRPC.Client.Adapters.Mint) != GRPC.Client.Adapters.Mint do
+      raise ArgumentError, "client certificates require the Mint gRPC adapter"
+    end
+
+    ssl =
+      case options[:cred] do
+        nil -> []
+        %GRPC.Credential{ssl: existing} -> existing
+        _ -> raise ArgumentError, "client certificates require a GRPC.Credential"
+      end
+
+    transport_opts = get_in(options, [:adapter_opts, :transport_opts]) || []
+
+    if Enum.any?(ssl ++ transport_opts, fn {key, _} -> key in @identity_options end) do
+      raise ArgumentError, "client certificate conflicts with existing gRPC TLS identity options"
     end
   end
 
@@ -535,9 +574,16 @@ defmodule Chronicle.Connections.Connection do
 
     existing_ssl =
       case options[:cred] do
-        nil -> ssl
-        %GRPC.Credential{ssl: existing} -> existing
-        _ -> raise ArgumentError, "client certificates require a GRPC.Credential"
+        nil ->
+          ssl
+
+        %GRPC.Credential{ssl: existing} ->
+          if ssl[:verify_fun],
+            do: Keyword.put_new(existing, :verify_fun, ssl[:verify_fun]),
+            else: existing
+
+        _ ->
+          raise ArgumentError, "client certificates require a GRPC.Credential"
       end
 
     credential = GRPC.Credential.new(ssl: Keyword.merge(existing_ssl, client_certificate))

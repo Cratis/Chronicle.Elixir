@@ -31,6 +31,14 @@ defmodule Chronicle.Connections.TokenProviderTest do
 
   defp fetch_count(calls), do: Agent.get(calls, & &1)
 
+  test "redacts the connection secret, fetch closure and token from process status" do
+    {provider, _calls} = start([{:ok, {"private-token", @long_lifetime}}])
+    assert %{"authorization" => _} = TokenProvider.authorization_headers(provider)
+    status = :sys.get_status(provider) |> inspect(limit: :infinity)
+    refute status =~ "private-token"
+    refute status =~ "pass"
+  end
+
   test "fetches a token on first use and returns bearer headers" do
     {provider, calls} = start([{:ok, {"token-1", @long_lifetime}}])
 
