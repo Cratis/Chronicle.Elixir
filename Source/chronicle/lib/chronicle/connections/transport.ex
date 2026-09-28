@@ -57,7 +57,12 @@ defmodule Chronicle.Connections.Transport do
               {:ok, channel}
             end
 
-          if not match?({:ok, _}, result), do: release_child(supervisor, pid, nil)
+          if not match?({:ok, _}, result) do
+            release_child(supervisor, pid, nil)
+            # A child that died before it was tracked leaves grpc's entries behind.
+            erase_grpc_entries(name)
+          end
+
           result
 
         {:error, reason} ->
@@ -102,6 +107,8 @@ defmodule Chronicle.Connections.Transport do
 
       {{pid, socket}, channels} ->
         release_child(state.supervisor, pid, socket)
+        # The child may have crashed while being released; its DOWN would then match nothing.
+        erase_grpc_entries(ref)
         {:reply, :ok, %{state | channels: channels}}
     end
   end
