@@ -70,6 +70,7 @@ defmodule Chronicle.Connections.Connection do
     ConnectionString,
     DnsResolver,
     LoadBalancer,
+    ResponseCrashRedaction,
     Status,
     TokenProvider,
     Transport
@@ -177,6 +178,7 @@ defmodule Chronicle.Connections.Connection do
   @impl true
   def init(options) do
     Process.flag(:trap_exit, true)
+    ResponseCrashRedaction.install!()
     connection_string = connection_string_from(options)
     client_certificate = ClientCertificate.load!(connection_string)
     grpc_options = Keyword.get(options, :grpc_options, [])
