@@ -70,6 +70,7 @@ defmodule Chronicle.Connections.Connection do
     ConnectionString,
     DnsResolver,
     LoadBalancer,
+    Status,
     TokenProvider
   }
 
@@ -209,16 +210,12 @@ defmodule Chronicle.Connections.Connection do
 
   @impl true
   def format_status(%{state: state} = status) do
-    status
-    |> Map.put(:state, %{
-      state
-      | connection_string: :redacted,
-        client_certificate: :redacted,
-        grpc_options: :redacted,
-        channel: if(state.channel, do: :connected, else: nil)
-    })
-    |> Map.replace_lazy(:message, fn _ -> :redacted end)
-    |> Map.replace_lazy(:log, fn _ -> :redacted end)
+    Status.redact(status,
+      connection_string: :redacted,
+      client_certificate: :redacted,
+      grpc_options: :redacted,
+      channel: if(state.channel, do: :connected, else: nil)
+    )
   end
 
   @impl true

@@ -15,7 +15,7 @@ defmodule Chronicle.Reactors.Handler do
 
   require Logger
 
-  alias Chronicle.Connections.{Connection, Lifecycle}
+  alias Chronicle.Connections.{Connection, Lifecycle, Status}
   alias Chronicle.EventSequences.{EventForEventSourceId, EventLog}
 
   alias Cratis.Chronicle.Contracts.Observation.Reactors.{
@@ -71,6 +71,11 @@ defmodule Chronicle.Reactors.Handler do
     if state.lifecycle, do: Lifecycle.subscribe(state.lifecycle)
 
     {:ok, state}
+  end
+
+  @impl true
+  def format_status(%{state: state} = status) do
+    Status.redact(status, stream: if(state.stream, do: :open, else: nil))
   end
 
   @impl true
