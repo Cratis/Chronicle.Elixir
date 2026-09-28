@@ -1178,7 +1178,7 @@ defmodule Chronicle.Connections.ConnectionTest do
     path = Path.join(dir, "client.p12")
     parent = self()
 
-    {:ok, supervisor} =
+    {:ok, _supervisor} =
       Supervisor.start_link(
         [
           {Connection,
@@ -1196,7 +1196,6 @@ defmodule Chronicle.Connections.ConnectionTest do
         strategy: :one_for_one
       )
 
-    on_exit(fn -> if Process.alive?(supervisor), do: Supervisor.stop(supervisor) end)
     connection = Process.whereis(:signer_recovery_connection)
     assert :ok = Connection.connect(connection, 2_000)
     assert_receive {:identity, first_ssl}, 2_000
