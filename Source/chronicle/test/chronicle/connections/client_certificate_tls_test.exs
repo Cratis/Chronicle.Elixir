@@ -247,6 +247,98 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
   end
 
   @tag :tmp_dir
+  test "mutual TLS keeps a custom CA callback and its trusted intermediate", %{tmp_dir: dir} do
+    fixtures = chain_fixture(dir)
+    leaf = sign_server_with_intermediate(dir, fixtures)
+    server_chain = Path.join(dir, "trusted-intermediate-chain.pem")
+    File.write!(server_chain, File.read!(leaf) <> File.read!(fixtures.intermediate_cert))
+
+    identity_path = Path.join(dir, "unrelated-identity.pem")
+
+    File.write!(
+      identity_path,
+      File.read!(fixtures.server_cert) <> File.read!(fixtures.server_key)
+    )
+
+    parent = self()
+    [{:Certificate, ca, _}] = :public_key.pem_decode(File.read!(fixtures.intermediate_cert))
+    decoded_ca = :public_key.pkix_decode_cert(ca, :plain)
+
+    callback = fn chain ->
+      send(parent, :custom_partial_chain_called)
+      Mint.Core.Transport.SSL.partial_chain([decoded_ca], chain)
+    end
+
+    trust = [verify: :verify_peer, cacerts: [ca], partial_chain: callback]
+    assert_ca_handshake(dir, fixtures, identity_path, server_chain, trust)
+    assert_receive :custom_partial_chain_called
+  end
+
+  @tag :tmp_dir
+  test "mutual TLS retains Mint's public-key anchor for a cross-signed intermediate", %{
+    tmp_dir: dir
+  } do
+    fixtures = chain_fixture(dir)
+    leaf = sign_server_with_intermediate(dir, fixtures)
+    other_root = Path.join(dir, "other-root.pem")
+    other_key = Path.join(dir, "other-root.key")
+
+    openssl([
+      "req",
+      "-x509",
+      "-newkey",
+      "rsa:2048",
+      "-nodes",
+      "-days",
+      "1",
+      "-subj",
+      "/CN=Other Root",
+      "-addext",
+      "basicConstraints=critical,CA:TRUE",
+      "-keyout",
+      other_key,
+      "-out",
+      other_root
+    ])
+
+    cross_signed = Path.join(dir, "cross-signed.pem")
+
+    openssl([
+      "x509",
+      "-req",
+      "-in",
+      Path.join(dir, "intermediate.csr"),
+      "-CA",
+      other_root,
+      "-CAkey",
+      other_key,
+      "-CAcreateserial",
+      "-days",
+      "1",
+      "-extfile",
+      Path.join(dir, "intermediate.ext"),
+      "-out",
+      cross_signed
+    ])
+
+    server_chain = Path.join(dir, "cross-signed-chain.pem")
+    File.write!(server_chain, File.read!(leaf) <> File.read!(cross_signed))
+    identity_path = Path.join(dir, "unrelated-identity.pem")
+
+    File.write!(
+      identity_path,
+      File.read!(fixtures.server_cert) <> File.read!(fixtures.server_key)
+    )
+
+    [{:Certificate, trusted, _}] = :public_key.pem_decode(File.read!(fixtures.intermediate_cert))
+
+    assert_ca_handshake(dir, fixtures, identity_path, server_chain,
+      verify: :verify_peer,
+      cacerts: [trusted]
+    )
+  end
+
+  @tag :tmp_dir
   test "pin checks the leaf, not the chain", %{
     tmp_dir: dir
   } do
@@ -498,6 +590,74 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
                  "chronicle://localhost?certificatePath=#{URI.encode_www_form(bundle)}"
                )
              )
+  end
+
+  defp sign_server_with_intermediate(dir, fixtures) do
+    leaf = Path.join(dir, "intermediate-server.pem")
+
+    openssl([
+      "x509",
+      "-req",
+      "-in",
+      fixtures.server_csr,
+      "-CA",
+      fixtures.intermediate_cert,
+      "-CAkey",
+      fixtures.intermediate_key,
+      "-CAcreateserial",
+      "-days",
+      "1",
+      "-extfile",
+      fixtures.server_ext,
+      "-out",
+      leaf
+    ])
+
+    leaf
+  end
+
+  defp assert_ca_handshake(_dir, fixtures, identity_path, server_chain, trust) do
+    parent = self()
+
+    {:ok, connection} =
+      Connection.start_link(
+        connection_string:
+          "chronicle://localhost?certificatePath=#{URI.encode_www_form(identity_path)}&skipTlsValidation=false",
+        grpc_options: [cred: GRPC.Credential.new(ssl: trust)],
+        connect_fun: fn _target, options ->
+          send(parent, {:configured_ssl, options[:cred].ssl})
+          {:ok, %{}}
+        end,
+        disconnect_fun: fn _ -> :ok end
+      )
+
+    assert :ok = Connection.connect(connection, 2_000)
+    assert_receive {:configured_ssl, ssl}
+    Connection.disconnect(connection)
+
+    {:ok, listener} =
+      :ssl.listen(0,
+        certfile: server_chain,
+        keyfile: fixtures.server_key,
+        verify: :verify_none,
+        active: false,
+        reuseaddr: true
+      )
+
+    {:ok, {_, port}} = :ssl.sockname(listener)
+
+    server =
+      Task.async(fn ->
+        {:ok, socket} = :ssl.transport_accept(listener, 5_000)
+        result = :ssl.handshake(socket, 5_000)
+        if match?({:ok, _}, result), do: :ssl.close(elem(result, 1))
+        :ssl.close(listener)
+        result
+      end)
+
+    assert {:ok, tls} = :ssl.connect(~c"localhost", port, [active: false] ++ ssl, 5_000)
+    :ssl.close(tls)
+    assert {:ok, _} = Task.await(server, 6_000)
   end
 
   defp assert_handshake(path, fixtures) do

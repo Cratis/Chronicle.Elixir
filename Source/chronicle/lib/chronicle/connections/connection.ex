@@ -531,8 +531,7 @@ defmodule Chronicle.Connections.Connection do
       true ->
         add_credential(
           options,
-          [verify: :verify_peer, cacerts: :public_key.cacerts_get()] ++
-            ClientCertificate.server_verify_options(client_certificate),
+          [verify: :verify_peer, cacerts: :public_key.cacerts_get()],
           client_certificate
         )
     end
@@ -586,22 +585,22 @@ defmodule Chronicle.Connections.Connection do
 
     existing_ssl =
       case options[:cred] do
-        nil ->
-          ssl
-
-        %GRPC.Credential{ssl: existing} ->
-          if not is_nil(ssl[:verify_fun]) and existing[:verify] == :verify_peer and
-               not Keyword.has_key?(existing, :verify_fun) do
-            Keyword.merge(existing, ClientCertificate.server_verify_options(client_certificate))
-          else
-            existing
-          end
-
-        _ ->
-          raise ArgumentError, "client certificates require a GRPC.Credential"
+        nil -> ssl
+        %GRPC.Credential{ssl: existing} -> existing
+        _ -> raise ArgumentError, "client certificates require a GRPC.Credential"
       end
 
-    credential = GRPC.Credential.new(ssl: Keyword.merge(existing_ssl, client_certificate))
+    verified_ssl =
+      if existing_ssl[:verify] == :verify_peer and not Keyword.has_key?(existing_ssl, :verify_fun) do
+        Keyword.merge(
+          existing_ssl,
+          ClientCertificate.server_verify_options(client_certificate, existing_ssl)
+        )
+      else
+        existing_ssl
+      end
+
+    credential = GRPC.Credential.new(ssl: Keyword.merge(verified_ssl, client_certificate))
     Keyword.put(options, :cred, credential)
   end
 

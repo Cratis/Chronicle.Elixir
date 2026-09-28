@@ -158,12 +158,16 @@ defmodule Chronicle.Connections.Auth do
   def transport_opts(false, true, client_certificate),
     do: [transport_opts: [verify: :verify_none] ++ client_certificate]
 
-  def transport_opts(false, false, client_certificate),
-    do: [
+  def transport_opts(false, false, client_certificate) do
+    trust = [verify: :verify_peer, cacerts: :public_key.cacerts_get()]
+
+    [
       transport_opts:
-        [verify: :verify_peer, cacerts: :public_key.cacerts_get()] ++
-          ClientCertificate.server_verify_options(client_certificate) ++ client_certificate
+        trust ++
+          ClientCertificate.server_verify_options(client_certificate, trust) ++
+          client_certificate
     ]
+  end
 
   defp receive_response(conn, status \\ nil, body \\ "") do
     receive do
