@@ -17,12 +17,15 @@ defmodule Chronicle.Connections.AppendCompatibility do
   @protocol_version (case :file.consult(@contracts_metadata) do
                        {:ok, metadata} ->
                          case List.keyfind(metadata, "version", 0) do
-                           {"version", version} when is_binary(version) -> version
-                           _ -> raise "contracts package has no version in #{@contracts_metadata}"
+                           {"version", version} when is_binary(version) ->
+                             version
+
+                           _ ->
+                             raise "contracts package must come from Hex with version metadata in #{@contracts_metadata}"
                          end
 
                        {:error, reason} ->
-                         raise "cannot read contracts package metadata #{@contracts_metadata}: #{inspect(reason)}"
+                         raise "contracts package must come from Hex; cannot read version metadata #{@contracts_metadata}: #{inspect(reason)}"
                      end)
   @client_version_path Path.expand("../../../VERSION", __DIR__)
   @external_resource @client_version_path
