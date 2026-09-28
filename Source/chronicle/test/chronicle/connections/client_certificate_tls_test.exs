@@ -525,6 +525,114 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
   end
 
   @tag :tmp_dir
+  test "RSA and ECDSA use TLS 1.2 and 1.3; Ed25519 uses TLS 1.3", %{
+    tmp_dir: dir
+  } do
+    fixtures = chain_fixture(dir)
+
+    for {name, key_args} <- [
+          {"rsa", ["rsa:2048"]},
+          {"ec", ["ec", "-pkeyopt", "ec_paramgen_curve:prime256v1"]},
+          {"ed25519", ["ed25519"]}
+        ] do
+      key = Path.join(dir, "#{name}-identity.key")
+      cert = Path.join(dir, "#{name}-identity.pem")
+      csr = Path.join(dir, "#{name}-identity.csr")
+      ext = Path.join(dir, "#{name}-identity.ext")
+      bundle = Path.join(dir, "#{name}-identity-bundle.pem")
+
+      openssl(
+        ["req", "-newkey"] ++
+          key_args ++ ["-nodes", "-subj", "/CN=#{name} Client", "-keyout", key, "-out", csr]
+      )
+
+      File.write!(ext, "keyUsage=critical,digitalSignature\nextendedKeyUsage=clientAuth\n")
+
+      openssl([
+        "x509",
+        "-req",
+        "-in",
+        csr,
+        "-CA",
+        fixtures.root_cert,
+        "-CAkey",
+        fixtures.root_key,
+        "-CAcreateserial",
+        "-days",
+        "1",
+        "-extfile",
+        ext,
+        "-out",
+        cert
+      ])
+
+      File.write!(bundle, File.read!(cert) <> File.read!(key))
+
+      identity =
+        ClientCertificate.load!(
+          ConnectionString.parse(
+            "chronicle://localhost?certificatePath=#{URI.encode_www_form(bundle)}"
+          )
+        )
+
+      [{:Certificate, expected_peer, _}] = :public_key.pem_decode(File.read!(cert))
+      assert is_map(identity[:key])
+      assert is_function(identity[:key].sign_fun, 3)
+
+      # OTP 28 ssl_config:check_key_algo_version_dep/2 explicitly restricts
+      # eddsa sign_fun identities to TLS 1.3; it rejects them on TLS 1.2.
+      versions = if name == "ed25519", do: [:"tlsv1.3"], else: [:"tlsv1.2", :"tlsv1.3"]
+
+      if name == "ed25519" do
+        assert {:error, {:options, :incompatible, _}} =
+                 :ssl.connect(~c"localhost", 9, [versions: [:"tlsv1.2"]] ++ identity, 50)
+      end
+
+      for version <- versions do
+        {:ok, listener} =
+          :ssl.listen(0,
+            certfile: fixtures.server_cert,
+            keyfile: fixtures.server_key,
+            cacertfile: fixtures.root_cert,
+            verify: :verify_peer,
+            fail_if_no_peer_cert: true,
+            versions: [version],
+            active: false,
+            reuseaddr: true
+          )
+
+        {:ok, {_, port}} = :ssl.sockname(listener)
+
+        server =
+          Task.async(fn ->
+            {:ok, socket} = :ssl.transport_accept(listener, 5_000)
+
+            result =
+              with {:ok, tls} <- :ssl.handshake(socket, 5_000),
+                   {:ok, peer} <- :ssl.peercert(tls) do
+                :ssl.close(tls)
+                {:ok, peer}
+              end
+
+            :ssl.close(listener)
+            result
+          end)
+
+        assert {:ok, socket} =
+                 :ssl.connect(
+                   ~c"localhost",
+                   port,
+                   [verify: :verify_none, versions: [version], active: false] ++ identity,
+                   5_000
+                 )
+
+        :ssl.close(socket)
+        assert {:ok, ^expected_peer} = Task.await(server, 6_000)
+      end
+    end
+  end
+
+  @tag :tmp_dir
   test "matches a DSA private key to its certificate", %{tmp_dir: dir} do
     params = Path.join(dir, "dsa-params.pem")
     key = Path.join(dir, "dsa.key")
@@ -606,7 +714,6 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
 
     assert :ok = Connection.connect(connection, 2_000)
     assert_receive {:mint_rejection_options, opts}
-    Connection.disconnect(connection)
 
     channel = %GRPC.Channel{host: "localhost", port: port, scheme: "https", cred: opts[:cred]}
 
@@ -615,6 +722,7 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
 
     assert inspect(reason) =~ failure
     assert {:error, _} = Task.await(server, 6_000)
+    Connection.disconnect(connection)
   end
 
   defp assert_no_identity_handshake(fixtures, adapter_opts, succeeds?) do
@@ -658,7 +766,6 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
 
     assert :ok = Connection.connect(connection, 2_000)
     assert_receive {:no_identity_options, options}
-    Connection.disconnect(connection)
 
     channel = %GRPC.Channel{host: "localhost", port: port, scheme: "https", cred: options[:cred]}
     result = GRPC.Client.Adapters.Mint.connect(channel, adapter_opts)
@@ -670,6 +777,8 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
       assert {:error, _} = result
       assert {:error, _} = Task.await(server, 6_000)
     end
+
+    Connection.disconnect(connection)
   end
 
   defp sign_server_with_intermediate(dir, fixtures) do
@@ -713,7 +822,6 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
 
     assert :ok = Connection.connect(connection, 2_000)
     assert_receive {:configured_ssl, ssl}
-    Connection.disconnect(connection)
 
     {:ok, listener} =
       :ssl.listen(0,
@@ -751,6 +859,7 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
     end
 
     assert {:ok, _} = Task.await(server, 6_000)
+    Connection.disconnect(connection)
   end
 
   defp assert_handshake(path, fixtures) do
@@ -777,7 +886,6 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
     assert :ok = Connection.connect(connection, 2_000)
     assert_receive {:grpc_ssl, grpc_ssl}
     assert grpc_ssl[:cert] == identity[:cert]
-    Connection.disconnect(connection)
 
     {:ok, listener} =
       :ssl.listen(0,
@@ -813,6 +921,7 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
     :ssl.close(client)
     assert {:ok, peer} = Task.await(server, 6_000)
     assert peer == hd(identity[:cert])
+    Connection.disconnect(connection)
   end
 
   defp chain_fixture(dir) do

@@ -4,7 +4,7 @@
 defmodule Chronicle.Connections.ClientCertificate do
   @moduledoc false
 
-  alias Chronicle.Connections.ConnectionString
+  alias Chronicle.Connections.{ConnectionString, PrivateKeySigner}
 
   require Record
 
@@ -142,7 +142,10 @@ defmodule Chronicle.Connections.ClientCertificate do
            Enum.find(certificates, &owns_key?(&1, private_key)) do
       certs = [certificate | List.delete(certificates, certificate)]
       cert = if length(certs) == 1, do: certificate, else: certs
-      [cert: cert, key: {type, key_der}]
+      # The decrypted DER must not enter a channel, token provider or TLS
+      # process: all three can appear in dependency crash reports.
+      algorithm = signing_algorithm(certificate)
+      [cert: cert, key: PrivateKeySigner.start(private_key, algorithm)]
     else
       _ -> invalid!(path)
     end
@@ -208,6 +211,21 @@ defmodule Chronicle.Connections.ClientCertificate do
     end
   rescue
     _ -> false
+  end
+
+  defp signing_algorithm(certificate) do
+    certificate
+    |> :public_key.pkix_decode_cert(:otp)
+    |> otp_cert(:tbsCertificate)
+    |> otp_tbs(:subjectPublicKeyInfo)
+    |> otp_spki(:algorithm)
+    |> otp_algorithm(:algorithm)
+    |> case do
+      {1, 2, 840, 113_549, 1, 1, _} -> :rsa
+      {1, 2, 840, 10045, 2, 1} -> :ecdsa
+      {1, 3, 101, curve} when curve in [112, 113] -> :eddsa
+      {1, 2, 840, 10040, 4, 1} -> :dsa
+    end
   end
 
   defp invalid!(path) do

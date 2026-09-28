@@ -5,6 +5,7 @@ defmodule Chronicle.Connections.ConnectionTest do
   use ExUnit.Case, async: true
 
   alias Chronicle.Connections.{ClientCertificate, Connection, ConnectionString}
+  alias GRPC.Client.Adapters.Mint.StreamResponseProcess
 
   # A connection process exposed through adapter_payload so the connection can
   # extract it for liveness monitoring (mirrors the gun adapter shape).
@@ -486,7 +487,12 @@ defmodule Chronicle.Connections.ConnectionTest do
       assert :ok = Connection.connect(conn, 1_000)
       assert_receive {:opts, opts}
       assert is_binary(opts[:cred].ssl[:cert])
-      assert match?({:PrivateKeyInfo, key} when is_binary(key), opts[:cred].ssl[:key])
+
+      assert match?(
+               %{algorithm: :rsa, sign_fun: fun} when is_function(fun, 3),
+               opts[:cred].ssl[:key]
+             )
+
       assert opts[:cred].ssl[:verify] == :verify_none
     end
 
@@ -507,7 +513,7 @@ defmodule Chronicle.Connections.ConnectionTest do
         |> ClientCertificate.load!()
 
       assert is_binary(certificate[:cert])
-      assert match?({:PrivateKeyInfo, key} when is_binary(key), certificate[:key])
+      assert match?(%{algorithm: :rsa, sign_fun: fun} when is_function(fun, 3), certificate[:key])
     end
 
     @tag :tmp_dir
@@ -539,13 +545,13 @@ defmodule Chronicle.Connections.ConnectionTest do
       connection_string =
         "chronicle://localhost:35000?certificatePath=#{URI.encode_www_form(bundle)}"
 
-      assert [cert: cert, key: {:PrivateKeyInfo, key}] =
+      assert [cert: cert, key: %{algorithm: :rsa, sign_fun: fun}] =
                connection_string
                |> Kernel.<>("&certificatePassword=secret")
                |> ConnectionString.parse()
                |> ClientCertificate.load!()
 
-      assert is_binary(cert) and is_binary(key)
+      assert is_binary(cert) and is_function(fun, 3)
 
       assert {:error, {%ArgumentError{message: message}, _}} =
                start_invalid(connection_string <> "&certificatePassword=incorrect")
@@ -580,7 +586,11 @@ defmodule Chronicle.Connections.ConnectionTest do
       refute Keyword.has_key?(opts[:cred].ssl, :verify_fun)
       refute Keyword.has_key?(opts[:cred].ssl, :partial_chain)
       assert is_binary(opts[:cred].ssl[:cert])
-      assert match?({:PrivateKeyInfo, key} when is_binary(key), opts[:cred].ssl[:key])
+
+      assert match?(
+               %{algorithm: :rsa, sign_fun: fun} when is_function(fun, 3),
+               opts[:cred].ssl[:key]
+             )
     end
 
     @tag :tmp_dir
@@ -942,7 +952,7 @@ defmodule Chronicle.Connections.ConnectionTest do
       "chronicle://localhost:35000?certificatePath=#{URI.encode_www_form(bundle)}&certificatePassword=#{URI.encode_www_form("pässword")}"
       |> ConnectionString.parse()
 
-    assert [cert: _, key: {:PrivateKeyInfo, _}] = ClientCertificate.load!(cs)
+    assert [cert: _, key: %{algorithm: :rsa}] = ClientCertificate.load!(cs)
   end
 
   @tag :tmp_dir
@@ -1038,6 +1048,111 @@ defmodule Chronicle.Connections.ConnectionTest do
 
     refute formatted =~ secret
     refute formatted =~ "unique-api-key-secret"
+  end
+
+  @tag :tmp_dir
+  test "a malformed gRPC trailer crash never logs the private key", %{tmp_dir: dir} do
+    certificate_fixture(dir)
+    key_der = private_key_der(dir)
+    parent = self()
+
+    connection =
+      start(
+        connection_string:
+          "chronicle://localhost?certificatePath=#{URI.encode_www_form(Path.join(dir, "client.p12"))}&certificatePassword=secret",
+        connect_fun: fn _target, opts ->
+          {:ok, %GRPC.Channel{cred: opts[:cred]}}
+        end,
+        disconnect_fun: fn _ -> :ok end,
+        auto_connect: true
+      )
+
+    assert :ok = Connection.connect(connection, 1_000)
+    {:ok, channel} = Connection.channel(connection)
+    key = channel.cred.ssl[:key]
+    assert %{sign_fun: sign_fun} = key
+    assert is_function(sign_fun, 3)
+    refute inspect(:erlang.fun_info(sign_fun, :env), limit: :infinity) =~ Base.encode64(key_der)
+
+    Process.flag(:trap_exit, true)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        {:ok, response} =
+          StreamResponseProcess.start_link(%GRPC.Client.Stream{channel: channel}, false)
+
+        monitor = Process.monitor(response)
+
+        assert catch_exit(
+                 StreamResponseProcess.consume(response, :trailers, [
+                   {"grpc-status", "not-an-integer"}
+                 ])
+               )
+
+        assert_receive {:DOWN, ^monitor, :process, ^response, _reason}, 2_000
+        Logger.flush()
+        send(parent, :crash_captured)
+      end)
+
+    assert_receive :crash_captured
+    assert log =~ "StreamResponseProcess"
+    assert log =~ "ArgumentError"
+    assert log =~ "GRPC.Channel"
+    refute_key_material(log, key_der)
+  end
+
+  @tag :tmp_dir
+  test "a Connection callback crash redacts reason stack arguments", %{tmp_dir: dir} do
+    certificate_fixture(dir)
+    key_der = private_key_der(dir)
+    Process.flag(:trap_exit, true)
+
+    connection =
+      start(
+        connection_string:
+          "chronicle://localhost?certificatePath=#{URI.encode_www_form(Path.join(dir, "client.p12"))}&certificatePassword=secret",
+        auto_connect: false
+      )
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        monitor = Process.monitor(connection)
+        assert catch_exit(GenServer.call(connection, :unexpected_call))
+        assert_receive {:DOWN, ^monitor, :process, ^connection, _reason}, 2_000
+        Logger.flush()
+      end)
+
+    assert log =~ "Chronicle.Connections.Connection"
+    assert log =~ "handle_call/3"
+    refute log =~ "client_certificate: ["
+    refute_key_material(log, key_der)
+  end
+
+  defp private_key_der(dir) do
+    {pem, 0} =
+      System.cmd(
+        "openssl",
+        ["pkcs12", "-in", Path.join(dir, "client.p12"), "-nodes", "-passin", "pass:secret"],
+        stderr_to_stdout: true
+      )
+
+    {type, der, :not_encrypted} =
+      pem
+      |> :public_key.pem_decode()
+      |> Enum.find(fn {type, _, _} -> type in [:RSAPrivateKey, :PrivateKeyInfo] end)
+
+    assert type in [:RSAPrivateKey, :PrivateKeyInfo]
+    der
+  end
+
+  defp refute_key_material(log, der) do
+    for bytes <- [der, binary_part(der, 0, min(byte_size(der), 32))] do
+      refute log =~ bytes
+      refute log =~ Base.encode64(bytes)
+      refute log =~ Base.encode16(bytes)
+      refute log =~ Base.encode16(bytes, case: :lower)
+      refute log =~ Enum.join(:binary.bin_to_list(bytes), ", ")
+    end
   end
 
   test "redacts secrets from inspected and process status" do

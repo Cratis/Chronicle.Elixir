@@ -11,5 +11,8 @@ defmodule Chronicle.Connections.Status do
     |> Map.put(:state, Map.merge(state, Map.new(replacements)))
     |> Map.replace_lazy(:message, fn _ -> :redacted end)
     |> Map.replace_lazy(:log, fn _ -> :redacted end)
+    # OTP includes argument-bearing stack frames in :reason on callback crashes.
+    # Replacing the entire reason also covers exceptions that embed credentials.
+    |> Map.replace_lazy(:reason, fn _ -> :redacted end)
   end
 end

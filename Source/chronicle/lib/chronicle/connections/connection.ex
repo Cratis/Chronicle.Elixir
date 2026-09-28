@@ -268,6 +268,13 @@ defmodule Chronicle.Connections.Connection do
     {:stop, :normal, :ok, %{state | connected?: false, channel: nil, connection_process: nil}}
   end
 
+  # A missing clause would put the entire state (and the caller arguments) in
+  # the stacktrace. OTP's GenServer crash reporter appends that stacktrace
+  # outside format_status/1, so redact :reason AND avoid argument-bearing frames.
+  def handle_call(_request, _from, _state) do
+    raise FunctionClauseError, module: __MODULE__, function: :handle_call, arity: 3
+  end
+
   @impl true
   def handle_cast(:reconnect, %{connected?: false} = state) do
     # Not connected: a dial or backoff cycle already owns recovery.
