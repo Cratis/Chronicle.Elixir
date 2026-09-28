@@ -955,14 +955,18 @@ defmodule Chronicle.Connections.ConnectionTest do
     refute Connection.connected?(conn)
   end
 
-  test "empty certificate path is absent even with a password" do
-    conn =
-      start(
-        connection_string:
-          "chronicle://localhost:35000?certificatePath=&certificatePassword=unused"
-      )
-
+  test "empty certificate path is absent" do
+    conn = start(connection_string: "chronicle://localhost:35000?certificatePath=")
     refute Connection.connected?(conn)
+  end
+
+  test "rejects a certificate password with an empty certificate path" do
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             start_invalid(
+               "chronicle://localhost:35000?certificatePath=&certificatePassword=secret"
+             )
+
+    assert message =~ "certificatePath"
   end
 
   @tag :tmp_dir

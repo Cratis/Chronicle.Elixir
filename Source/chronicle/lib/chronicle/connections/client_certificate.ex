@@ -44,7 +44,8 @@ defmodule Chronicle.Connections.ClientCertificate do
   def load!(%ConnectionString{certificate_path: nil, certificate_password: password})
       when password in [nil, ""], do: []
 
-  def load!(%ConnectionString{certificate_path: ""}), do: []
+  def load!(%ConnectionString{certificate_path: "", certificate_password: password})
+      when password in [nil, ""], do: []
 
   def load!(%ConnectionString{certificate_path: path, disable_tls: true}) when is_binary(path) do
     raise ArgumentError, "client certificate #{path} cannot be used when TLS is disabled"
@@ -68,7 +69,7 @@ defmodule Chronicle.Connections.ClientCertificate do
   end
 
   def load!(%ConnectionString{certificate_path: path, certificate_password: password}) do
-    if is_binary(password) do
+    if is_binary(password) and path in [nil, ""] do
       raise ArgumentError, "certificatePassword requires a certificatePath"
     end
 

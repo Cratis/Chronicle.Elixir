@@ -49,7 +49,7 @@ URL-encode reserved characters in a client id or secret, such as `@`, `:` and `/
 | `srvNameServer` | system resolver | For `chronicle+srv://`, the DNS server to query, as `host` or `host:port`. |
 | `authPort` | the first host's port | Port for the `/connect/token` request, when it differs from the gRPC port. |
 | `certificatePath` | none | Path to a PKCS#12 (`.p12`/`.pfx`) file or a PEM bundle containing a client certificate and private key. Applied to the gRPC channel and OAuth token request. An empty value is treated as absent. |
-| `certificatePassword` | none | Password for a PKCS#12 file or encrypted PEM private key. An empty value without `certificatePath` is ignored; a non-empty value without a path is rejected (unlike the .NET client). |
+| `certificatePassword` | none | Password for a PKCS#12 file or encrypted PEM private key. An empty value without `certificatePath` is ignored; a non-empty value without a path, or with an empty path, is rejected at startup (unlike the .NET client). |
 
 A host without a port uses `35000`. IPv6 addresses use brackets, as in `chronicle://[::1]:35000`.
 
