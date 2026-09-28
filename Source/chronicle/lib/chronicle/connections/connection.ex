@@ -538,6 +538,15 @@ defmodule Chronicle.Connections.Connection do
   end
 
   @identity_options [:certs_keys, :cert, :key, :certfile, :keyfile, :password]
+  @server_verification_options [
+    :verify,
+    :verify_fun,
+    :partial_chain,
+    :cacerts,
+    :cacertfile,
+    :customize_hostname_check,
+    :server_name_indication
+  ]
 
   defp validate_certificate_options!(_options, []), do: :ok
 
@@ -572,6 +581,14 @@ defmodule Chronicle.Connections.Connection do
     if Enum.any?(ssl ++ transport_opts, fn {key, _} -> key in @identity_options end) do
       raise ArgumentError, "client certificate conflicts with existing gRPC TLS identity options"
     end
+
+    # Mint merges adapter transport_opts first, then credential SSL. Pinning
+    # adds callbacks to the credential, which would silently replace adapter
+    # verification callbacks even when the caller supplied stricter checks.
+    if Enum.any?(transport_opts, fn {key, _} -> key in @server_verification_options end) do
+      raise ArgumentError,
+            "client certificate conflicts with adapter_opts transport_opts server verification; put verification settings on the GRPC.Credential instead"
+    end
   end
 
   defp add_credential(options, ssl, []) do
@@ -590,11 +607,17 @@ defmodule Chronicle.Connections.Connection do
         _ -> raise ArgumentError, "client certificates require a GRPC.Credential"
       end
 
+    # Match grpc 0.11.5's effective SSL precedence. Module transport_opts
+    # would replace the entire list and are rejected during init above.
+    transport_opts = options |> Keyword.get(:adapter_opts, []) |> Keyword.get(:transport_opts, [])
+    effective_ssl = Keyword.merge(transport_opts, existing_ssl)
+
     verified_ssl =
-      if existing_ssl[:verify] == :verify_peer and not Keyword.has_key?(existing_ssl, :verify_fun) do
+      if effective_ssl[:verify] == :verify_peer and
+           not Keyword.has_key?(effective_ssl, :verify_fun) do
         Keyword.merge(
           existing_ssl,
-          ClientCertificate.server_verify_options(client_certificate, existing_ssl)
+          ClientCertificate.server_verify_options(client_certificate, effective_ssl)
         )
       else
         existing_ssl

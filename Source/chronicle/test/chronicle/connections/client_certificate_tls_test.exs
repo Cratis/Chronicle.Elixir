@@ -149,6 +149,82 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
   end
 
   @tag :tmp_dir
+  test "adapter-level verification still rejects a CA-trusted server without a client identity",
+       %{
+         tmp_dir: dir
+       } do
+    fixtures = chain_fixture(dir)
+    parent = self()
+
+    reject_server = fn _cert, _der, event, state ->
+      send(parent, {:verify_event, event})
+
+      case event do
+        :valid_peer -> {:fail, :caller_rejected_server}
+        {:bad_cert, _} = reason -> {:fail, reason}
+        {:extension, _} -> {:unknown, state}
+        _ -> {:valid, state}
+      end
+    end
+
+    adapter_opts = [transport_opts: [verify_fun: {reject_server, nil}]]
+    assert_no_identity_handshake(fixtures, adapter_opts, false)
+    assert_receive {:verify_event, :valid_peer}
+
+    bundle = Path.join(dir, "unrelated-client.pem")
+    File.write!(bundle, File.read!(fixtures.client_cert) <> File.read!(fixtures.client_key))
+
+    Process.flag(:trap_exit, true)
+
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             Connection.start_link(
+               connection_string:
+                 "chronicle://localhost?certificatePath=#{URI.encode_www_form(bundle)}&skipTlsValidation=false",
+               grpc_options: [adapter_opts: adapter_opts],
+               auto_connect: false
+             )
+
+    assert message =~ "adapter_opts"
+    assert message =~ "GRPC.Credential"
+  end
+
+  @tag :tmp_dir
+  test "adapter-level partial_chain remains effective without an identity and rejects with one",
+       %{
+         tmp_dir: dir
+       } do
+    fixtures = chain_fixture(dir)
+    parent = self()
+    [{:Certificate, root, _}] = :public_key.pem_decode(File.read!(fixtures.root_cert))
+    decoded_root = :public_key.pkix_decode_cert(root, :plain)
+
+    callback = fn chain ->
+      send(parent, :adapter_partial_chain_called)
+      Mint.Core.Transport.SSL.partial_chain([decoded_root], chain)
+    end
+
+    adapter_opts = [transport_opts: [partial_chain: callback]]
+    assert_no_identity_handshake(fixtures, adapter_opts, true)
+    assert_receive :adapter_partial_chain_called
+
+    bundle = Path.join(dir, "unrelated-client.pem")
+    File.write!(bundle, File.read!(fixtures.client_cert) <> File.read!(fixtures.client_key))
+
+    Process.flag(:trap_exit, true)
+
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             Connection.start_link(
+               connection_string:
+                 "chronicle://localhost?certificatePath=#{URI.encode_www_form(bundle)}&skipTlsValidation=false",
+               grpc_options: [adapter_opts: adapter_opts],
+               auto_connect: false
+             )
+
+    assert message =~ "adapter_opts"
+    assert message =~ "GRPC.Credential"
+  end
+
+  @tag :tmp_dir
   test "rejects application-level Mint transport overrides before dialing", %{tmp_dir: dir} do
     fixtures = chain_fixture(dir)
     bundle = Path.join(dir, "app-cert.pem")
@@ -590,6 +666,61 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
                  "chronicle://localhost?certificatePath=#{URI.encode_www_form(bundle)}"
                )
              )
+  end
+
+  defp assert_no_identity_handshake(fixtures, adapter_opts, succeeds?) do
+    parent = self()
+
+    {:ok, listener} =
+      :ssl.listen(0,
+        certfile: fixtures.server_cert,
+        keyfile: fixtures.server_key,
+        verify: :verify_none,
+        alpn_preferred_protocols: ["h2"],
+        active: false,
+        reuseaddr: true
+      )
+
+    {:ok, {_, port}} = :ssl.sockname(listener)
+
+    server =
+      Task.async(fn ->
+        {:ok, socket} = :ssl.transport_accept(listener, 5_000)
+        result = :ssl.handshake(socket, 5_000)
+        if match?({:ok, _}, result), do: :ssl.close(elem(result, 1))
+        :ssl.close(listener)
+        result
+      end)
+
+    [{:Certificate, root, _}] = :public_key.pem_decode(File.read!(fixtures.root_cert))
+
+    {:ok, connection} =
+      Connection.start_link(
+        connection_string: "chronicle://localhost:#{port}?skipTlsValidation=false",
+        grpc_options: [
+          adapter_opts: adapter_opts,
+          cred: GRPC.Credential.new(ssl: [verify: :verify_peer, cacerts: [root]])
+        ],
+        connect_fun: fn _target, options ->
+          send(parent, {:no_identity_options, options})
+          {:ok, %{}}
+        end
+      )
+
+    assert :ok = Connection.connect(connection, 2_000)
+    assert_receive {:no_identity_options, options}
+    Connection.disconnect(connection)
+
+    channel = %GRPC.Channel{host: "localhost", port: port, scheme: "https", cred: options[:cred]}
+    result = GRPC.Client.Adapters.Mint.connect(channel, adapter_opts)
+    if match?({:ok, _}, result), do: GRPC.Client.Adapters.Mint.disconnect(elem(result, 1))
+
+    if succeeds? do
+      assert {:ok, _} = Task.await(server, 6_000)
+    else
+      assert {:error, _} = result
+      assert {:error, _} = Task.await(server, 6_000)
+    end
   end
 
   defp sign_server_with_intermediate(dir, fixtures) do

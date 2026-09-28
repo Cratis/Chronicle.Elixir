@@ -801,6 +801,37 @@ defmodule Chronicle.Connections.ConnectionTest do
     end
   end
 
+  @tag :tmp_dir
+  test "rejects every adapter-level server verification option with a client identity", %{
+    tmp_dir: tmp_dir
+  } do
+    path = certificate_fixture(tmp_dir)
+
+    cs =
+      "chronicle://localhost?certificatePath=#{URI.encode_www_form(path)}&certificatePassword=secret"
+
+    Process.flag(:trap_exit, true)
+
+    for option <- [
+          :verify,
+          :verify_fun,
+          :partial_chain,
+          :cacerts,
+          :cacertfile,
+          :customize_hostname_check,
+          :server_name_indication
+        ] do
+      assert {:error, {%ArgumentError{message: message}, _}} =
+               Connection.start_link(
+                 connection_string: cs,
+                 grpc_options: [adapter_opts: [transport_opts: [{option, :caller_setting}]]],
+                 auto_connect: false
+               )
+
+      assert message =~ "adapter_opts transport_opts server verification"
+    end
+  end
+
   test "empty certificate password without a path is absent" do
     conn = start(connection_string: "chronicle://localhost?certificatePassword=")
     refute Connection.connected?(conn)
