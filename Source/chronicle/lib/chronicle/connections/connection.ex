@@ -173,6 +173,7 @@ defmodule Chronicle.Connections.Connection do
 
   @impl true
   def init(options) do
+    Process.flag(:trap_exit, true)
     connection_string = connection_string_from(options)
     client_certificate = ClientCertificate.load!(connection_string)
     grpc_options = Keyword.get(options, :grpc_options, [])
@@ -199,6 +200,7 @@ defmodule Chronicle.Connections.Connection do
       reconnect_timer: nil,
       connection_process: nil,
       connection_monitor: nil,
+      connect_attempt: nil,
       pending_connects: [],
       # Round-robin's counter starts at a random offset (not 0) so a fleet of
       # clients reconnecting together doesn't all dial the same first host;
@@ -282,6 +284,13 @@ defmodule Chronicle.Connections.Connection do
   end
 
   @impl true
+  def terminate(_reason, state) do
+    disconnect_channel(state)
+    stop_token_provider(state.token_provider)
+    :ok
+  end
+
+  @impl true
   def handle_cast(:reconnect, %{connected?: false} = state) do
     # Not connected: a dial or backoff cycle already owns recovery.
     {:noreply, state}
@@ -312,17 +321,38 @@ defmodule Chronicle.Connections.Connection do
 
   def handle_info(:connect, state) do
     state = %{state | reconnect_timer: nil}
-    spawn_connect_attempt(state)
-    {:noreply, %{state | round_robin_counter: state.round_robin_counter + 1}}
-  end
+    attempt = spawn_connect_attempt(state)
 
-  def handle_info({:connect_result, {:ok, channel}}, state) do
-    {:noreply, succeed_connect(state, channel)}
-  end
-
-  def handle_info({:connect_result, {:error, _reason}}, state) do
     {:noreply,
-     schedule_reconnect(%{state | channel: nil, connected?: false, connection_process: nil})}
+     %{state | connect_attempt: attempt, round_robin_counter: state.round_robin_counter + 1}}
+  end
+
+  def handle_info(
+        {:connect_result, attempt, {:ok, channel}},
+        %{connect_attempt: attempt} = state
+      ) do
+    state = succeed_connect(state, channel)
+    send(attempt, {:connect_accepted, self()})
+    {:noreply, %{state | connect_attempt: nil}}
+  end
+
+  def handle_info(
+        {:connect_result, attempt, {:error, _reason}},
+        %{connect_attempt: attempt} = state
+      ) do
+    {:noreply,
+     schedule_reconnect(%{
+       state
+       | connect_attempt: nil,
+         channel: nil,
+         connected?: false,
+         connection_process: nil
+     })}
+  end
+
+  def handle_info({:connect_result, _attempt, {:ok, channel}}, state) do
+    disconnect_orphan(channel, state.disconnect_fun)
+    {:noreply, state}
   end
 
   def handle_info({:connect_timeout, from}, state) do
@@ -358,6 +388,16 @@ defmodule Chronicle.Connections.Connection do
     {:noreply, handle_connection_down(state)}
   end
 
+  # Trapping exits for shutdown cleanup must not turn linked provider or signer
+  # crashes into ignored messages. The signer monitors us to release its key.
+  def handle_info({:EXIT, provider, reason}, %{token_provider: provider} = state)
+      when is_pid(provider) do
+    {:stop, reason, state}
+  end
+
+  def handle_info({:EXIT, _pid, :normal}, state), do: {:noreply, state}
+  def handle_info({:EXIT, _pid, reason}, state), do: {:stop, reason, state}
+
   def handle_info(_message, state) do
     {:noreply, state}
   end
@@ -372,27 +412,44 @@ defmodule Chronicle.Connections.Connection do
     round_robin_counter = state.round_robin_counter
     token_provider = state.token_provider
     client_certificate = state.client_certificate
+    disconnect_fun = state.disconnect_fun
 
-    Task.start(fn ->
-      result =
-        with {:ok, addresses} <- resolve_addresses(connection_string, resolve_fun),
-             {:ok, address} <-
-               LoadBalancer.select(addresses, connection_string, round_robin_counter, probe_fun) do
-          target = target_for(address)
+    {:ok, attempt} =
+      Task.start(fn ->
+        owner_monitor = Process.monitor(parent)
 
-          opts =
-            build_grpc_options(
-              connection_string,
-              grpc_options,
-              token_provider,
-              client_certificate
-            )
+        result =
+          with {:ok, addresses} <- resolve_addresses(connection_string, resolve_fun),
+               {:ok, address} <-
+                 LoadBalancer.select(addresses, connection_string, round_robin_counter, probe_fun) do
+            target = target_for(address)
 
-          connect_fun.(target, opts)
+            opts =
+              build_grpc_options(
+                connection_string,
+                grpc_options,
+                token_provider,
+                client_certificate
+              )
+
+            connect_fun.(target, opts)
+          end
+
+        send(parent, {:connect_result, self(), result})
+
+        if match?({:ok, _}, result) do
+          receive do
+            {:connect_accepted, ^parent} ->
+              :ok
+
+            {:DOWN, ^owner_monitor, :process, ^parent, _reason} ->
+              {:ok, channel} = result
+              disconnect_orphan(channel, disconnect_fun)
+          end
         end
+      end)
 
-      send(parent, {:connect_result, result})
-    end)
+    attempt
   end
 
   # Resolves the connection string's candidate addresses. `chronicle+srv://`
@@ -461,6 +518,14 @@ defmodule Chronicle.Connections.Connection do
   end
 
   defp fail_pending_connects(state, reply), do: reply_pending_connects(state, reply)
+
+  defp disconnect_orphan(channel, disconnect_fun) do
+    disconnect_fun.(channel)
+  rescue
+    _ -> :ok
+  catch
+    :exit, _ -> :ok
+  end
 
   defp disconnect_channel(%{channel: nil} = state), do: state
 
@@ -696,7 +761,14 @@ defmodule Chronicle.Connections.Connection do
   end
 
   defp stop_token_provider(nil), do: :ok
-  defp stop_token_provider(provider), do: GenServer.stop(provider)
+
+  defp stop_token_provider(provider) do
+    if Process.alive?(provider) do
+      GenServer.stop(provider)
+    end
+  catch
+    :exit, {:noproc, _} -> :ok
+  end
 
   # Appended, so grpc-elixir runs it outermost around every other interceptor and the transport.
   defp add_transport_failure_interceptor(options) do
