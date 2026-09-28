@@ -5,7 +5,7 @@ defmodule Chronicle.Connections.TransportFailureInterceptor do
   @moduledoc false
 
   # Every Chronicle function promises `{:error, reason}` when a call fails. Two transport
-  # failures in grpc 0.11 break that promise, so they are turned into the error a refused
+  # failures in the gRPC transport break that promise, so they are turned into the error a refused
   # connection produces:
   #
   #   * A call racing a dying channel: the Mint adapter hands the request to its connection
@@ -58,7 +58,7 @@ defmodule Chronicle.Connections.TransportFailureInterceptor do
   # The raising frame is often a standard library function (Keyword.fetch!/2) called by grpc, so
   # the first frame outside Elixir's and Erlang's standard libraries decides who raised.
   @standard_applications [:elixir, :stdlib, :kernel, :logger, :telemetry]
-  @transport_applications [:grpc, :mint]
+  @transport_applications [:grpc, :grpc_core, :mint]
 
   defp raised_in_grpc?(stacktrace) do
     stacktrace

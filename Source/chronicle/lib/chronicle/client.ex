@@ -291,9 +291,11 @@ defmodule Chronicle.Client do
 
     children =
       [
-        GRPC.Client.Supervisor,
         {Chronicle.Connections.Lifecycle, client: name},
-        {Connection, connection_opts},
+        # Connection cleanup is bounded by the gRPC child (1s) and OAuth
+        # provider (1s); leave 5s for the supervised shutdown. Its independent
+        # transport owner also cleans up if the connection is forcibly killed.
+        Supervisor.child_spec({Connection, connection_opts}, shutdown: 5_000),
         {Chronicle.Connections.Session,
          connection: conn_name, client_name: name, lifecycle: lifecycle_name},
         {Chronicle.Registration.Coordinator,

@@ -93,6 +93,39 @@ defmodule Chronicle.Connections.Auth do
         skip_tls_validation,
         client_certificate
       ) do
+    fetch_token_with_expiry(
+      host,
+      port,
+      client_id,
+      client_secret,
+      disable_tls,
+      skip_tls_validation,
+      client_certificate,
+      &Mint.HTTP.request/5
+    )
+  end
+
+  @doc false
+  @spec fetch_token_with_expiry(
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          String.t(),
+          boolean(),
+          boolean(),
+          keyword(),
+          function()
+        ) :: {:ok, {String.t(), non_neg_integer() | nil}} | {:error, term()}
+  def fetch_token_with_expiry(
+        host,
+        port,
+        client_id,
+        client_secret,
+        disable_tls,
+        skip_tls_validation,
+        client_certificate,
+        request_fun
+      ) do
     scheme = if disable_tls, do: :http, else: :https
 
     body =
@@ -111,10 +144,8 @@ defmodule Chronicle.Connections.Auth do
     mint_opts = transport_opts(disable_tls, skip_tls_validation, client_certificate)
 
     with {:ok, conn} <- Mint.HTTP.connect(scheme, host, port, mint_opts),
-         {:ok, conn, _ref} <- Mint.HTTP.request(conn, "POST", "/connect/token", headers, body),
+         {:ok, conn, _ref} <- request_fun.(conn, "POST", "/connect/token", headers, body),
          {:ok, {status, resp_body}} <- receive_response(conn) do
-      Mint.HTTP.close(conn)
-
       case status do
         200 ->
           case Jason.decode(resp_body) do
@@ -126,6 +157,13 @@ defmodule Chronicle.Connections.Auth do
         other ->
           {:error, {:http_error, other, resp_body}}
       end
+    else
+      {:error, conn, reason} ->
+        close_connection(conn)
+        {:error, {:request_error, reason}}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   rescue
     e -> {:error, {:exception, e}}
@@ -162,34 +200,55 @@ defmodule Chronicle.Connections.Auth do
     [transport_opts: trust ++ client_certificate]
   end
 
+  # Mint's close/1 is a no-op once its state is :closed, even if a stream
+  # error marked that state before closing the underlying socket.
+  defp close_connection(%{state: :closed, transport: transport, socket: socket}) do
+    transport.close(socket)
+  end
+
+  defp close_connection(conn), do: Mint.HTTP.close(conn)
+
   defp receive_response(conn, status \\ nil, body \\ "") do
+    socket = conn.socket
+
     receive do
-      message ->
-        case Mint.HTTP.stream(conn, message) do
-          {:ok, conn, responses} ->
-            {new_status, new_body, done?} =
-              Enum.reduce(responses, {status, body, false}, fn
-                {:status, _ref, s}, {_, b, d} -> {s, b, d}
-                {:data, _ref, d}, {s, b, _} -> {s, b <> d, false}
-                {:done, _ref}, {s, b, _} -> {s, b, true}
-                _other, acc -> acc
-              end)
-
-            if done? do
-              {:ok, {new_status, new_body}}
-            else
-              receive_response(conn, new_status, new_body)
-            end
-
-          {:error, _conn, reason, _} ->
-            {:error, {:stream_error, reason}}
-
-          :unknown ->
-            receive_response(conn, status, body)
-        end
+      {:tcp, ^socket, _} = message -> stream_response(conn, message, status, body)
+      {:ssl, ^socket, _} = message -> stream_response(conn, message, status, body)
+      {:tcp_closed, ^socket} = message -> stream_response(conn, message, status, body)
+      {:ssl_closed, ^socket} = message -> stream_response(conn, message, status, body)
+      {:tcp_error, ^socket, _} = message -> stream_response(conn, message, status, body)
+      {:ssl_error, ^socket, _} = message -> stream_response(conn, message, status, body)
     after
       10_000 ->
+        close_connection(conn)
         {:error, :timeout}
+    end
+  end
+
+  defp stream_response(conn, message, status, body) do
+    case Mint.HTTP.stream(conn, message) do
+      {:ok, conn, responses} ->
+        {new_status, new_body, done?} =
+          Enum.reduce(responses, {status, body, false}, fn
+            {:status, _ref, s}, {_, b, d} -> {s, b, d}
+            {:data, _ref, d}, {s, b, _} -> {s, b <> d, false}
+            {:done, _ref}, {s, b, _} -> {s, b, true}
+            _other, acc -> acc
+          end)
+
+        if done? do
+          close_connection(conn)
+          {:ok, {new_status, new_body}}
+        else
+          receive_response(conn, new_status, new_body)
+        end
+
+      {:error, conn, reason, _} ->
+        close_connection(conn)
+        {:error, {:stream_error, reason}}
+
+      :unknown ->
+        receive_response(conn, status, body)
     end
   end
 end
