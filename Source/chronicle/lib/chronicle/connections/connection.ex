@@ -209,15 +209,16 @@ defmodule Chronicle.Connections.Connection do
 
   @impl true
   def format_status(%{state: state} = status) do
-    %{
-      status
-      | state: %{
-          state
-          | connection_string: :redacted,
-            client_certificate: :redacted,
-            grpc_options: :redacted
-        }
-    }
+    status
+    |> Map.put(:state, %{
+      state
+      | connection_string: :redacted,
+        client_certificate: :redacted,
+        grpc_options: :redacted,
+        channel: if(state.channel, do: :connected, else: nil)
+    })
+    |> Map.replace_lazy(:message, fn _ -> :redacted end)
+    |> Map.replace_lazy(:log, fn _ -> :redacted end)
   end
 
   @impl true
@@ -556,7 +557,21 @@ defmodule Chronicle.Connections.Connection do
         _ -> raise ArgumentError, "client certificates require a GRPC.Credential"
       end
 
-    transport_opts = get_in(options, [:adapter_opts, :transport_opts]) || []
+    adapter_opts = Keyword.get(options, :adapter_opts, [])
+    transport_opts = Keyword.get(adapter_opts, :transport_opts, [])
+    # grpc 0.11.5 merges module options after the credential's SSL settings;
+    # any module transport_opts replaces the entire list, including cert/key.
+    module_opts =
+      Application.get_env(
+        :grpc,
+        GRPC.Client.Adapters.Mint,
+        Keyword.get(adapter_opts, :config_options, [])
+      )
+
+    if Keyword.has_key?(module_opts, :transport_opts) do
+      raise ArgumentError,
+            "client certificate conflicts with Mint module transport_opts (gRPC overrides the client identity)"
+    end
 
     if Enum.any?(ssl ++ transport_opts, fn {key, _} -> key in @identity_options end) do
       raise ArgumentError, "client certificate conflicts with existing gRPC TLS identity options"
@@ -578,9 +593,12 @@ defmodule Chronicle.Connections.Connection do
           ssl
 
         %GRPC.Credential{ssl: existing} ->
-          if ssl[:verify_fun],
-            do: Keyword.put_new(existing, :verify_fun, ssl[:verify_fun]),
-            else: existing
+          if not is_nil(ssl[:verify_fun]) and existing[:verify] == :verify_peer and
+               not Keyword.has_key?(existing, :verify_fun) do
+            Keyword.merge(existing, ClientCertificate.server_verify_options(client_certificate))
+          else
+            existing
+          end
 
         _ ->
           raise ArgumentError, "client certificates require a GRPC.Credential"

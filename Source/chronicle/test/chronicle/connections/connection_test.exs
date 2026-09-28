@@ -583,6 +583,32 @@ defmodule Chronicle.Connections.ConnectionTest do
     end
 
     @tag :tmp_dir
+    test "does not inject pinning into a custom verify_none credential", %{tmp_dir: tmp_dir} do
+      path = certificate_fixture(tmp_dir)
+      parent = self()
+      custom = GRPC.Credential.new(ssl: [verify: :verify_none])
+
+      conn =
+        start(
+          connection_string:
+            "chronicle://localhost?certificatePath=#{URI.encode_www_form(path)}&certificatePassword=secret&skipTlsValidation=false",
+          grpc_options: [cred: custom],
+          connect_fun: fn _target, opts ->
+            send(parent, {:ssl, opts[:cred].ssl})
+            {:ok, channel_with_conn(parent)}
+          end,
+          auto_connect: true
+        )
+
+      assert :ok = Connection.connect(conn, 1_000)
+      assert_receive {:ssl, ssl}
+      assert ssl[:verify] == :verify_none
+      refute Keyword.has_key?(ssl, :verify_fun)
+      refute Keyword.has_key?(ssl, :partial_chain)
+      assert is_binary(ssl[:cert])
+    end
+
+    @tag :tmp_dir
     test "uses the same client certificate for OAuth TLS", %{tmp_dir: tmp_dir} do
       path = certificate_fixture(tmp_dir)
 
@@ -775,6 +801,11 @@ defmodule Chronicle.Connections.ConnectionTest do
     end
   end
 
+  test "empty certificate password without a path is absent" do
+    conn = start(connection_string: "chronicle://localhost?certificatePassword=")
+    refute Connection.connected?(conn)
+  end
+
   test "empty certificate path is absent even with a password" do
     conn =
       start(
@@ -867,6 +898,48 @@ defmodule Chronicle.Connections.ConnectionTest do
       )
 
     assert [cert: _, key: _] = ClientCertificate.load!(cs)
+  end
+
+  @tag :tmp_dir
+  test "connected status redacts the channel credential, headers, message and log", %{
+    tmp_dir: tmp_dir
+  } do
+    path = certificate_fixture(tmp_dir)
+    secret = "unique-private-key-#{System.unique_integer([:positive])}"
+
+    channel = %GRPC.Channel{
+      cred: GRPC.Credential.new(ssl: [key: {:PrivateKeyInfo, secret}]),
+      headers: [{"api-key", "unique-api-key-secret"}]
+    }
+
+    conn =
+      start(
+        connection_string:
+          "chronicle://localhost?apiKey=unique-api-key-secret&certificatePath=#{URI.encode_www_form(path)}&certificatePassword=secret",
+        connect_fun: fn _target, _opts -> {:ok, channel} end,
+        disconnect_fun: fn _ -> :ok end,
+        auto_connect: true
+      )
+
+    assert :ok = Connection.connect(conn, 1_000)
+    assert {:ok, ^channel} = Connection.channel(conn)
+    status = :sys.get_status(conn) |> inspect(limit: :infinity)
+    refute status =~ secret
+    refute status =~ "unique-api-key-secret"
+    assert status =~ "connected"
+
+    state = :sys.get_state(conn)
+
+    formatted =
+      Connection.format_status(%{
+        state: state,
+        message: {:connect_result, {:ok, channel}},
+        log: [{:connect_result, {:ok, channel}}]
+      })
+      |> inspect(limit: :infinity)
+
+    refute formatted =~ secret
+    refute formatted =~ "unique-api-key-secret"
   end
 
   test "redacts secrets from inspected and process status" do

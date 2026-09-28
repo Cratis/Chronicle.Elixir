@@ -6,11 +6,45 @@ defmodule Chronicle.Connections.ClientCertificate do
 
   alias Chronicle.Connections.ConnectionString
 
+  require Record
+
+  Record.defrecordp(
+    :otp_cert,
+    Record.extract(:OTPCertificate, from_lib: "public_key/include/public_key.hrl")
+  )
+
+  Record.defrecordp(
+    :otp_tbs,
+    Record.extract(:OTPTBSCertificate, from_lib: "public_key/include/public_key.hrl")
+  )
+
+  Record.defrecordp(
+    :otp_spki,
+    Record.extract(:OTPSubjectPublicKeyInfo, from_lib: "public_key/include/public_key.hrl")
+  )
+
+  Record.defrecordp(
+    :otp_algorithm,
+    Record.extract(:PublicKeyAlgorithm, from_lib: "public_key/include/public_key.hrl")
+  )
+
+  Record.defrecordp(
+    :dsa_key,
+    Record.extract(:DSAPrivateKey, from_lib: "public_key/include/public_key.hrl")
+  )
+
+  Record.defrecordp(
+    :dsa_params,
+    Record.extract(:"Dss-Parms", from_lib: "public_key/include/public_key.hrl")
+  )
+
   @key_types [:RSAPrivateKey, :DSAPrivateKey, :ECPrivateKey, :PrivateKeyInfo]
 
   @doc false
   @spec load!(ConnectionString.t()) :: keyword()
-  def load!(%ConnectionString{certificate_path: nil, certificate_password: nil}), do: []
+  def load!(%ConnectionString{certificate_path: nil, certificate_password: password})
+      when password in [nil, ""], do: []
+
   def load!(%ConnectionString{certificate_path: ""}), do: []
 
   def load!(%ConnectionString{certificate_path: path, disable_tls: true}) when is_binary(path) do
@@ -100,12 +134,15 @@ defmodule Chronicle.Connections.ClientCertificate do
 
     certificates = for {:Certificate, certificate, _} <- entries, do: certificate
 
-    with [certificate | _] <- certificates,
+    with [_ | _] <- certificates,
          {type, key, encryption} when type in @key_types <-
            Enum.find(entries, fn {type, _, _} -> type in @key_types end),
-         {:ok, key_der} <- decode_key(type, key, encryption, password) do
-      Enum.each(certificates, &:public_key.pkix_decode_cert(&1, :otp))
-      cert = if length(certificates) == 1, do: certificate, else: certificates
+         {:ok, key_der} <- decode_key(type, key, encryption, password),
+         private_key <- :public_key.pem_entry_decode({type, key_der, :not_encrypted}),
+         certificate when is_binary(certificate) <-
+           Enum.find(certificates, &owns_key?(&1, private_key)) do
+      certs = [certificate | List.delete(certificates, certificate)]
+      cert = if length(certs) == 1, do: certificate, else: certs
       [cert: cert, key: {type, key_der}]
     else
       _ -> invalid!(path)
@@ -128,6 +165,42 @@ defmodule Chronicle.Connections.ClientCertificate do
     _ -> :error
   end
 
+  defp owns_key?(certificate, private_key) do
+    # Verify key ownership, independent of bundle order. For RSA/EC sign a
+    # challenge; for DSA derive the public key (PKCS#8 may omit its y field).
+    cert = :public_key.pkix_decode_cert(certificate, :otp)
+    spki = cert |> otp_cert(:tbsCertificate) |> otp_tbs(:subjectPublicKeyInfo)
+    public_key = otp_spki(spki, :subjectPublicKey)
+    parameters = spki |> otp_spki(:algorithm) |> otp_algorithm(:parameters)
+
+    verifier_key =
+      if is_tuple(public_key) and elem(public_key, 0) == :RSAPublicKey,
+        do: public_key,
+        else: {public_key, parameters}
+
+    if elem(private_key, 0) == :DSAPrivateKey do
+      {:params, dss} = parameters
+
+      derived =
+        :crypto.mod_pow(
+          dsa_key(private_key, :g),
+          dsa_key(private_key, :x),
+          dsa_key(private_key, :p)
+        )
+
+      public_key == :binary.decode_unsigned(derived) and
+        dsa_params(dss, :p) == dsa_key(private_key, :p) and
+        dsa_params(dss, :q) == dsa_key(private_key, :q) and
+        dsa_params(dss, :g) == dsa_key(private_key, :g)
+    else
+      challenge = "Chronicle client certificate identity"
+      signature = :public_key.sign(challenge, :sha256, private_key)
+      :public_key.verify(challenge, :sha256, signature, verifier_key)
+    end
+  rescue
+    _ -> false
+  end
+
   @doc false
   def server_verify_options([]), do: []
 
@@ -135,6 +208,16 @@ defmodule Chronicle.Connections.ClientCertificate do
     leaf = certificate[:cert]
     leaf = if is_list(leaf), do: hd(leaf), else: leaf
     pinned_hash = :crypto.hash(:sha, leaf)
+
+    # Mint/OTP may report unknown_ca on an intermediate before reaching the
+    # peer. A matching leaf is an explicit trust anchor; an unrelated chain
+    # cannot use this fallback and normal chain/hostname checks still apply.
+    partial_chain = fn chain ->
+      # OTP supplies the peer last (after any untrusted issuers).
+      if chain != [] and :crypto.hash(:sha, List.last(chain)) == pinned_hash,
+        do: {:trusted_ca, leaf},
+        else: :unknown_ca
+    end
 
     verify_fun = fn _cert, der, event, state ->
       case event do
@@ -156,7 +239,7 @@ defmodule Chronicle.Connections.ClientCertificate do
       end
     end
 
-    [verify_fun: {verify_fun, false}]
+    [partial_chain: partial_chain, verify_fun: {verify_fun, false}]
   end
 
   defp invalid!(path) do
