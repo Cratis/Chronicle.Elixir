@@ -7,32 +7,15 @@ defmodule Chronicle.Connections.AppendCompatibility do
   alias Cratis.Chronicle.Contracts.Clients.{CompatibilityRequest, ConnectionService}
   alias Cratis.Chronicle.Contracts.DescriptorSet
 
-  # The contracts package's mix.exs reports 0.1.0 in downstream projects;
-  # Hex's package metadata records the actual version of the installed contracts.
-  @contracts_metadata Path.join(
-                        Mix.Project.deps_paths()[:cratis_chronicle_contracts],
-                        "hex_metadata.config"
-                      )
-  @external_resource @contracts_metadata
-  @protocol_version (case :file.consult(@contracts_metadata) do
-                       {:ok, metadata} ->
-                         case List.keyfind(metadata, "version", 0) do
-                           {"version", version} when is_binary(version) -> version
-                           _ -> raise "contracts package has no version in #{@contracts_metadata}"
-                         end
-
-                       {:error, reason} ->
-                         raise "cannot read contracts package metadata #{@contracts_metadata}: #{inspect(reason)}"
-                     end)
   @client_version_path Path.expand("../../../VERSION", __DIR__)
   @external_resource @client_version_path
   @client_version @client_version_path |> File.read!() |> String.trim()
 
   @doc false
   @spec protocol_version() :: String.t()
-  def protocol_version, do: @protocol_version
+  def protocol_version, do: DescriptorSet.protocol_version()
 
-  @spec check(GRPC.Channel.t()) :: :ok | {:error, term()}
+  @spec check(struct()) :: :ok | {:error, term()}
   def check(channel) do
     case DescriptorSet.bytes() do
       <<>> -> {:error, :missing_contract_descriptor}
@@ -44,7 +27,7 @@ defmodule Chronicle.Connections.AppendCompatibility do
     request = %CompatibilityRequest{
       ClientType: "Elixir",
       ClientVersion: @client_version,
-      ProtocolVersion: @protocol_version,
+      ProtocolVersion: protocol_version(),
       DescriptorSet: descriptor
     }
 

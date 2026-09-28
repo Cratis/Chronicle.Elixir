@@ -7,34 +7,25 @@ defmodule Chronicle.Connections.AppendCompatibilityTest do
   alias Cratis.Chronicle.Contracts.Clients.{CompatibilityRequest, CompatibilityResponse}
   alias Cratis.Chronicle.Contracts.DescriptorSet
 
-  # The preflight must announce the installed contracts version. The package's
-  # mix.exs self-reports 0.1.0 in consumers, but Hex metadata holds the real
-  # published version. Check it against our resolved lock as well.
-  @lock_path Path.expand("../../../mix.lock", __DIR__)
-  @external_resource @lock_path
-  @pinned_contracts_version (case Map.fetch(Mix.Dep.Lock.read(), :cratis_chronicle_contracts) do
-                               {:ok, entry} when is_tuple(entry) and tuple_size(entry) > 2 ->
-                                 elem(entry, 2)
+  test "the announced protocol version is the installed contracts version" do
+    version = DescriptorSet.protocol_version()
+    assert version =~ ~r/^\d+\.\d+\.\d+$/
+    assert Chronicle.Connections.AppendCompatibility.protocol_version() == version
 
-                               _ ->
-                                 raise "cratis_chronicle_contracts is not pinned in #{@lock_path}"
-                             end)
+    contracts_path = Mix.Project.deps_paths()[:cratis_chronicle_contracts]
+    metadata_path = Path.join(contracts_path, "hex_metadata.config")
 
-  test "the announced protocol version is the pinned contracts version" do
-    assert @pinned_contracts_version =~ ~r/^\d+\.\d+\.\d+/
+    if File.regular?(metadata_path) do
+      assert {:ok, metadata} = :file.consult(metadata_path)
+      assert {"version", version} = List.keyfind(metadata, "version", 0)
 
-    metadata_path =
-      Path.join(Mix.Project.deps_paths()[:cratis_chronicle_contracts], "hex_metadata.config")
+      {:hex, :cratis_chronicle_contracts, pinned_version, _, _, _, _, _} =
+        Mix.Dep.Lock.read()[:cratis_chronicle_contracts]
 
-    assert {:ok, metadata} = :file.consult(metadata_path)
-    assert {"version", @pinned_contracts_version} = List.keyfind(metadata, "version", 0)
-
-    assert metadata_path in Chronicle.Connections.AppendCompatibility.module_info(:attributes)[
-             :external_resource
-           ]
-
-    assert Chronicle.Connections.AppendCompatibility.protocol_version() ==
-             @pinned_contracts_version
+      assert version == pinned_version
+    else
+      assert version == contracts_path |> Path.join("VERSION") |> File.read!() |> String.trim()
+    end
   end
 
   for path <- [:single, :ordinary, :rich, :transaction] do
@@ -42,7 +33,7 @@ defmodule Chronicle.Connections.AppendCompatibilityTest do
       assert :ok = append(unquote(path), opts)
       assert_receive {:wire_request, %CompatibilityRequest{} = request}
       assert request."ClientType" == "Elixir"
-      assert request."ProtocolVersion" == @pinned_contracts_version
+      assert request."ProtocolVersion" == DescriptorSet.protocol_version()
       assert request."DescriptorSet" == DescriptorSet.bytes()
       assert byte_size(request."DescriptorSet") > 0
       assert request."ClientVersion" != ""

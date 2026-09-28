@@ -20,7 +20,7 @@ defmodule Chronicle.Connections.KeepAlive do
   alias Cratis.Chronicle.Contracts.Clients.ConnectionKeepAlive, as: KeepAliveMessage
 
   @typedoc "Answers a single keepalive. Replaceable in tests."
-  @type answer_fun :: (GRPC.Channel.t(), String.t() -> :ok | {:error, term()})
+  @type answer_fun :: (struct(), String.t() -> :ok | {:error, term()})
 
   @doc """
   Consumes the Connect reply stream, answering every keepalive and reporting
@@ -29,7 +29,7 @@ defmodule Chronicle.Connections.KeepAlive do
   Sends `:keepalive_received` to `handler` for each keepalive, and exactly one
   `{:session_down, reason}` once the stream errors, ends, or an answer fails.
   """
-  @spec run(pid(), Enumerable.t(), GRPC.Channel.t(), String.t(), answer_fun()) :: :ok
+  @spec run(pid(), Enumerable.t(), struct(), String.t(), answer_fun()) :: :ok
   def run(handler, reply_stream, channel, connection_id, answer_fun \\ &__MODULE__.answer/2) do
     reason =
       Enum.reduce_while(reply_stream, :stream_ended, fn
@@ -52,7 +52,7 @@ defmodule Chronicle.Connections.KeepAlive do
   @doc """
   Answers a single keepalive by calling the unary ConnectionKeepAlive RPC.
   """
-  @spec answer(GRPC.Channel.t(), String.t()) :: :ok | {:error, term()}
+  @spec answer(struct(), String.t()) :: :ok | {:error, term()}
   def answer(channel, connection_id) do
     case ConnectionService.Stub.connection_keep_alive(
            channel,
