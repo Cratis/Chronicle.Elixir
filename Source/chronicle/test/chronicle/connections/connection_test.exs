@@ -692,6 +692,47 @@ defmodule Chronicle.Connections.ConnectionTest do
       assert message =~ "invalid client certificate"
     end
 
+    @tag :tmp_dir
+    test "malformed PEM and PKCS#12 never expose key bytes in startup failures", %{tmp_dir: dir} do
+      certificate_fixture(dir)
+      cert = File.read!(Path.join(dir, "cert.pem"))
+      key = File.read!(Path.join(dir, "key.pem"))
+      key_der = private_key_der(dir)
+
+      key_body =
+        key |> String.split("\n") |> Enum.find(&String.match?(&1, ~r/^[A-Za-z0-9+\/]{40}/))
+
+      p12 = File.read!(Path.join(dir, "client.p12"))
+      Process.flag(:trap_exit, true)
+
+      for {filename, contents} <- [
+            {"partial.pem", cert <> String.replace(key, "-----END PRIVATE KEY-----", "")},
+            {"garbled.pem",
+             cert <>
+               "-----BEGIN PRIVATE KEY-----\n" <> key_body <> "!!\n-----END PRIVATE KEY-----\n"},
+            {"truncated.p12", binary_part(p12, 0, div(byte_size(p12), 2))}
+          ] do
+        path = Path.join(dir, filename)
+        File.write!(path, contents)
+
+        log =
+          ExUnit.CaptureLog.capture_log(fn ->
+            assert {:error, {%ArgumentError{message: message}, stack}} =
+                     start_invalid(
+                       "chronicle://localhost?certificatePath=#{URI.encode_www_form(path)}&certificatePassword=secret"
+                     )
+
+            assert message == "invalid client certificate or password for #{path}"
+            refute_key_material(inspect({message, stack}, limit: :infinity), key_der)
+            refute inspect({message, stack}, limit: :infinity) =~ key_body
+            Logger.flush()
+          end)
+
+        refute_key_material(log, key_der)
+        refute log =~ key_body
+      end
+    end
+
     test "rejects a missing certificate instead of connecting without one" do
       path = "/missing/chronicle-client.p12"
       connection_string = "chronicle://localhost:35000?certificatePath=#{path}"

@@ -58,7 +58,7 @@ defmodule Chronicle.Connections.ClientCertificate do
 
     case File.read(path) do
       {:ok, contents} ->
-        entries = :public_key.pem_decode(contents)
+        entries = safe_pem_decode!(contents, path)
         pem = if entries == [], do: pkcs12!(path, password), else: contents
         decode_pem!(pem, path, password)
 
@@ -128,8 +128,16 @@ defmodule Chronicle.Connections.ClientCertificate do
     end
   end
 
+  defp safe_pem_decode!(contents, path) do
+    :public_key.pem_decode(contents)
+  rescue
+    # A malformed PEM can put its Base64 key in :pubkey_pem stack arguments.
+    # Raise a fresh error at this boundary, without the parser's reason/stack.
+    _ -> invalid!(path)
+  end
+
   defp decode_pem!(pem, path, password) do
-    entries = :public_key.pem_decode(pem)
+    entries = safe_pem_decode!(pem, path)
 
     certificates = for {:Certificate, certificate, _} <- entries, do: certificate
 
