@@ -32,3 +32,6 @@ Thumbs.db
 
 # Local AI work artifacts (plans, handovers, session notes) — never tracked
 .ai-work/
+
+# ExUnit @tag :tmp_dir output (generated certificates and keys)
+/Source/chronicle/tmp/
