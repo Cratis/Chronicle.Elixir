@@ -11,6 +11,7 @@ defmodule Chronicle.Connections.ClientCertificate do
   @doc false
   @spec load!(ConnectionString.t()) :: keyword()
   def load!(%ConnectionString{certificate_path: nil, certificate_password: nil}), do: []
+  def load!(%ConnectionString{certificate_path: ""}), do: []
 
   def load!(%ConnectionString{certificate_path: path, disable_tls: true}) when is_binary(path) do
     raise ArgumentError, "client certificate #{path} cannot be used when TLS is disabled"
@@ -24,11 +25,8 @@ defmodule Chronicle.Connections.ClientCertificate do
 
     case File.read(path) do
       {:ok, contents} ->
-        pem =
-          if String.starts_with?(contents, "-----BEGIN"),
-            do: contents,
-            else: pkcs12!(path, password)
-
+        entries = :public_key.pem_decode(contents)
+        pem = if entries == [], do: pkcs12!(path, password), else: contents
         decode_pem!(pem, path, password)
 
       {:error, _reason} ->
@@ -49,13 +47,33 @@ defmodule Chronicle.Connections.ClientCertificate do
       System.find_executable("openssl") ||
         raise(ArgumentError, "OpenSSL is required to load client certificate #{path}")
 
+    case run_pkcs12(executable, path, password, []) do
+      {:ok, pem} ->
+        pem
+
+      {:error, output} ->
+        # OpenSSL 3 requires the legacy provider for older PKCS#12 exports.
+        # Do not retry on a wrong password, and do not expose OpenSSL output
+        # (which can include certificate metadata) in an exception or log.
+        if String.contains?(output, ["unsupported", "Algorithm (RC2", "inner_evp_generic_fetch"]) do
+          case run_pkcs12(executable, path, password, ["-legacy"]) do
+            {:ok, pem} -> pem
+            {:error, _} -> invalid!(path)
+          end
+        else
+          invalid!(path)
+        end
+    end
+  end
+
+  defp run_pkcs12(executable, path, password, extra_args) do
     port =
       Port.open({:spawn_executable, executable}, [
         :binary,
         :exit_status,
         :use_stdio,
         :stderr_to_stdout,
-        args: ["pkcs12", "-in", path, "-clcerts", "-nodes", "-passin", "stdin"]
+        args: ["pkcs12", "-in", path, "-nodes", "-passin", "stdin"] ++ extra_args
       ])
 
     Port.command(port, (password || "") <> "\n")
@@ -64,9 +82,12 @@ defmodule Chronicle.Connections.ClientCertificate do
 
   defp collect_pkcs12!(port, path, output) do
     receive do
-      {^port, {:data, bytes}} -> collect_pkcs12!(port, path, [bytes | output])
-      {^port, {:exit_status, 0}} -> output |> Enum.reverse() |> IO.iodata_to_binary()
-      {^port, {:exit_status, _}} -> invalid!(path)
+      {^port, {:data, bytes}} ->
+        collect_pkcs12!(port, path, [bytes | output])
+
+      {^port, {:exit_status, status}} ->
+        bytes = output |> Enum.reverse() |> IO.iodata_to_binary()
+        if status == 0, do: {:ok, bytes}, else: {:error, bytes}
     after
       10_000 ->
         Port.close(port)
@@ -77,12 +98,15 @@ defmodule Chronicle.Connections.ClientCertificate do
   defp decode_pem!(pem, path, password) do
     entries = :public_key.pem_decode(pem)
 
-    with {:Certificate, certificate, _} <- Enum.find(entries, &match?({:Certificate, _, _}, &1)),
+    certificates = for {:Certificate, certificate, _} <- entries, do: certificate
+
+    with [certificate | _] <- certificates,
          {type, key, encryption} when type in @key_types <-
            Enum.find(entries, fn {type, _, _} -> type in @key_types end),
          {:ok, key_der} <- decode_key(type, key, encryption, password) do
-      :public_key.pkix_decode_cert(certificate, :otp)
-      [cert: certificate, key: {type, key_der}]
+      Enum.each(certificates, &:public_key.pkix_decode_cert(&1, :otp))
+      cert = if length(certificates) == 1, do: certificate, else: certificates
+      [cert: cert, key: {type, key_der}]
     else
       _ -> invalid!(path)
     end
@@ -98,10 +122,41 @@ defmodule Chronicle.Connections.ClientCertificate do
   defp decode_key(_type, _der, _encryption, nil), do: :error
 
   defp decode_key(type, der, encryption, password) do
-    decoded = :public_key.pem_entry_decode({type, der, encryption}, String.to_charlist(password))
+    decoded = :public_key.pem_entry_decode({type, der, encryption}, :binary.bin_to_list(password))
     {:ok, :public_key.der_encode(type, decoded)}
   rescue
     _ -> :error
+  end
+
+  @doc false
+  def server_verify_options([]), do: []
+
+  def server_verify_options(certificate) do
+    leaf = certificate[:cert]
+    leaf = if is_list(leaf), do: hd(leaf), else: leaf
+    pinned_hash = :crypto.hash(:sha, leaf)
+
+    verify_fun = fn _cert, der, event, state ->
+      case event do
+        {:bad_cert, _} = reason ->
+          if :crypto.hash(:sha, der) == pinned_hash,
+            do: {:valid, true},
+            else: {:fail, reason}
+
+        :valid_peer ->
+          if state == true and :crypto.hash(:sha, der) != pinned_hash,
+            do: {:fail, :pinned_certificate_mismatch},
+            else: {:valid, state}
+
+        {:extension, _} ->
+          {:unknown, state}
+
+        _ ->
+          {:valid, state}
+      end
+    end
+
+    [verify_fun: {verify_fun, false}]
   end
 
   defp invalid!(path) do
