@@ -1151,9 +1151,8 @@ defmodule Chronicle.Connections.ConnectionTest do
       end)
 
     assert_receive :crash_captured
-    assert log =~ "StreamResponseProcess"
-    assert log =~ "ArgumentError"
-    assert log =~ "GRPC.Channel"
+    assert log =~ "gRPC Mint response process terminated"
+    refute log =~ "GRPC.Channel"
     refute_key_material(log, key_der)
   end
 

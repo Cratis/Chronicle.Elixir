@@ -28,7 +28,9 @@ chronicle://client-id:client-secret@chronicle.example.com:35000
 chronicle://chronicle.example.com:35000?apiKey=your-api-key
 ```
 
-With neither, the client connects without authentication. The Elixir client does **not** substitute Chronicle's development credentials the way the .NET client does. A development kernel that requires authentication accepts the connection but never lets the client finish registering, so spell the development credentials out locally:
+With neither, the client connects without authentication. grpc 1.x retains channel and per-call headers in its response-process state, so moving authentication into a per-call interceptor alone does not keep secrets out of an OTP crash report. The client installs a primary Logger filter that replaces Mint response-process termination reports with a redacted notice before handlers receive them. This covers those dependency crash reports, not application logging, custom gRPC connections, or other processes that inspect or print credentials. Keep connection strings and request metadata out of logs, and restrict access to production logs.
+
+The Elixir client does **not** substitute Chronicle's development credentials the way the .NET client does. A development kernel that requires authentication accepts the connection but never lets the client finish registering, so spell the development credentials out locally:
 
 ```text
 chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000
