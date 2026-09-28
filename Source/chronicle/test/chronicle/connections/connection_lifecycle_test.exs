@@ -34,6 +34,32 @@ defmodule Chronicle.Connections.ConnectionLifecycleTest do
     assert_receive {:DOWN, ^monitor, :process, ^provider, _}, 2_000
   end
 
+  test "an unexpected token provider exit restarts its owning connection" do
+    {:ok, supervisor} =
+      Supervisor.start_link(
+        [
+          {Connection,
+           connection_string: "chronicle://user:pass@localhost?disableTls=true",
+           auto_connect: false}
+        ],
+        strategy: :one_for_one
+      )
+
+    [{_, connection, _, _}] = Supervisor.which_children(supervisor)
+    provider = :sys.get_state(connection).token_provider
+    monitor = Process.monitor(connection)
+
+    Process.exit(provider, :kill)
+    assert_receive {:DOWN, ^monitor, :process, ^connection, :killed}, 2_000
+
+    replacement =
+      await_replacement(supervisor, connection, System.monotonic_time(:millisecond) + 2_000)
+
+    assert is_pid(replacement)
+    assert Process.alive?(:sys.get_state(replacement).token_provider)
+    assert :ok = Supervisor.stop(supervisor)
+  end
+
   test "an in-flight dial is disconnected even if the owner stops before the result arrives" do
     parent = self()
 
@@ -86,6 +112,20 @@ defmodule Chronicle.Connections.ConnectionLifecycleTest do
       assert_closed(socket)
       :gen_tcp.close(socket)
       assert_child_count(before_count, System.monotonic_time(:millisecond) + 2_000)
+    end
+  end
+
+  defp await_replacement(supervisor, previous, deadline) do
+    case Supervisor.which_children(supervisor) do
+      [{_, pid, _, _}] when is_pid(pid) and pid != previous ->
+        pid
+
+      _ ->
+        assert System.monotonic_time(:millisecond) < deadline,
+               "supervisor did not restart the connection"
+
+        Process.sleep(10)
+        await_replacement(supervisor, previous, deadline)
     end
   end
 
