@@ -755,6 +755,15 @@ defmodule Chronicle.Connections.ConnectionTest do
       assert message =~ "TLS is disabled"
     end
 
+    test "rejects a certificate password with an empty path when TLS is disabled" do
+      assert {:error, {%ArgumentError{message: message}, _}} =
+               start_invalid(
+                 "chronicle://localhost:35000?disableTls=true&certificatePath=&certificatePassword=secret"
+               )
+
+      assert message =~ "certificatePassword requires a certificatePath"
+    end
+
     test "rejects a certificate password without a certificate path" do
       assert {:error, {%ArgumentError{message: message}, _}} =
                start_invalid("chronicle://localhost:35000?certificatePassword=secret")
