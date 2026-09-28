@@ -22,7 +22,7 @@ defmodule Chronicle.Connections.TokenProvider do
 
   require Logger
 
-  alias Chronicle.Connections.{Auth, ConnectionString}
+  alias Chronicle.Connections.{Auth, ConnectionString, Status}
 
   # Refresh once the token has less than this many milliseconds left.
   @refresh_margin 60_000
@@ -67,13 +67,21 @@ defmodule Chronicle.Connections.TokenProvider do
   def init(opts) do
     state = %{
       connection_string: Keyword.fetch!(opts, :connection_string),
-      fetch_fun: Keyword.get(opts, :fetch_fun, &default_fetch/1),
+      fetch_fun:
+        Keyword.get(opts, :fetch_fun, fn connection_string ->
+          default_fetch(connection_string, Keyword.get(opts, :client_certificate, []))
+        end),
       token: nil,
       expires_at: nil,
       last_failed_fetch: nil
     }
 
     {:ok, state}
+  end
+
+  @impl true
+  def format_status(%{state: _state} = status) do
+    Status.redact(status, connection_string: :redacted, fetch_fun: :redacted, token: :redacted)
   end
 
   @impl true
@@ -84,6 +92,17 @@ defmodule Chronicle.Connections.TokenProvider do
       nil -> {:reply, %{}, state}
       token -> {:reply, %{"authorization" => "Bearer #{token}"}, state}
     end
+  end
+
+  # Without a catch-all, the default FunctionClauseError stack frame includes
+  # the entire live state and cached bearer token outside format_status/1.
+  def handle_call(_request, _from, _state) do
+    raise FunctionClauseError, module: __MODULE__, function: :handle_call, arity: 3
+  end
+
+  @impl true
+  def handle_cast(_message, _state) do
+    raise FunctionClauseError, module: __MODULE__, function: :handle_cast, arity: 2
   end
 
   defp ensure_fresh_token(state) do
@@ -123,7 +142,7 @@ defmodule Chronicle.Connections.TokenProvider do
     end
   end
 
-  defp default_fetch(connection_string) do
+  defp default_fetch(connection_string, client_certificate) do
     address = ConnectionString.server_address(connection_string)
 
     # Chronicle serves OAuth on the same port as the gRPC connection, on the
@@ -137,7 +156,8 @@ defmodule Chronicle.Connections.TokenProvider do
       connection_string.username,
       connection_string.password,
       connection_string.disable_tls,
-      connection_string.skip_tls_validation
+      connection_string.skip_tls_validation,
+      client_certificate
     )
   end
 

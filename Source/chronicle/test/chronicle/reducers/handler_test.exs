@@ -80,6 +80,47 @@ defmodule Chronicle.Reducers.HandlerTest do
     %{lifecycle: lifecycle, handler: handler}
   end
 
+  test "status redacts the live stream credential and headers", %{handler: handler} do
+    secret = "reducer-private-key-#{System.unique_integer([:positive])}"
+
+    stream = %GRPC.Client.Stream{
+      channel: %GRPC.Channel{
+        cred: GRPC.Credential.new(ssl: [key: {:PrivateKeyInfo, secret}]),
+        headers: [{"api-key", "reducer-api-secret"}]
+      }
+    }
+
+    :sys.replace_state(handler, &%{&1 | stream: stream})
+    status = :sys.get_status(handler) |> inspect(limit: :infinity)
+    refute status =~ secret
+    refute status =~ "reducer-api-secret"
+    assert status =~ "open"
+
+    formatted =
+      Handler.format_status(%{state: :sys.get_state(handler), message: stream, log: [stream]})
+      |> inspect(limit: :infinity)
+
+    refute formatted =~ secret
+    refute formatted =~ "reducer-api-secret"
+  end
+
+  test "unexpected calls do not expose a stream's credential in crash logs", %{handler: handler} do
+    secret = "reducer-stream-secret"
+    :sys.replace_state(handler, &%{&1 | stream: %{credential: secret}})
+    Process.flag(:trap_exit, true)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        monitor = Process.monitor(handler)
+        assert catch_exit(GenServer.call(handler, :unexpected_call))
+        assert_receive {:DOWN, ^monitor, :process, ^handler, _}, 2_000
+        Logger.flush()
+      end)
+
+    assert log =~ "handle_call/3"
+    refute log =~ secret
+  end
+
   test "does not register on :connected alone", %{lifecycle: lifecycle, handler: handler} do
     Lifecycle.connected(lifecycle, "conn-1")
     _ = Lifecycle.phase(lifecycle)

@@ -48,8 +48,8 @@ URL-encode reserved characters in a client id or secret, such as `@`, `:` and `/
 | `loadBalancer` | `least-connections` | How to pick among several hosts or SRV-resolved addresses: `least-connections`, `round-robin` or `random`. |
 | `srvNameServer` | system resolver | For `chronicle+srv://`, the DNS server to query, as `host` or `host:port`. |
 | `authPort` | the first host's port | Port for the `/connect/token` request, when it differs from the gRPC port. |
-| `certificatePath` | none | Parsed, but not applied. See [TLS](#tls). |
-| `certificatePassword` | none | Parsed, but not applied. |
+| `certificatePath` | none | Path to a PKCS#12 (`.p12`/`.pfx`) file or a PEM bundle containing a client certificate and private key. Applied to the gRPC channel and OAuth token request. An empty value is treated as absent. |
+| `certificatePassword` | none | Password for a PKCS#12 file or encrypted PEM private key. An empty value without `certificatePath` is ignored; a non-empty value without a path, or with an empty path, is rejected at startup (unlike the .NET client). |
 
 A host without a port uses `35000`. IPv6 addresses use brackets, as in `chronicle://[::1]:35000`.
 
@@ -64,12 +64,14 @@ Give production kernels a certificate your operating system trusts, and add `ski
 chronicle://client-id:client-secret@chronicle.example.com:35000?skipTlsValidation=false
 ```
 
-With validation on, a self-signed or otherwise untrusted certificate fails the connection.
+The Elixir client does not use the configured client certificate to trust the server, unlike the .NET client's fallback. To connect to a kernel with a self-signed certificate while validating the server, provide its certificate as a trusted CA through the gRPC credential's `:cacerts` option. `skipTlsValidation=true` is for development only.
 :::
 
-The client has no client-certificate (mutual TLS) support. It parses `certificatePath` and `certificatePassword`, but doesn't use them to configure the connection.
+If your kernel requires mutual TLS, set `certificatePath` to a PKCS#12 (`.p12`/`.pfx`) file or a PEM file containing both the client certificate and private key. Include intermediate certificates in the bundle when the server trusts only the root. Supply `certificatePassword` when the file is password-protected. PKCS#12 loading requires the `openssl` executable. If OpenSSL 3 rejects an older PKCS#12 encryption algorithm, the client retries with OpenSSL's legacy provider (`-legacy`), which must be available. The password is passed through standard input, never a command-line argument, and the extracted key stays in memory. The client presents the certificate to both the gRPC channel and the OAuth token endpoint; the private key stays in a process-owned signing table rather than the channel credential. An unreadable file, invalid certificate, or wrong password fails connection startup; `disableTls=true` cannot be combined with a client certificate. A configured client certificate must use the Mint gRPC adapter. The certificate is matched to its private key, regardless of bundle order; mismatched bundles fail at startup. Conflicting custom TLS identity options and Mint module-level `transport_opts` are rejected at startup because grpc 0.11.5 would otherwise replace the client identity.
 
-To trust a private certificate authority, install it in the operating system's trust store and set `skipTlsValidation=false`. A gRPC credential passed as `:cred` through the `:grpc_options` client option replaces the default only for the gRPC channel: the client-credentials token request always follows `skipTlsValidation` and the system trust store.
+With a client certificate, put server-verification options on the `GRPC.Credential` passed as `:cred` through `:grpc_options`, not in `:adapter_opts` `:transport_opts`; adapter-level server-verification options are rejected at startup. Server verification uses Mint/OTP defaults or the caller's credential settings, not the client certificate. OTP 28 supports Ed25519 client identities with TLS 1.3 only; for TLS 1.2, use an RSA or ECDSA identity.
+
+A client certificate does not validate the *server*. To trust a private certificate authority, install it in the operating system's trust store and set `skipTlsValidation=false`, or supply its certificate in `:cacerts` on a gRPC credential with `verify: :verify_peer`. For example, pass `grpc_options: [cred: GRPC.Credential.new(ssl: [verify: :verify_peer, cacerts: [trusted_der]])]`, where `trusted_der` is the DER-encoded trusted certificate. A gRPC credential controls server trust only for the gRPC channel: the client-credentials token request always follows `skipTlsValidation` and the system trust store. When `certificatePath` is configured, the client certificate is added to the gRPC credential even if you pass your own `:cred`.
 
 ## Several hosts and DNS SRV
 
@@ -85,7 +87,7 @@ chronicle://client-id:client-secret@chronicle-1:35000,chronicle-2:35000,chronicl
 chronicle+srv://chronicle.example.com
 ```
 
-Client-credential tokens are always requested from the first configured host.
+Client-credential tokens are always requested from the first configured host. Least-connections HTTP probes do not present a client certificate; if your kernel requires mutual TLS on `/connections/count` or `/connections/reserve`, use `loadBalancer=round-robin` or `loadBalancer=random` for multiple hosts.
 
 ## Chronicle.Client overrides
 

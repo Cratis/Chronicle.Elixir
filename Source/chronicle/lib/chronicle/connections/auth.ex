@@ -63,6 +63,36 @@ defmodule Chronicle.Connections.Auth do
         disable_tls,
         skip_tls_validation \\ true
       ) do
+    fetch_token_with_expiry(
+      host,
+      port,
+      client_id,
+      client_secret,
+      disable_tls,
+      skip_tls_validation,
+      []
+    )
+  end
+
+  @doc false
+  @spec fetch_token_with_expiry(
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          String.t(),
+          boolean(),
+          boolean(),
+          keyword()
+        ) :: {:ok, {String.t(), non_neg_integer() | nil}} | {:error, term()}
+  def fetch_token_with_expiry(
+        host,
+        port,
+        client_id,
+        client_secret,
+        disable_tls,
+        skip_tls_validation,
+        client_certificate
+      ) do
     scheme = if disable_tls, do: :http, else: :https
 
     body =
@@ -78,7 +108,7 @@ defmodule Chronicle.Connections.Auth do
       {"accept", "application/json"}
     ]
 
-    mint_opts = mint_transport_opts(disable_tls, skip_tls_validation)
+    mint_opts = transport_opts(disable_tls, skip_tls_validation, client_certificate)
 
     with {:ok, conn} <- Mint.HTTP.connect(scheme, host, port, mint_opts),
          {:ok, conn, _ref} <- Mint.HTTP.request(conn, "POST", "/connect/token", headers, body),
@@ -115,11 +145,22 @@ defmodule Chronicle.Connections.Auth do
 
   defp expires_in(_resp), do: nil
 
-  defp mint_transport_opts(true, _skip_tls_validation), do: []
-  defp mint_transport_opts(false, true), do: [transport_opts: [verify: :verify_none]]
+  @doc false
+  @spec transport_opts(boolean(), boolean(), keyword()) :: keyword()
+  def transport_opts(true, _skip_tls_validation, []), do: []
 
-  defp mint_transport_opts(false, false),
-    do: [transport_opts: [verify: :verify_peer, cacerts: :public_key.cacerts_get()]]
+  def transport_opts(true, _skip_tls_validation, _client_certificate) do
+    raise ArgumentError, "client certificate cannot be used when TLS is disabled"
+  end
+
+  def transport_opts(false, true, client_certificate),
+    do: [transport_opts: [verify: :verify_none] ++ client_certificate]
+
+  def transport_opts(false, false, client_certificate) do
+    trust = [verify: :verify_peer, cacerts: :public_key.cacerts_get()]
+
+    [transport_opts: trust ++ client_certificate]
+  end
 
   defp receive_response(conn, status \\ nil, body \\ "") do
     receive do

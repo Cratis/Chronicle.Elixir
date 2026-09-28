@@ -65,10 +65,12 @@ defmodule Chronicle.Connections.Connection do
   alias Chronicle.Connections.{
     AppendCompatibility,
     AuthInterceptor,
+    ClientCertificate,
     TransportFailureInterceptor,
     ConnectionString,
     DnsResolver,
     LoadBalancer,
+    Status,
     TokenProvider
   }
 
@@ -166,10 +168,14 @@ defmodule Chronicle.Connections.Connection do
   @impl true
   def init(options) do
     connection_string = connection_string_from(options)
+    client_certificate = ClientCertificate.load!(connection_string)
+    grpc_options = Keyword.get(options, :grpc_options, [])
+    validate_certificate_options!(grpc_options, client_certificate)
 
     state = %{
       connection_string: connection_string,
-      token_provider: start_token_provider(connection_string),
+      client_certificate: client_certificate,
+      token_provider: start_token_provider(connection_string, client_certificate),
       channel: nil,
       connected?: false,
       append_compatible?: false,
@@ -177,7 +183,7 @@ defmodule Chronicle.Connections.Connection do
       disconnect_fun: Keyword.get(options, :disconnect_fun, &default_disconnect/1),
       resolve_fun: Keyword.get(options, :resolve_fun, &DnsResolver.resolve/2),
       probe_fun: Keyword.get(options, :probe_fun, &LoadBalancer.default_probe/3),
-      grpc_options: Keyword.get(options, :grpc_options, []),
+      grpc_options: grpc_options,
       retry_attempts: Keyword.get(options, :retry_attempts, @default_retry_attempts),
       reconnect_base_delay:
         Keyword.get(options, :reconnect_base_delay, @default_reconnect_base_delay),
@@ -200,6 +206,16 @@ defmodule Chronicle.Connections.Connection do
     end
 
     {:ok, state}
+  end
+
+  @impl true
+  def format_status(%{state: state} = status) do
+    Status.redact(status,
+      connection_string: :redacted,
+      client_certificate: :redacted,
+      grpc_options: :redacted,
+      channel: if(state.channel, do: :connected, else: nil)
+    )
   end
 
   @impl true
@@ -252,6 +268,13 @@ defmodule Chronicle.Connections.Connection do
     {:stop, :normal, :ok, %{state | connected?: false, channel: nil, connection_process: nil}}
   end
 
+  # A missing clause would put the entire state (and the caller arguments) in
+  # the stacktrace. OTP's GenServer crash reporter appends that stacktrace
+  # outside format_status/1, so redact :reason AND avoid argument-bearing frames.
+  def handle_call(_request, _from, _state) do
+    raise FunctionClauseError, module: __MODULE__, function: :handle_call, arity: 3
+  end
+
   @impl true
   def handle_cast(:reconnect, %{connected?: false} = state) do
     # Not connected: a dial or backoff cycle already owns recovery.
@@ -268,6 +291,12 @@ defmodule Chronicle.Connections.Connection do
     # waited out its own retry delay before asking for a fresh channel.
     send(self(), :connect)
     {:noreply, state}
+  end
+
+  # A missing clause prints the live channel (and API-key headers) in the
+  # callback stack frame even though format_status/1 redacts the state.
+  def handle_cast(_message, _state) do
+    raise FunctionClauseError, module: __MODULE__, function: :handle_cast, arity: 2
   end
 
   @impl true
@@ -336,6 +365,7 @@ defmodule Chronicle.Connections.Connection do
     probe_fun = state.probe_fun
     round_robin_counter = state.round_robin_counter
     token_provider = state.token_provider
+    client_certificate = state.client_certificate
 
     Task.start(fn ->
       result =
@@ -343,7 +373,15 @@ defmodule Chronicle.Connections.Connection do
              {:ok, address} <-
                LoadBalancer.select(addresses, connection_string, round_robin_counter, probe_fun) do
           target = target_for(address)
-          opts = build_grpc_options(connection_string, grpc_options, token_provider)
+
+          opts =
+            build_grpc_options(
+              connection_string,
+              grpc_options,
+              token_provider,
+              client_certificate
+            )
+
           connect_fun.(target, opts)
         end
 
@@ -483,7 +521,7 @@ defmodule Chronicle.Connections.Connection do
     end
   end
 
-  defp build_grpc_options(connection_string, grpc_options, token_provider) do
+  defp build_grpc_options(connection_string, grpc_options, token_provider, client_certificate) do
     headers = auth_headers(connection_string)
 
     options =
@@ -496,28 +534,111 @@ defmodule Chronicle.Connections.Connection do
       |> add_transport_failure_interceptor()
 
     cond do
-      connection_string.disable_tls or not Code.ensure_loaded?(GRPC.Credential) ->
+      connection_string.disable_tls ->
         options
 
       connection_string.skip_tls_validation ->
-        # Default: trust any certificate without validating its chain, since a
-        # Chronicle kernel commonly serves an auto-generated self-signed
-        # certificate. Set `skipTlsValidation=false` (or the
-        # `:skip_tls_validation` option) to require full chain validation
-        # instead, against a server whose certificate is verifiable.
-        credential = apply(GRPC.Credential, :new, [[ssl: [verify: :verify_none]]])
-        Keyword.put_new(options, :cred, credential)
+        # Chronicle commonly serves an auto-generated self-signed certificate.
+        add_credential(options, [verify: :verify_none], client_certificate)
 
       true ->
-        # Explicit opt-in: validate the server's certificate chain against the
-        # system trust store.
-        credential =
-          apply(GRPC.Credential, :new, [
-            [ssl: [verify: :verify_peer, cacerts: :public_key.cacerts_get()]]
-          ])
-
-        Keyword.put_new(options, :cred, credential)
+        add_credential(
+          options,
+          [verify: :verify_peer, cacerts: :public_key.cacerts_get()],
+          client_certificate
+        )
     end
+  end
+
+  @identity_options [:certs_keys, :cert, :key, :certfile, :keyfile, :password]
+  # OTP ssl client_option_cert/common_option_cert, common_option (signatures),
+  # and client_option_legacy (verify):
+  # https://www.erlang.org/doc/apps/ssl/ssl.html#t:client_option_cert/0
+  # https://www.erlang.org/doc/apps/ssl/ssl.html#t:common_option_cert/0
+  # https://www.erlang.org/doc/apps/ssl/ssl.html#t:common_option/0
+  # https://www.erlang.org/doc/apps/ssl/ssl.html#t:client_option_legacy/0
+  @server_verification_options [
+    :verify,
+    :verify_fun,
+    :partial_chain,
+    :cacerts,
+    :cacertfile,
+    :customize_hostname_check,
+    :server_name_indication,
+    :depth,
+    :crl_check,
+    :crl_cache,
+    :cert_policy_opts,
+    :allow_any_ca_purpose,
+    :certificate_authorities,
+    :stapling,
+    :signature_algs,
+    :signature_algs_cert
+  ]
+
+  defp validate_certificate_options!(_options, []), do: :ok
+
+  defp validate_certificate_options!(options, _certificate) do
+    if Keyword.get(options, :adapter, GRPC.Client.Adapters.Mint) != GRPC.Client.Adapters.Mint do
+      raise ArgumentError, "client certificates require the Mint gRPC adapter"
+    end
+
+    ssl =
+      case options[:cred] do
+        nil -> []
+        %GRPC.Credential{ssl: existing} -> existing
+        _ -> raise ArgumentError, "client certificates require a GRPC.Credential"
+      end
+
+    adapter_opts = Keyword.get(options, :adapter_opts, [])
+    transport_opts = Keyword.get(adapter_opts, :transport_opts, [])
+    # grpc 0.11.5 merges module options after the credential's SSL settings;
+    # any module transport_opts replaces the entire list, including cert/key.
+    module_opts =
+      Application.get_env(
+        :grpc,
+        GRPC.Client.Adapters.Mint,
+        Keyword.get(adapter_opts, :config_options, [])
+      )
+
+    if Keyword.has_key?(module_opts, :transport_opts) do
+      raise ArgumentError,
+            "client certificate conflicts with Mint module transport_opts (gRPC overrides the client identity)"
+    end
+
+    if Enum.any?(ssl ++ transport_opts, fn {key, _} -> key in @identity_options end) do
+      raise ArgumentError, "client certificate conflicts with existing gRPC TLS identity options"
+    end
+
+    # grpc 0.11.5 merges credential SSL after adapter transport_opts, so
+    # adapter-level verification can be silently overridden by the credential.
+    if Enum.any?(transport_opts, fn {key, _} ->
+         key in @server_verification_options or
+           (is_atom(key) and String.starts_with?(Atom.to_string(key), "ocsp_"))
+       end) do
+      raise ArgumentError,
+            "client certificate conflicts with adapter_opts transport_opts server verification; put verification settings on the GRPC.Credential instead"
+    end
+  end
+
+  defp add_credential(options, ssl, []) do
+    Keyword.put_new(options, :cred, GRPC.Credential.new(ssl: ssl))
+  end
+
+  defp add_credential(options, ssl, client_certificate) do
+    if options[:adapter] != GRPC.Client.Adapters.Mint do
+      raise ArgumentError, "client certificates require the Mint gRPC adapter"
+    end
+
+    existing_ssl =
+      case options[:cred] do
+        nil -> ssl
+        %GRPC.Credential{ssl: existing} -> existing
+        _ -> raise ArgumentError, "client certificates require a GRPC.Credential"
+      end
+
+    credential = GRPC.Credential.new(ssl: Keyword.merge(existing_ssl, client_certificate))
+    Keyword.put(options, :cred, credential)
   end
 
   # The API key is static, so it can live in the channel headers. OAuth2
@@ -535,10 +656,15 @@ defmodule Chronicle.Connections.Connection do
   # lifecycle, and every dialed channel gets an interceptor that attaches a
   # fresh token to each RPC. Mirrors the api-key-wins precedence of
   # `auth_headers/1` when both are (mis)configured.
-  defp start_token_provider(connection_string) do
+  defp start_token_provider(connection_string, client_certificate) do
     if present?(connection_string.username) and present?(connection_string.password) and
          not present?(connection_string.api_key) do
-      {:ok, provider} = TokenProvider.start_link(connection_string: connection_string)
+      {:ok, provider} =
+        TokenProvider.start_link(
+          connection_string: connection_string,
+          client_certificate: client_certificate
+        )
+
       provider
     end
   end

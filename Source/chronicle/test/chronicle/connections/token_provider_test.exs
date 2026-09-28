@@ -31,6 +31,47 @@ defmodule Chronicle.Connections.TokenProviderTest do
 
   defp fetch_count(calls), do: Agent.get(calls, & &1)
 
+  test "redacts the connection secret, fetch closure and token from process status" do
+    {provider, _calls} = start([{:ok, {"private-token", @long_lifetime}}])
+    assert %{"authorization" => _} = TokenProvider.authorization_headers(provider)
+    status = :sys.get_status(provider) |> inspect(limit: :infinity)
+    refute status =~ "private-token"
+    refute status =~ "pass"
+  end
+
+  test "unexpected calls and casts never log a cached bearer token or credentials" do
+    secret = "BEARER-TOKEN-SECRET"
+    Process.flag(:trap_exit, true)
+
+    for callback <- [:call, :cast] do
+      {:ok, provider} =
+        TokenProvider.start_link(
+          connection_string: ConnectionString.parse("chronicle://user:private-pass@localhost"),
+          fetch_fun: fn _ -> {:ok, {secret, @long_lifetime}} end
+        )
+
+      assert TokenProvider.authorization_headers(provider) ==
+               %{"authorization" => "Bearer #{secret}"}
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          monitor = Process.monitor(provider)
+
+          case callback do
+            :call -> assert catch_exit(GenServer.call(provider, :unexpected_call))
+            :cast -> GenServer.cast(provider, :unexpected_cast)
+          end
+
+          assert_receive {:DOWN, ^monitor, :process, ^provider, _}, 2_000
+          Logger.flush()
+        end)
+
+      assert log =~ "handle_#{callback}"
+      refute log =~ secret
+      refute log =~ "private-pass"
+    end
+  end
+
   test "fetches a token on first use and returns bearer headers" do
     {provider, calls} = start([{:ok, {"token-1", @long_lifetime}}])
 
