@@ -173,10 +173,19 @@ defmodule Chronicle.Connections.ClientCertificate do
     public_key = otp_spki(spki, :subjectPublicKey)
     parameters = spki |> otp_spki(:algorithm) |> otp_algorithm(:parameters)
 
+    algorithm = spki |> otp_spki(:algorithm) |> otp_algorithm(:algorithm)
+
     verifier_key =
-      if is_tuple(public_key) and elem(public_key, 0) == :RSAPublicKey,
-        do: public_key,
-        else: {public_key, parameters}
+      cond do
+        is_tuple(public_key) and elem(public_key, 0) == :RSAPublicKey ->
+          public_key
+
+        algorithm in [{1, 3, 101, 112}, {1, 3, 101, 113}] ->
+          {public_key, {:namedCurve, algorithm}}
+
+        true ->
+          {public_key, parameters}
+      end
 
     if elem(private_key, 0) == :DSAPrivateKey do
       {:params, dss} = parameters
@@ -194,8 +203,9 @@ defmodule Chronicle.Connections.ClientCertificate do
         dsa_params(dss, :g) == dsa_key(private_key, :g)
     else
       challenge = "Chronicle client certificate identity"
-      signature = :public_key.sign(challenge, :sha256, private_key)
-      :public_key.verify(challenge, :sha256, signature, verifier_key)
+      digest = if algorithm in [{1, 3, 101, 112}, {1, 3, 101, 113}], do: :none, else: :sha256
+      signature = :public_key.sign(challenge, digest, private_key)
+      :public_key.verify(challenge, digest, signature, verifier_key)
     end
   rescue
     _ -> false

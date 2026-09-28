@@ -411,6 +411,52 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
   end
 
   @tag :tmp_dir
+  test "matches Ed25519 and Ed448 identities and rejects mismatched keys", %{tmp_dir: dir} do
+    for curve <- ["ed25519", "ed448"] do
+      key = Path.join(dir, "#{curve}.key")
+      cert = Path.join(dir, "#{curve}.pem")
+      bundle = Path.join(dir, "#{curve}-bundle.pem")
+      other_key = Path.join(dir, "#{curve}-other.key")
+
+      openssl([
+        "req",
+        "-x509",
+        "-newkey",
+        curve,
+        "-nodes",
+        "-days",
+        "1",
+        "-subj",
+        "/CN=EdDSA",
+        "-keyout",
+        key,
+        "-out",
+        cert
+      ])
+
+      openssl(["genpkey", "-algorithm", curve, "-out", other_key])
+      File.write!(bundle, File.read!(cert) <> File.read!(key))
+
+      assert [cert: _, key: _] =
+               ClientCertificate.load!(
+                 ConnectionString.parse(
+                   "chronicle://localhost?certificatePath=#{URI.encode_www_form(bundle)}"
+                 )
+               )
+
+      File.write!(bundle, File.read!(cert) <> File.read!(other_key))
+
+      assert_raise ArgumentError, ~r/invalid client certificate/, fn ->
+        ClientCertificate.load!(
+          ConnectionString.parse(
+            "chronicle://localhost?certificatePath=#{URI.encode_www_form(bundle)}"
+          )
+        )
+      end
+    end
+  end
+
+  @tag :tmp_dir
   test "matches a DSA private key to its certificate", %{tmp_dir: dir} do
     params = Path.join(dir, "dsa-params.pem")
     key = Path.join(dir, "dsa.key")
