@@ -1072,7 +1072,8 @@ defmodule Chronicle.Connections.ConnectionTest do
     key = channel.cred.ssl[:key]
     assert %{sign_fun: sign_fun} = key
     assert is_function(sign_fun, 3)
-    refute inspect(:erlang.fun_info(sign_fun, :env), limit: :infinity) =~ Base.encode64(key_der)
+    assert {:env, [signer]} = :erlang.fun_info(sign_fun, :env)
+    assert is_pid(signer)
 
     Process.flag(:trap_exit, true)
 
