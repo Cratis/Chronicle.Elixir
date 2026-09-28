@@ -39,6 +39,19 @@ defmodule Chronicle.Connections.ClientCertificate do
   )
 
   @key_types [:RSAPrivateKey, :DSAPrivateKey, :ECPrivateKey, :PrivateKeyInfo]
+  @chain_validation_options [
+    :depth,
+    :crl_check,
+    :crl_cache,
+    :cert_policy_opts,
+    :stapling,
+    :signature_algs,
+    :signature_algs_cert,
+    :allow_any_ca_purpose,
+    :certificate_authorities,
+    :customize_hostname_check,
+    :server_name_indication
+  ]
 
   @doc false
   @spec load!(ConnectionString.t()) :: keyword()
@@ -216,6 +229,20 @@ defmodule Chronicle.Connections.ClientCertificate do
   def server_verify_options([], _trust_options), do: []
 
   def server_verify_options(certificate, trust_options) do
+    # Making the leaf a trust anchor bypasses chain-level checks (including CRL
+    # and depth) before verify_fun receives an event. Honor explicit credential
+    # policies instead of allowing the pin to silently override them.
+    if Enum.any?(trust_options, fn {key, _} ->
+         key in @chain_validation_options or
+           (is_atom(key) and String.starts_with?(Atom.to_string(key), "ocsp_"))
+       end) do
+      []
+    else
+      pinned_server_verify_options(certificate, trust_options)
+    end
+  end
+
+  defp pinned_server_verify_options(certificate, trust_options) do
     leaf = certificate[:cert]
     leaf = if is_list(leaf), do: hd(leaf), else: leaf
     pinned_hash = :crypto.hash(:sha, leaf)
@@ -234,10 +261,13 @@ defmodule Chronicle.Connections.ClientCertificate do
 
     verify_fun = fn _cert, der, event, state ->
       case event do
-        {:bad_cert, _} = reason ->
+        {:bad_cert, reason} = failure when reason in [:unknown_ca, :selfsigned_peer] ->
           if :crypto.hash(:sha, der) == pinned_hash,
             do: {:valid, true},
-            else: {:fail, reason}
+            else: {:fail, failure}
+
+        {:bad_cert, _} = failure ->
+          {:fail, failure}
 
         :valid_peer ->
           if state == true and :crypto.hash(:sha, der) != pinned_hash,

@@ -323,6 +323,101 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
   end
 
   @tag :tmp_dir
+  test "pinning does not override a credential's failed CRL verification", %{tmp_dir: dir} do
+    fixtures = chain_fixture(dir)
+    leaf = Path.join(dir, "crl-server.pem")
+    bundle = Path.join(dir, "crl-server-bundle.pem")
+    ext = Path.join(dir, "crl-server.ext")
+
+    File.write!(
+      ext,
+      File.read!(fixtures.server_ext) <>
+        "crlDistributionPoints=URI:http://127.0.0.1:1/missing.crl\n"
+    )
+
+    openssl([
+      "x509",
+      "-req",
+      "-in",
+      fixtures.server_csr,
+      "-CA",
+      fixtures.root_cert,
+      "-CAkey",
+      fixtures.root_key,
+      "-CAcreateserial",
+      "-days",
+      "1",
+      "-extfile",
+      ext,
+      "-out",
+      leaf
+    ])
+
+    File.write!(bundle, File.read!(leaf) <> File.read!(fixtures.server_key))
+
+    identity =
+      ClientCertificate.load!(
+        ConnectionString.parse(
+          "chronicle://localhost?certificatePath=#{URI.encode_www_form(bundle)}"
+        )
+      )
+
+    [{:Certificate, root, _}] = :public_key.pem_decode(File.read!(fixtures.root_cert))
+    trust = [verify: :verify_peer, cacerts: [root], crl_check: :peer, active: false]
+    # A matching pin must not bypass a caller's CRL policy by becoming a
+    # trusted leaf before OTP can check revocation.
+    assert [] == ClientCertificate.server_verify_options(identity, trust)
+    assert [] == ClientCertificate.server_verify_options(identity, depth: 1)
+    assert [] == ClientCertificate.server_verify_options(identity, stapling: :staple)
+    pin_options = ClientCertificate.server_verify_options(identity)
+    {verify_fun, false} = pin_options[:verify_fun]
+
+    for reason <- [
+          :certificate_revoked,
+          :certificate_expired,
+          :missing_ocsp_staple,
+          {:bad_crls, :no_relevant_crls}
+        ] do
+      assert {:fail, {:bad_cert, ^reason}} =
+               verify_fun.(nil, identity[:cert], {:bad_cert, reason}, false)
+    end
+
+    for {mode, extra} <- [
+          baseline: [],
+          credential: ClientCertificate.server_verify_options(identity, trust)
+        ] do
+      {:ok, listener} =
+        :ssl.listen(0,
+          certfile: leaf,
+          keyfile: fixtures.server_key,
+          verify: :verify_none,
+          active: false,
+          reuseaddr: true
+        )
+
+      {:ok, {_, port}} = :ssl.sockname(listener)
+
+      server =
+        Task.async(fn ->
+          {:ok, socket} = :ssl.transport_accept(listener, 5_000)
+          result = :ssl.handshake(socket, 5_000)
+          if match?({:ok, _}, result), do: :ssl.close(elem(result, 1))
+          :ssl.close(listener)
+          result
+        end)
+
+      result = :ssl.connect(~c"localhost", port, trust ++ extra, 5_000)
+      if match?({:ok, _}, result), do: :ssl.close(elem(result, 1))
+
+      assert {:error, reason} = result,
+             "#{mode} unexpectedly accepted a certificate with an unverifiable CRL"
+
+      assert inspect(reason) =~ "bad_crls"
+      Task.await(server, 6_000)
+    end
+  end
+
+  @tag :tmp_dir
   test "mutual TLS keeps a custom CA callback and its trusted intermediate", %{tmp_dir: dir} do
     fixtures = chain_fixture(dir)
     leaf = sign_server_with_intermediate(dir, fixtures)
@@ -1000,6 +1095,7 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
 
     %{
       root_cert: root_cert,
+      root_key: root_key,
       intermediate_cert: intermediate_cert,
       intermediate_key: intermediate_key,
       client_cert: client_cert,

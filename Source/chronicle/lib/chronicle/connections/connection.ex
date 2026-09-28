@@ -538,6 +538,12 @@ defmodule Chronicle.Connections.Connection do
   end
 
   @identity_options [:certs_keys, :cert, :key, :certfile, :keyfile, :password]
+  # OTP ssl client_option_cert/common_option_cert, common_option (signatures),
+  # and client_option_legacy (verify):
+  # https://www.erlang.org/doc/apps/ssl/ssl.html#t:client_option_cert/0
+  # https://www.erlang.org/doc/apps/ssl/ssl.html#t:common_option_cert/0
+  # https://www.erlang.org/doc/apps/ssl/ssl.html#t:common_option/0
+  # https://www.erlang.org/doc/apps/ssl/ssl.html#t:client_option_legacy/0
   @server_verification_options [
     :verify,
     :verify_fun,
@@ -545,7 +551,16 @@ defmodule Chronicle.Connections.Connection do
     :cacerts,
     :cacertfile,
     :customize_hostname_check,
-    :server_name_indication
+    :server_name_indication,
+    :depth,
+    :crl_check,
+    :crl_cache,
+    :cert_policy_opts,
+    :allow_any_ca_purpose,
+    :certificate_authorities,
+    :stapling,
+    :signature_algs,
+    :signature_algs_cert
   ]
 
   defp validate_certificate_options!(_options, []), do: :ok
@@ -585,7 +600,10 @@ defmodule Chronicle.Connections.Connection do
     # Mint merges adapter transport_opts first, then credential SSL. Pinning
     # adds callbacks to the credential, which would silently replace adapter
     # verification callbacks even when the caller supplied stricter checks.
-    if Enum.any?(transport_opts, fn {key, _} -> key in @server_verification_options end) do
+    if Enum.any?(transport_opts, fn {key, _} ->
+         key in @server_verification_options or
+           (is_atom(key) and String.starts_with?(Atom.to_string(key), "ocsp_"))
+       end) do
       raise ArgumentError,
             "client certificate conflicts with adapter_opts transport_opts server verification; put verification settings on the GRPC.Credential instead"
     end

@@ -583,6 +583,34 @@ defmodule Chronicle.Connections.ConnectionTest do
     end
 
     @tag :tmp_dir
+    test "a credential's CRL policy takes precedence over the matching client pin", %{
+      tmp_dir: tmp_dir
+    } do
+      path = certificate_fixture(tmp_dir)
+      parent = self()
+      credential = GRPC.Credential.new(ssl: [verify: :verify_peer, cacerts: [], crl_check: :peer])
+
+      conn =
+        start(
+          connection_string:
+            "chronicle://localhost?certificatePath=#{URI.encode_www_form(path)}&certificatePassword=secret&skipTlsValidation=false",
+          grpc_options: [cred: credential],
+          connect_fun: fn _target, opts ->
+            send(parent, {:ssl, opts[:cred].ssl})
+            {:ok, channel_with_conn(parent)}
+          end,
+          auto_connect: true
+        )
+
+      assert :ok = Connection.connect(conn, 5_000)
+      assert_receive {:ssl, ssl}
+      assert ssl[:crl_check] == :peer
+      refute Keyword.has_key?(ssl, :verify_fun)
+      refute Keyword.has_key?(ssl, :partial_chain)
+      assert is_binary(ssl[:cert])
+    end
+
+    @tag :tmp_dir
     test "does not inject pinning into a custom verify_none credential", %{tmp_dir: tmp_dir} do
       path = certificate_fixture(tmp_dir)
       parent = self()
@@ -829,6 +857,42 @@ defmodule Chronicle.Connections.ConnectionTest do
                )
 
       assert message =~ "adapter_opts transport_opts server verification"
+    end
+  end
+
+  @tag :tmp_dir
+  test "rejects additional adapter-level certificate policies before dialing", %{tmp_dir: tmp_dir} do
+    path = certificate_fixture(tmp_dir)
+
+    cs =
+      "chronicle://localhost?certificatePath=#{URI.encode_www_form(path)}&certificatePassword=secret"
+
+    parent = self()
+    Process.flag(:trap_exit, true)
+
+    for {option, value} <- [
+          depth: 1,
+          crl_check: :peer,
+          crl_cache: {:ssl_crl_cache, {:internal, []}},
+          cert_policy_opts: [explicit_policy: true],
+          allow_any_ca_purpose: true,
+          certificate_authorities: true,
+          stapling: :staple,
+          signature_algs: [{:sha256, :rsa}],
+          signature_algs_cert: [:rsa_pkcs1_sha256]
+        ] do
+      assert {:error, {%ArgumentError{message: message}, _}} =
+               Connection.start_link(
+                 connection_string: cs,
+                 grpc_options: [adapter_opts: [transport_opts: [{option, value}]]],
+                 connect_fun: fn _, _ ->
+                   send(parent, :dialed)
+                   {:ok, %{}}
+                 end
+               )
+
+      assert message =~ "adapter_opts transport_opts server verification"
+      refute_received :dialed
     end
   end
 
