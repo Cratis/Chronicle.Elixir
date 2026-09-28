@@ -577,13 +577,14 @@ defmodule Chronicle.Connections.ConnectionTest do
       assert_receive {:opts, opts}
       assert opts[:cred].ssl[:verify] == :verify_peer
       assert opts[:cred].ssl[:cacerts] == []
-      assert match?({fun, false} when is_function(fun, 4), opts[:cred].ssl[:verify_fun])
+      refute Keyword.has_key?(opts[:cred].ssl, :verify_fun)
+      refute Keyword.has_key?(opts[:cred].ssl, :partial_chain)
       assert is_binary(opts[:cred].ssl[:cert])
       assert match?({:PrivateKeyInfo, key} when is_binary(key), opts[:cred].ssl[:key])
     end
 
     @tag :tmp_dir
-    test "a credential's CRL policy takes precedence over the matching client pin", %{
+    test "preserves a credential's CRL policy with a client identity", %{
       tmp_dir: tmp_dir
     } do
       path = certificate_fixture(tmp_dir)
@@ -611,7 +612,7 @@ defmodule Chronicle.Connections.ConnectionTest do
     end
 
     @tag :tmp_dir
-    test "does not inject pinning into a custom verify_none credential", %{tmp_dir: tmp_dir} do
+    test "preserves a custom verify_none credential with a client identity", %{tmp_dir: tmp_dir} do
       path = certificate_fixture(tmp_dir)
       parent = self()
       custom = GRPC.Credential.new(ssl: [verify: :verify_none])
@@ -650,6 +651,8 @@ defmodule Chronicle.Connections.ConnectionTest do
       assert opts[:transport_opts][:cert] == certificate[:cert]
       assert opts[:transport_opts][:key] == certificate[:key]
       assert opts[:transport_opts][:verify] == :verify_peer
+      refute Keyword.has_key?(opts[:transport_opts], :verify_fun)
+      refute Keyword.has_key?(opts[:transport_opts], :partial_chain)
     end
 
     @tag :tmp_dir

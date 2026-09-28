@@ -597,9 +597,8 @@ defmodule Chronicle.Connections.Connection do
       raise ArgumentError, "client certificate conflicts with existing gRPC TLS identity options"
     end
 
-    # Mint merges adapter transport_opts first, then credential SSL. Pinning
-    # adds callbacks to the credential, which would silently replace adapter
-    # verification callbacks even when the caller supplied stricter checks.
+    # grpc 0.11.5 merges credential SSL after adapter transport_opts, so
+    # adapter-level verification can be silently overridden by the credential.
     if Enum.any?(transport_opts, fn {key, _} ->
          key in @server_verification_options or
            (is_atom(key) and String.starts_with?(Atom.to_string(key), "ocsp_"))
@@ -625,23 +624,7 @@ defmodule Chronicle.Connections.Connection do
         _ -> raise ArgumentError, "client certificates require a GRPC.Credential"
       end
 
-    # Match grpc 0.11.5's effective SSL precedence. Module transport_opts
-    # would replace the entire list and are rejected during init above.
-    transport_opts = options |> Keyword.get(:adapter_opts, []) |> Keyword.get(:transport_opts, [])
-    effective_ssl = Keyword.merge(transport_opts, existing_ssl)
-
-    verified_ssl =
-      if effective_ssl[:verify] == :verify_peer and
-           not Keyword.has_key?(effective_ssl, :verify_fun) do
-        Keyword.merge(
-          existing_ssl,
-          ClientCertificate.server_verify_options(client_certificate, effective_ssl)
-        )
-      else
-        existing_ssl
-      end
-
-    credential = GRPC.Credential.new(ssl: Keyword.merge(verified_ssl, client_certificate))
+    credential = GRPC.Credential.new(ssl: Keyword.merge(existing_ssl, client_certificate))
     Keyword.put(options, :cred, credential)
   end
 

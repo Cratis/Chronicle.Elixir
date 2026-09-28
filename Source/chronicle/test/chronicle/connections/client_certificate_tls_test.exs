@@ -252,87 +252,16 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
   end
 
   @tag :tmp_dir
-  test "an untrusted server is accepted only when its certificate matches the pinned identity", %{
+  test "a CA-trusted server with the wrong hostname is rejected with a client identity", %{
     tmp_dir: dir
   } do
     fixtures = chain_fixture(dir)
-    server_bundle = Path.join(dir, "server-bundle.pem")
+    wrong_ext = Path.join(dir, "wrong-host.ext")
+    wrong_cert = Path.join(dir, "wrong-host.pem")
 
     File.write!(
-      server_bundle,
-      File.read!(fixtures.server_cert) <> File.read!(fixtures.server_key)
-    )
-
-    pinned =
-      ClientCertificate.load!(
-        ConnectionString.parse(
-          "chronicle://localhost?certificatePath=#{URI.encode_www_form(server_bundle)}"
-        )
-      )
-
-    other_bundle = Path.join(dir, "other-bundle.pem")
-    File.write!(other_bundle, File.read!(fixtures.client_cert) <> File.read!(fixtures.client_key))
-
-    other =
-      ClientCertificate.load!(
-        ConnectionString.parse(
-          "chronicle://localhost?certificatePath=#{URI.encode_www_form(other_bundle)}"
-        )
-      )
-
-    for {identity, should_connect} <- [{other, false}, {pinned, true}] do
-      {:ok, listener} =
-        :ssl.listen(0,
-          certfile: fixtures.server_cert,
-          keyfile: fixtures.server_key,
-          verify: :verify_none,
-          active: false,
-          reuseaddr: true
-        )
-
-      {:ok, {_, port}} = :ssl.sockname(listener)
-
-      server =
-        Task.async(fn ->
-          {:ok, socket} = :ssl.transport_accept(listener, 5_000)
-          result = :ssl.handshake(socket, 5_000)
-
-          case result do
-            {:ok, tls} -> :ssl.close(tls)
-            _ -> :ok
-          end
-
-          :ssl.close(listener)
-        end)
-
-      ssl_opts =
-        [verify: :verify_peer, cacerts: [], active: false] ++
-          ClientCertificate.server_verify_options(identity) ++ identity
-
-      case :ssl.connect(~c"localhost", port, ssl_opts, 5_000) do
-        {:ok, tls} ->
-          assert should_connect
-          :ssl.close(tls)
-
-        {:error, _} ->
-          refute should_connect
-      end
-
-      Task.await(server, 6_000)
-    end
-  end
-
-  @tag :tmp_dir
-  test "pinning does not override a credential's failed CRL verification", %{tmp_dir: dir} do
-    fixtures = chain_fixture(dir)
-    leaf = Path.join(dir, "crl-server.pem")
-    bundle = Path.join(dir, "crl-server-bundle.pem")
-    ext = Path.join(dir, "crl-server.ext")
-
-    File.write!(
-      ext,
-      File.read!(fixtures.server_ext) <>
-        "crlDistributionPoints=URI:http://127.0.0.1:1/missing.crl\n"
+      wrong_ext,
+      "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:not-localhost\n"
     )
 
     openssl([
@@ -348,73 +277,37 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
       "-days",
       "1",
       "-extfile",
-      ext,
+      wrong_ext,
       "-out",
-      leaf
+      wrong_cert
     ])
 
-    File.write!(bundle, File.read!(leaf) <> File.read!(fixtures.server_key))
-
-    identity =
-      ClientCertificate.load!(
-        ConnectionString.parse(
-          "chronicle://localhost?certificatePath=#{URI.encode_www_form(bundle)}"
-        )
-      )
-
+    bundle = Path.join(dir, "client-identity.pem")
+    File.write!(bundle, File.read!(fixtures.client_cert) <> File.read!(fixtures.client_key))
     [{:Certificate, root, _}] = :public_key.pem_decode(File.read!(fixtures.root_cert))
-    trust = [verify: :verify_peer, cacerts: [root], crl_check: :peer, active: false]
-    # A matching pin must not bypass a caller's CRL policy by becoming a
-    # trusted leaf before OTP can check revocation.
-    assert [] == ClientCertificate.server_verify_options(identity, trust)
-    assert [] == ClientCertificate.server_verify_options(identity, depth: 1)
-    assert [] == ClientCertificate.server_verify_options(identity, stapling: :staple)
-    pin_options = ClientCertificate.server_verify_options(identity)
-    {verify_fun, false} = pin_options[:verify_fun]
 
-    for reason <- [
-          :certificate_revoked,
-          :certificate_expired,
-          :missing_ocsp_staple,
-          {:bad_crls, :no_relevant_crls}
-        ] do
-      assert {:fail, {:bad_cert, ^reason}} =
-               verify_fun.(nil, identity[:cert], {:bad_cert, reason}, false)
-    end
+    assert_rejected_mint_identity(
+      wrong_cert,
+      fixtures.server_key,
+      bundle,
+      [root],
+      "hostname_check_failed"
+    )
+  end
 
-    for {mode, extra} <- [
-          baseline: [],
-          credential: ClientCertificate.server_verify_options(identity, trust)
-        ] do
-      {:ok, listener} =
-        :ssl.listen(0,
-          certfile: leaf,
-          keyfile: fixtures.server_key,
-          verify: :verify_none,
-          active: false,
-          reuseaddr: true
-        )
+  @tag :tmp_dir
+  test "an untrusted server presenting the client identity is rejected", %{tmp_dir: dir} do
+    fixtures = chain_fixture(dir)
+    bundle = Path.join(dir, "shared-identity.pem")
+    File.write!(bundle, File.read!(fixtures.server_cert) <> File.read!(fixtures.server_key))
 
-      {:ok, {_, port}} = :ssl.sockname(listener)
-
-      server =
-        Task.async(fn ->
-          {:ok, socket} = :ssl.transport_accept(listener, 5_000)
-          result = :ssl.handshake(socket, 5_000)
-          if match?({:ok, _}, result), do: :ssl.close(elem(result, 1))
-          :ssl.close(listener)
-          result
-        end)
-
-      result = :ssl.connect(~c"localhost", port, trust ++ extra, 5_000)
-      if match?({:ok, _}, result), do: :ssl.close(elem(result, 1))
-
-      assert {:error, reason} = result,
-             "#{mode} unexpectedly accepted a certificate with an unverifiable CRL"
-
-      assert inspect(reason) =~ "bad_crls"
-      Task.await(server, 6_000)
-    end
+    assert_rejected_mint_identity(
+      fixtures.server_cert,
+      fixtures.server_key,
+      bundle,
+      [],
+      "unknown_ca"
+    )
   end
 
   @tag :tmp_dir
@@ -503,102 +396,14 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
 
     [{:Certificate, trusted, _}] = :public_key.pem_decode(File.read!(fixtures.intermediate_cert))
 
-    assert_ca_handshake(dir, fixtures, identity_path, server_chain,
-      verify: :verify_peer,
-      cacerts: [trusted]
+    assert_ca_handshake(
+      dir,
+      fixtures,
+      identity_path,
+      server_chain,
+      [verify: :verify_peer, cacerts: [trusted]],
+      true
     )
-  end
-
-  @tag :tmp_dir
-  test "pin checks the leaf, not the chain", %{
-    tmp_dir: dir
-  } do
-    fixtures = chain_fixture(dir)
-    # Sign a serverAuth leaf with an otherwise untrusted intermediate.
-    chained_leaf = Path.join(dir, "chained-leaf.pem")
-
-    openssl([
-      "x509",
-      "-req",
-      "-in",
-      fixtures.server_csr,
-      "-CA",
-      fixtures.intermediate_cert,
-      "-CAkey",
-      fixtures.intermediate_key,
-      "-CAcreateserial",
-      "-days",
-      "1",
-      "-extfile",
-      fixtures.server_ext,
-      "-out",
-      chained_leaf
-    ])
-
-    pinned_bundle = Path.join(dir, "pinned.pem")
-    File.write!(pinned_bundle, File.read!(chained_leaf) <> File.read!(fixtures.server_key))
-    ca_bundle = Path.join(dir, "pinned-ca.pem")
-
-    File.write!(
-      ca_bundle,
-      File.read!(fixtures.intermediate_cert) <> File.read!(fixtures.intermediate_key)
-    )
-
-    for {bundle, succeeds?} <- [{pinned_bundle, true}, {ca_bundle, false}] do
-      identity =
-        ClientCertificate.load!(
-          ConnectionString.parse(
-            "chronicle://localhost?certificatePath=#{URI.encode_www_form(bundle)}"
-          )
-        )
-
-      server_chain = Path.join(dir, "server-chain.pem")
-
-      # Without the root, OTP reaches the pinned intermediate before checking
-      # the peer, so this must exercise the leaf-mismatch branch.
-      File.write!(
-        server_chain,
-        File.read!(chained_leaf) <> File.read!(fixtures.intermediate_cert)
-      )
-
-      {:ok, listener} =
-        :ssl.listen(0,
-          certfile: server_chain,
-          keyfile: fixtures.server_key,
-          verify: :verify_none,
-          active: false,
-          reuseaddr: true
-        )
-
-      {:ok, {_, port}} = :ssl.sockname(listener)
-
-      server =
-        Task.async(fn ->
-          {:ok, socket} = :ssl.transport_accept(listener, 5_000)
-          result = :ssl.handshake(socket, 5_000)
-          if match?({:ok, _}, result), do: :ssl.close(elem(result, 1))
-          :ssl.close(listener)
-        end)
-
-      result =
-        :ssl.connect(
-          ~c"localhost",
-          port,
-          [verify: :verify_peer, cacerts: [], active: false] ++
-            ClientCertificate.server_verify_options(identity),
-          5_000
-        )
-
-      if succeeds? do
-        assert {:ok, tls} = result
-        :ssl.close(tls)
-      else
-        assert {:error, reason} = result
-        assert inspect(reason) =~ "pinned_certificate_mismatch"
-      end
-
-      Task.await(server, 6_000)
-    end
   end
 
   @tag :tmp_dir
@@ -763,6 +568,55 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
              )
   end
 
+  defp assert_rejected_mint_identity(server_cert, server_key, bundle, cacerts, failure) do
+    parent = self()
+
+    {:ok, listener} =
+      :ssl.listen(0,
+        certfile: server_cert,
+        keyfile: server_key,
+        verify: :verify_none,
+        alpn_preferred_protocols: ["h2"],
+        active: false,
+        reuseaddr: true
+      )
+
+    {:ok, {_, port}} = :ssl.sockname(listener)
+
+    server =
+      Task.async(fn ->
+        {:ok, socket} = :ssl.transport_accept(listener, 5_000)
+        result = :ssl.handshake(socket, 5_000)
+        if match?({:ok, _}, result), do: :ssl.close(elem(result, 1))
+        :ssl.close(listener)
+        result
+      end)
+
+    {:ok, connection} =
+      Connection.start_link(
+        connection_string:
+          "chronicle://localhost:#{port}?certificatePath=#{URI.encode_www_form(bundle)}&skipTlsValidation=false",
+        grpc_options: [cred: GRPC.Credential.new(ssl: [verify: :verify_peer, cacerts: cacerts])],
+        connect_fun: fn _target, opts ->
+          send(parent, {:mint_rejection_options, opts})
+          {:ok, %{}}
+        end,
+        disconnect_fun: fn _ -> :ok end
+      )
+
+    assert :ok = Connection.connect(connection, 2_000)
+    assert_receive {:mint_rejection_options, opts}
+    Connection.disconnect(connection)
+
+    channel = %GRPC.Channel{host: "localhost", port: port, scheme: "https", cred: opts[:cred]}
+
+    assert {:error, reason} =
+             GRPC.Client.Adapters.Mint.connect(channel, config_options: [client_settings: []])
+
+    assert inspect(reason) =~ failure
+    assert {:error, _} = Task.await(server, 6_000)
+  end
+
   defp assert_no_identity_handshake(fixtures, adapter_opts, succeeds?) do
     parent = self()
 
@@ -842,7 +696,7 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
     leaf
   end
 
-  defp assert_ca_handshake(_dir, fixtures, identity_path, server_chain, trust) do
+  defp assert_ca_handshake(_dir, fixtures, identity_path, server_chain, trust, mint? \\ false) do
     parent = self()
 
     {:ok, connection} =
@@ -881,8 +735,21 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
         result
       end)
 
-    assert {:ok, tls} = :ssl.connect(~c"localhost", port, [active: false] ++ ssl, 5_000)
-    :ssl.close(tls)
+    if mint? do
+      channel = %GRPC.Channel{
+        host: "localhost",
+        port: port,
+        scheme: "https",
+        cred: GRPC.Credential.new(ssl: ssl)
+      }
+
+      result = GRPC.Client.Adapters.Mint.connect(channel, config_options: [client_settings: []])
+      if match?({:ok, _}, result), do: GRPC.Client.Adapters.Mint.disconnect(elem(result, 1))
+    else
+      assert {:ok, tls} = :ssl.connect(~c"localhost", port, [active: false] ++ ssl, 5_000)
+      :ssl.close(tls)
+    end
+
     assert {:ok, _} = Task.await(server, 6_000)
   end
 
