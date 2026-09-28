@@ -178,6 +178,7 @@ defmodule Chronicle.Connections.Connection do
     client_certificate = ClientCertificate.load!(connection_string)
     grpc_options = Keyword.get(options, :grpc_options, [])
     validate_certificate_options!(grpc_options, client_certificate)
+    validate_push_options!(grpc_options)
 
     state = %{
       connection_string: connection_string,
@@ -625,11 +626,17 @@ defmodule Chronicle.Connections.Connection do
   defp disable_server_push(options) do
     if options[:adapter] == GRPC.Client.Adapters.Mint do
       adapter_opts = Keyword.get(options, :adapter_opts, [])
+      client_settings = force_push_off(Keyword.get(adapter_opts, :client_settings, []))
 
-      client_settings =
-        @mint_client_settings
-        |> Keyword.merge(Keyword.get(adapter_opts, :client_settings, []))
-        |> Keyword.put(:enable_push, false)
+      adapter_opts =
+        Keyword.update(adapter_opts, :config_options, [client_settings: client_settings], fn
+          config_options ->
+            Keyword.put(
+              config_options,
+              :client_settings,
+              force_push_off(Keyword.get(config_options, :client_settings, client_settings))
+            )
+        end)
 
       Keyword.put(
         options,
@@ -638,6 +645,30 @@ defmodule Chronicle.Connections.Connection do
       )
     else
       options
+    end
+  end
+
+  defp force_push_off(settings) do
+    @mint_client_settings
+    |> Keyword.merge(settings)
+    |> Keyword.put(:enable_push, false)
+  end
+
+  # grpc merges application module options after the per-channel settings.
+  # Unlike config_options they cannot be rewritten for this one connection.
+  defp validate_push_options!(options) do
+    if Keyword.get(options, :adapter, GRPC.Client.Adapters.Mint) == GRPC.Client.Adapters.Mint do
+      case Application.fetch_env(:grpc, GRPC.Client.Adapters.Mint) do
+        {:ok, module_opts} ->
+          if Keyword.has_key?(module_opts, :client_settings) and
+               Keyword.get(module_opts, :client_settings)[:enable_push] != false do
+            raise ArgumentError,
+                  "Mint module client_settings must set enable_push: false (gRPC overrides Chronicle's push setting)"
+          end
+
+        :error ->
+          :ok
+      end
     end
   end
 
