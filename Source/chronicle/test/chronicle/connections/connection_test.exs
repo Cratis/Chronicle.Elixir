@@ -463,6 +463,59 @@ defmodule Chronicle.Connections.ConnectionTest do
       assert opts[:headers] == []
       assert opts[:interceptors] == [Chronicle.Connections.TransportFailureInterceptor]
       assert opts[:adapter] == GRPC.Client.Adapters.Mint
+
+      assert Keyword.equal?(opts[:adapter_opts][:client_settings],
+               initial_window_size: 8_000_000,
+               max_frame_size: 8_000_000,
+               enable_push: false
+             )
+    end
+
+    test "disables server push without discarding caller Mint adapter options" do
+      test_pid = self()
+
+      conn =
+        start(
+          grpc_options: [
+            adapter_opts: [
+              retry: 2,
+              client_settings: [initial_window_size: 4_000_000, enable_push: true]
+            ]
+          ],
+          connect_fun: fn _target, opts ->
+            send(test_pid, {:opts, opts})
+            {:ok, channel_with_conn(test_pid)}
+          end,
+          auto_connect: true
+        )
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert_receive {:opts, opts}
+      assert opts[:adapter_opts][:retry] == 2
+
+      assert Keyword.equal?(opts[:adapter_opts][:client_settings],
+               initial_window_size: 4_000_000,
+               max_frame_size: 8_000_000,
+               enable_push: false
+             )
+    end
+
+    test "does not add Mint settings when the caller selects another adapter" do
+      test_pid = self()
+
+      conn =
+        start(
+          grpc_options: [adapter: SomeOtherAdapter, adapter_opts: [retry: 2]],
+          connect_fun: fn _target, opts ->
+            send(test_pid, {:opts, opts})
+            {:ok, channel_with_conn(test_pid)}
+          end,
+          auto_connect: true
+        )
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert_receive {:opts, opts}
+      assert opts[:adapter_opts] == [retry: 2]
     end
   end
 

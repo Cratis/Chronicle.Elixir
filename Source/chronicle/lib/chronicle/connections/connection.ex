@@ -80,6 +80,12 @@ defmodule Chronicle.Connections.Connection do
   @default_retry_attempts 5
   @default_reconnect_base_delay 1_000
   @default_reconnect_max_delay 10_000
+  # grpc 1.0.5 replaces (rather than merges) its Mint client_settings when supplied.
+  @mint_client_settings [
+    initial_window_size: 8_000_000,
+    max_frame_size: 8_000_000,
+    enable_push: false
+  ]
 
   @type option ::
           {:connection_string, String.t() | ConnectionString.t()}
@@ -530,6 +536,7 @@ defmodule Chronicle.Connections.Connection do
         headers: headers
       ]
       |> Keyword.merge(grpc_options)
+      |> disable_server_push()
       |> add_auth_interceptor(token_provider)
       |> add_transport_failure_interceptor()
 
@@ -547,6 +554,25 @@ defmodule Chronicle.Connections.Connection do
           [verify: :verify_peer, cacerts: :public_key.cacerts_get()],
           client_certificate
         )
+    end
+  end
+
+  defp disable_server_push(options) do
+    if options[:adapter] == GRPC.Client.Adapters.Mint do
+      adapter_opts = Keyword.get(options, :adapter_opts, [])
+
+      client_settings =
+        @mint_client_settings
+        |> Keyword.merge(Keyword.get(adapter_opts, :client_settings, []))
+        |> Keyword.put(:enable_push, false)
+
+      Keyword.put(
+        options,
+        :adapter_opts,
+        Keyword.put(adapter_opts, :client_settings, client_settings)
+      )
+    else
+      options
     end
   end
 
