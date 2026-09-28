@@ -35,7 +35,7 @@ defmodule Chronicle.Connections.AppendCompatibility do
   @spec protocol_version() :: String.t()
   def protocol_version, do: @protocol_version
 
-  @spec check(GRPC.Channel.t()) :: :ok | {:error, term()}
+  @spec check(%GRPC.Channel{}) :: :ok | {:error, term()}
   def check(channel) do
     case DescriptorSet.bytes() do
       <<>> -> {:error, :missing_contract_descriptor}
