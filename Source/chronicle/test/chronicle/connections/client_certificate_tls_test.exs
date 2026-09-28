@@ -291,10 +291,11 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
 
       server_chain = Path.join(dir, "server-chain.pem")
 
+      # Without the root, OTP reaches the pinned intermediate before checking
+      # the peer, so this must exercise the leaf-mismatch branch.
       File.write!(
         server_chain,
-        File.read!(chained_leaf) <>
-          File.read!(fixtures.intermediate_cert) <> File.read!(fixtures.root_cert)
+        File.read!(chained_leaf) <> File.read!(fixtures.intermediate_cert)
       )
 
       {:ok, listener} =
@@ -329,7 +330,8 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
         assert {:ok, tls} = result
         :ssl.close(tls)
       else
-        assert {:error, _} = result
+        assert {:error, reason} = result
+        assert inspect(reason) =~ "pinned_certificate_mismatch"
       end
 
       Task.await(server, 6_000)
