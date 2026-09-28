@@ -129,11 +129,13 @@ defmodule Chronicle.Connections.ClientCertificate do
   end
 
   defp safe_pem_decode!(contents, path) do
-    :public_key.pem_decode(contents)
-  rescue
-    # A malformed PEM can put its Base64 key in :pubkey_pem stack arguments.
-    # Raise a fresh error at this boundary, without the parser's reason/stack.
-    _ -> invalid!(path)
+    try do
+      :public_key.pem_decode(contents)
+    catch
+      # A malformed PEM can put its Base64 key in :pubkey_pem stack arguments.
+      # Raise a fresh error at this boundary, without the parser's reason/stack.
+      _, _ -> invalid!(path)
+    end
   end
 
   defp decode_pem!(pem, path, password) do
@@ -157,8 +159,8 @@ defmodule Chronicle.Connections.ClientCertificate do
     else
       _ -> invalid!(path)
     end
-  rescue
-    _ -> invalid!(path)
+  catch
+    _, _ -> invalid!(path)
   end
 
   defp decode_key(type, der, :not_encrypted, _password) do
@@ -171,8 +173,8 @@ defmodule Chronicle.Connections.ClientCertificate do
   defp decode_key(type, der, encryption, password) do
     decoded = :public_key.pem_entry_decode({type, der, encryption}, :binary.bin_to_list(password))
     {:ok, :public_key.der_encode(type, decoded)}
-  rescue
-    _ -> :error
+  catch
+    _, _ -> :error
   end
 
   defp owns_key?(certificate, private_key) do
@@ -217,8 +219,8 @@ defmodule Chronicle.Connections.ClientCertificate do
       signature = :public_key.sign(challenge, digest, private_key)
       :public_key.verify(challenge, digest, signature, verifier_key)
     end
-  rescue
-    _ -> false
+  catch
+    _, _ -> false
   end
 
   defp signing_algorithm(certificate) do
