@@ -22,7 +22,7 @@ defmodule Chronicle.Connections.TokenProvider do
 
   require Logger
 
-  alias Chronicle.Connections.{Auth, ConnectionString}
+  alias Chronicle.Connections.{Auth, ConnectionString, Status}
 
   # Refresh once the token has less than this many milliseconds left.
   @refresh_margin 60_000
@@ -80,11 +80,8 @@ defmodule Chronicle.Connections.TokenProvider do
   end
 
   @impl true
-  def format_status(%{state: state} = status) do
-    %{
-      status
-      | state: %{state | connection_string: :redacted, fetch_fun: :redacted, token: :redacted}
-    }
+  def format_status(%{state: _state} = status) do
+    Status.redact(status, connection_string: :redacted, fetch_fun: :redacted, token: :redacted)
   end
 
   @impl true
@@ -95,6 +92,17 @@ defmodule Chronicle.Connections.TokenProvider do
       nil -> {:reply, %{}, state}
       token -> {:reply, %{"authorization" => "Bearer #{token}"}, state}
     end
+  end
+
+  # Without a catch-all, the default FunctionClauseError stack frame includes
+  # the entire live state and cached bearer token outside format_status/1.
+  def handle_call(_request, _from, _state) do
+    raise FunctionClauseError, module: __MODULE__, function: :handle_call, arity: 3
+  end
+
+  @impl true
+  def handle_cast(_message, _state) do
+    raise FunctionClauseError, module: __MODULE__, function: :handle_cast, arity: 2
   end
 
   defp ensure_fresh_token(state) do

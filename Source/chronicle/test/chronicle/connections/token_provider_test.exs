@@ -39,6 +39,33 @@ defmodule Chronicle.Connections.TokenProviderTest do
     refute status =~ "pass"
   end
 
+  test "an unexpected call never logs a cached bearer token or credentials" do
+    secret = "BEARER-TOKEN-SECRET"
+
+    {:ok, provider} =
+      TokenProvider.start_link(
+        connection_string: ConnectionString.parse("chronicle://user:private-pass@localhost"),
+        fetch_fun: fn _ -> {:ok, {secret, @long_lifetime}} end
+      )
+
+    assert TokenProvider.authorization_headers(provider) ==
+             %{"authorization" => "Bearer #{secret}"}
+
+    Process.flag(:trap_exit, true)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        monitor = Process.monitor(provider)
+        assert catch_exit(GenServer.call(provider, :unexpected_call))
+        assert_receive {:DOWN, ^monitor, :process, ^provider, _}, 2_000
+        Logger.flush()
+      end)
+
+    assert log =~ "handle_call/3"
+    refute log =~ secret
+    refute log =~ "private-pass"
+  end
+
   test "fetches a token on first use and returns bearer headers" do
     {provider, calls} = start([{:ok, {"token-1", @long_lifetime}}])
 

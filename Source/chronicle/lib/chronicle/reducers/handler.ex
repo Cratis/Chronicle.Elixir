@@ -71,7 +71,20 @@ defmodule Chronicle.Reducers.Handler do
 
   @impl true
   def format_status(%{state: state} = status) do
-    Status.redact(status, stream: if(state.stream, do: :open, else: nil))
+    Status.redact(status,
+      stream: if(state.stream, do: :open, else: nil),
+      establish_fun: :redacted
+    )
+  end
+
+  @impl true
+  def handle_call(_request, _from, _state) do
+    raise FunctionClauseError, module: __MODULE__, function: :handle_call, arity: 3
+  end
+
+  @impl true
+  def handle_cast(_message, _state) do
+    raise FunctionClauseError, module: __MODULE__, function: :handle_cast, arity: 2
   end
 
   @impl true

@@ -293,6 +293,12 @@ defmodule Chronicle.Connections.Connection do
     {:noreply, state}
   end
 
+  # A missing clause prints the live channel (and API-key headers) in the
+  # callback stack frame even though format_status/1 redacts the state.
+  def handle_cast(_message, _state) do
+    raise FunctionClauseError, module: __MODULE__, function: :handle_cast, arity: 2
+  end
+
   @impl true
   def handle_info(:connect, %{connected?: true} = state) do
     {:noreply, state}

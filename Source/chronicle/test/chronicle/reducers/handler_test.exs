@@ -104,6 +104,23 @@ defmodule Chronicle.Reducers.HandlerTest do
     refute formatted =~ "reducer-api-secret"
   end
 
+  test "unexpected calls do not expose a stream's credential in crash logs", %{handler: handler} do
+    secret = "reducer-stream-secret"
+    :sys.replace_state(handler, &%{&1 | stream: %{credential: secret}})
+    Process.flag(:trap_exit, true)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        monitor = Process.monitor(handler)
+        assert catch_exit(GenServer.call(handler, :unexpected_call))
+        assert_receive {:DOWN, ^monitor, :process, ^handler, _}, 2_000
+        Logger.flush()
+      end)
+
+    assert log =~ "handle_call/3"
+    refute log =~ secret
+  end
+
   test "does not register on :connected alone", %{lifecycle: lifecycle, handler: handler} do
     Lifecycle.connected(lifecycle, "conn-1")
     _ = Lifecycle.phase(lifecycle)

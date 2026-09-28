@@ -1351,6 +1351,32 @@ defmodule Chronicle.Connections.ConnectionTest do
     end
   end
 
+  test "an unexpected cast never logs a connected channel's API key" do
+    secret = "private-api-cast-secret"
+    Process.flag(:trap_exit, true)
+
+    connection =
+      start(
+        connection_string: "chronicle://localhost?apiKey=#{secret}",
+        connect_fun: fn _target, opts -> {:ok, %{headers: opts[:headers]}} end,
+        disconnect_fun: fn _ -> :ok end,
+        auto_connect: true
+      )
+
+    assert :ok = Connection.connect(connection, 1_000)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        monitor = Process.monitor(connection)
+        GenServer.cast(connection, :unexpected_cast)
+        assert_receive {:DOWN, ^monitor, :process, ^connection, _}, 2_000
+        Logger.flush()
+      end)
+
+    assert log =~ "handle_cast/2"
+    refute log =~ secret
+  end
+
   test "redacts secrets from inspected and process status" do
     cs =
       ConnectionString.parse(

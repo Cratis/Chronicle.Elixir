@@ -107,6 +107,23 @@ defmodule Chronicle.Reactors.HandlerTest do
     refute formatted =~ "reactor-api-secret"
   end
 
+  test "unexpected casts do not expose a stream's credential in crash logs", %{handler: handler} do
+    secret = "reactor-stream-secret"
+    :sys.replace_state(handler, &%{&1 | stream: %{credential: secret}})
+    Process.flag(:trap_exit, true)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        monitor = Process.monitor(handler)
+        GenServer.cast(handler, :unexpected_cast)
+        assert_receive {:DOWN, ^monitor, :process, ^handler, _}, 2_000
+        Logger.flush()
+      end)
+
+    assert log =~ "handle_cast/2"
+    refute log =~ secret
+  end
+
   test "does not register on :connected alone", %{lifecycle: lifecycle, handler: handler} do
     Lifecycle.connected(lifecycle, "conn-1")
     _ = Lifecycle.phase(lifecycle)
