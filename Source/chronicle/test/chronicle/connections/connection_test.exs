@@ -1170,6 +1170,160 @@ defmodule Chronicle.Connections.ConnectionTest do
     refute_key_material(log, key_der)
   end
 
+  @tag :tmp_dir
+  test "a signer failure restarts its supervised connection with a fresh identity", %{
+    tmp_dir: dir
+  } do
+    certificate_fixture(dir)
+    path = Path.join(dir, "client.p12")
+    parent = self()
+
+    {:ok, supervisor} =
+      Supervisor.start_link(
+        [
+          {Connection,
+           connection_string:
+             "chronicle://localhost?certificatePath=#{URI.encode_www_form(path)}&certificatePassword=secret",
+           connect_fun: fn _target, opts ->
+             send(parent, {:identity, opts[:cred].ssl})
+             {:ok, %{}}
+           end,
+           disconnect_fun: fn _ -> :ok end,
+           reconnect_base_delay: 10,
+           auto_connect: true,
+           name: :signer_recovery_connection}
+        ],
+        strategy: :one_for_one
+      )
+
+    on_exit(fn -> if Process.alive?(supervisor), do: Supervisor.stop(supervisor) end)
+    connection = Process.whereis(:signer_recovery_connection)
+    assert :ok = Connection.connect(connection, 2_000)
+    assert_receive {:identity, first_ssl}, 2_000
+    signer = signer_pid(first_ssl)
+    old_connection = Process.monitor(connection)
+    Process.exit(signer, :kill)
+    assert_receive {:DOWN, ^old_connection, :process, ^connection, _}, 2_000
+
+    new_connection = await_named_connection(:signer_recovery_connection, connection)
+    assert :ok = Connection.connect(new_connection, 2_000)
+    assert_receive {:identity, next_ssl}, 2_000
+    assert signer_pid(next_ssl) != signer
+    refute Process.alive?(signer)
+    assert next_ssl[:cert] == first_ssl[:cert]
+    assert is_binary(next_ssl[:key].sign_fun.("challenge", :sha256, []))
+    assert_identity_handshake(next_ssl, dir)
+  end
+
+  @tag :tmp_dir
+  test "signers belong to their own connection and stop on normal shutdown", %{tmp_dir: dir} do
+    certificate_fixture(dir)
+    path = Path.join(dir, "client.p12")
+    parent = self()
+
+    connect_fun = fn target, opts ->
+      send(parent, {:identity, target, opts[:cred].ssl})
+      {:ok, %{}}
+    end
+
+    cs =
+      "chronicle://localhost?certificatePath=#{URI.encode_www_form(path)}&certificatePassword=secret"
+
+    first = start(connection_string: cs, connect_fun: connect_fun, auto_connect: true)
+
+    second =
+      start(
+        connection_string: String.replace(cs, "localhost", "127.0.0.1"),
+        connect_fun: connect_fun,
+        auto_connect: true
+      )
+
+    assert :ok = Connection.connect(first, 2_000)
+    assert :ok = Connection.connect(second, 2_000)
+    assert_receive {:identity, "ipv4:localhost:35000", first_ssl}, 2_000
+    assert_receive {:identity, "ipv4:127.0.0.1:35000", second_ssl}, 2_000
+    first_signer = signer_pid(first_ssl)
+    second_signer = signer_pid(second_ssl)
+    assert first_signer != second_signer
+    monitor = Process.monitor(first_signer)
+    assert :ok = Connection.disconnect(first)
+    assert_receive {:DOWN, ^monitor, :process, ^first_signer, _}, 2_000
+    assert Process.alive?(second_signer)
+    assert is_binary(second_ssl[:key].sign_fun.("challenge", :sha256, []))
+    assert :ok = Connection.disconnect(second)
+  end
+
+  defp assert_identity_handshake(ssl, dir) do
+    certfile = Path.join(dir, "cert.pem")
+    [{:Certificate, expected, _}] = :public_key.pem_decode(File.read!(certfile))
+
+    verify_peer = fn _cert, event, state ->
+      case event do
+        {:bad_cert, :selfsigned_peer} -> {:valid, state}
+        {:bad_cert, reason} -> {:fail, reason}
+        {:extension, _} -> {:unknown, state}
+        _ -> {:valid, state}
+      end
+    end
+
+    {:ok, listener} =
+      :ssl.listen(0,
+        certfile: certfile,
+        keyfile: Path.join(dir, "key.pem"),
+        cacertfile: certfile,
+        verify: :verify_peer,
+        verify_fun: {verify_peer, nil},
+        fail_if_no_peer_cert: true,
+        active: false,
+        reuseaddr: true
+      )
+
+    {:ok, {_, port}} = :ssl.sockname(listener)
+
+    server =
+      Task.async(fn ->
+        {:ok, socket} = :ssl.transport_accept(listener, 5_000)
+        {:ok, tls} = :ssl.handshake(socket, 5_000)
+        peer = :ssl.peercert(tls)
+        :ssl.close(tls)
+        :ssl.close(listener)
+        peer
+      end)
+
+    assert {:ok, socket} =
+             :ssl.connect(
+               ~c"localhost",
+               port,
+               [verify: :verify_none, active: false] ++ ssl,
+               5_000
+             )
+
+    :ssl.close(socket)
+    assert {:ok, expected} == Task.await(server, 6_000)
+  end
+
+  defp signer_pid(ssl) do
+    assert {:env, [pid]} = :erlang.fun_info(ssl[:key].sign_fun, :env)
+    pid
+  end
+
+  defp await_named_connection(name, previous) do
+    deadline = System.monotonic_time(:millisecond) + 2_000
+    await_named_connection(name, previous, deadline)
+  end
+
+  defp await_named_connection(name, previous, deadline) do
+    case Process.whereis(name) do
+      pid when is_pid(pid) and pid != previous ->
+        pid
+
+      _ ->
+        assert System.monotonic_time(:millisecond) < deadline, "connection did not restart"
+        Process.sleep(10)
+        await_named_connection(name, previous, deadline)
+    end
+  end
+
   defp private_key_der(dir) do
     {pem, 0} =
       System.cmd(

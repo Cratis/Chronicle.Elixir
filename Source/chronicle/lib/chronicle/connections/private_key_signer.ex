@@ -14,7 +14,9 @@ defmodule Chronicle.Connections.PrivateKeySigner do
     # argument or message. An init failure must not print the key in a crash.
     table = :ets.new(__MODULE__, [:private])
     true = :ets.insert(table, {:key, private_key})
-    {:ok, pid} = GenServer.start(__MODULE__, self())
+    # Link to the owning Connection: a signer failure must restart the entire
+    # connection so both gRPC and OAuth receive a newly loaded identity.
+    {:ok, pid} = GenServer.start_link(__MODULE__, self())
     true = :ets.give_away(table, pid, :key)
     :ok = GenServer.call(pid, :ready)
 
@@ -34,6 +36,8 @@ defmodule Chronicle.Connections.PrivateKeySigner do
 
   @impl true
   def init(owner) do
+    # A normal Connection.stop/1 does not propagate over a link. Monitor the
+    # owner as well, so the signer and its private ETS table never outlive it.
     {:ok, {nil, Process.monitor(owner)}}
   end
 
