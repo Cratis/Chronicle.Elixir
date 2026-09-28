@@ -48,8 +48,8 @@ URL-encode reserved characters in a client id or secret, such as `@`, `:` and `/
 | `loadBalancer` | `least-connections` | How to pick among several hosts or SRV-resolved addresses: `least-connections`, `round-robin` or `random`. |
 | `srvNameServer` | system resolver | For `chronicle+srv://`, the DNS server to query, as `host` or `host:port`. |
 | `authPort` | the first host's port | Port for the `/connect/token` request, when it differs from the gRPC port. |
-| `certificatePath` | none | Parsed, but not applied. See [TLS](#tls). |
-| `certificatePassword` | none | Parsed, but not applied. |
+| `certificatePath` | none | Path to a PKCS#12 (`.p12`/`.pfx`) file or a PEM bundle containing a client certificate and private key. Applied to the gRPC channel and OAuth token request. |
+| `certificatePassword` | none | Password for a PKCS#12 file or encrypted PEM private key. Requires `certificatePath`. |
 
 A host without a port uses `35000`. IPv6 addresses use brackets, as in `chronicle://[::1]:35000`.
 
@@ -67,9 +67,9 @@ chronicle://client-id:client-secret@chronicle.example.com:35000?skipTlsValidatio
 With validation on, a self-signed or otherwise untrusted certificate fails the connection.
 :::
 
-The client has no client-certificate (mutual TLS) support. It parses `certificatePath` and `certificatePassword`, but doesn't use them to configure the connection.
+If your kernel requires mutual TLS, set `certificatePath` to a PKCS#12 (`.p12`/`.pfx`) file or a PEM file containing both the client certificate and private key. Supply `certificatePassword` when the file is password-protected. PKCS#12 loading requires the `openssl` executable. The client presents the certificate to both the gRPC channel and the OAuth token endpoint. An unreadable file, invalid certificate, or wrong password fails connection startup; `disableTls=true` cannot be combined with a client certificate.
 
-To trust a private certificate authority, install it in the operating system's trust store and set `skipTlsValidation=false`. A gRPC credential passed as `:cred` through the `:grpc_options` client option replaces the default only for the gRPC channel: the client-credentials token request always follows `skipTlsValidation` and the system trust store.
+A client certificate does not validate the *server*. To trust a private certificate authority, install it in the operating system's trust store and set `skipTlsValidation=false`. A gRPC credential passed as `:cred` through the `:grpc_options` client option controls server trust only for the gRPC channel: the client-credentials token request always follows `skipTlsValidation` and the system trust store. When `certificatePath` is configured, the client certificate is added to the gRPC credential even if you pass your own `:cred`.
 
 ## Several hosts and DNS SRV
 

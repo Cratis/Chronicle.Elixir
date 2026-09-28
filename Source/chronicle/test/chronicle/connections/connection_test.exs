@@ -4,7 +4,7 @@
 defmodule Chronicle.Connections.ConnectionTest do
   use ExUnit.Case, async: true
 
-  alias Chronicle.Connections.{Connection, ConnectionString}
+  alias Chronicle.Connections.{ClientCertificate, Connection, ConnectionString}
 
   # A connection process exposed through adapter_payload so the connection can
   # extract it for liveness monitoring (mirrors the gun adapter shape).
@@ -462,6 +462,248 @@ defmodule Chronicle.Connections.ConnectionTest do
       assert opts[:headers] == []
       assert opts[:interceptors] == [Chronicle.Connections.TransportFailureInterceptor]
     end
+  end
+
+  describe "client certificates" do
+    @tag :tmp_dir
+    test "loads a password-protected PKCS#12 client certificate into the gRPC TLS options", %{
+      tmp_dir: tmp_dir
+    } do
+      path = certificate_fixture(tmp_dir)
+      test_pid = self()
+
+      conn =
+        start(
+          connection_string:
+            "chronicle://localhost:35000?certificatePath=#{URI.encode_www_form(path)}&certificatePassword=secret",
+          connect_fun: fn _target, opts ->
+            send(test_pid, {:opts, opts})
+            {:ok, channel_with_conn(test_pid)}
+          end,
+          auto_connect: true
+        )
+
+      assert :ok = Connection.connect(conn, 1_000)
+      assert_receive {:opts, opts}
+      assert is_binary(opts[:cred].ssl[:cert])
+      assert match?({:PrivateKeyInfo, key} when is_binary(key), opts[:cred].ssl[:key])
+      assert opts[:cred].ssl[:verify] == :verify_none
+    end
+
+    @tag :tmp_dir
+    test "loads a PEM bundle containing the certificate and private key", %{tmp_dir: tmp_dir} do
+      certificate_fixture(tmp_dir)
+      bundle = Path.join(tmp_dir, "bundle.pem")
+
+      File.write!(
+        bundle,
+        File.read!(Path.join(tmp_dir, "cert.pem")) <> File.read!(Path.join(tmp_dir, "key.pem"))
+      )
+
+      certificate =
+        bundle
+        |> then(&"chronicle://localhost:35000?certificatePath=#{URI.encode_www_form(&1)}")
+        |> ConnectionString.parse()
+        |> ClientCertificate.load!()
+
+      assert is_binary(certificate[:cert])
+      assert match?({:PrivateKeyInfo, key} when is_binary(key), certificate[:key])
+    end
+
+    @tag :tmp_dir
+    test "decrypts an encrypted PEM private key and rejects an incorrect password", %{
+      tmp_dir: tmp_dir
+    } do
+      certificate_fixture(tmp_dir)
+      encrypted_key = Path.join(tmp_dir, "encrypted-key.pem")
+      bundle = Path.join(tmp_dir, "encrypted-bundle.pem")
+
+      {_, 0} =
+        System.cmd(
+          "openssl",
+          [
+            "pkcs8",
+            "-topk8",
+            "-in",
+            Path.join(tmp_dir, "key.pem"),
+            "-out",
+            encrypted_key,
+            "-passout",
+            "pass:secret"
+          ],
+          stderr_to_stdout: true
+        )
+
+      File.write!(bundle, File.read!(Path.join(tmp_dir, "cert.pem")) <> File.read!(encrypted_key))
+
+      connection_string =
+        "chronicle://localhost:35000?certificatePath=#{URI.encode_www_form(bundle)}"
+
+      assert [cert: cert, key: {:PrivateKeyInfo, key}] =
+               connection_string
+               |> Kernel.<>("&certificatePassword=secret")
+               |> ConnectionString.parse()
+               |> ClientCertificate.load!()
+
+      assert is_binary(cert) and is_binary(key)
+
+      assert {:error, {%ArgumentError{message: message}, _}} =
+               start_invalid(connection_string <> "&certificatePassword=incorrect")
+
+      assert message =~ "invalid client certificate or password"
+    end
+
+    @tag :tmp_dir
+    test "preserves custom gRPC trust settings while installing the client certificate", %{
+      tmp_dir: tmp_dir
+    } do
+      path = certificate_fixture(tmp_dir)
+      test_pid = self()
+      custom = GRPC.Credential.new(ssl: [verify: :verify_peer, cacerts: []])
+
+      conn =
+        start(
+          connection_string:
+            "chronicle://localhost:35000?certificatePath=#{URI.encode_www_form(path)}&certificatePassword=secret",
+          grpc_options: [cred: custom],
+          connect_fun: fn _target, opts ->
+            send(test_pid, {:opts, opts})
+            {:ok, channel_with_conn(test_pid)}
+          end,
+          auto_connect: true
+        )
+
+      assert :ok = Connection.connect(conn, 1_000)
+      assert_receive {:opts, opts}
+      assert opts[:cred].ssl[:verify] == :verify_peer
+      assert opts[:cred].ssl[:cacerts] == []
+      assert is_binary(opts[:cred].ssl[:cert])
+      assert match?({:PrivateKeyInfo, key} when is_binary(key), opts[:cred].ssl[:key])
+    end
+
+    @tag :tmp_dir
+    test "uses the same client certificate for OAuth TLS", %{tmp_dir: tmp_dir} do
+      path = certificate_fixture(tmp_dir)
+
+      connection_string =
+        ConnectionString.parse(
+          "chronicle://localhost:35000?certificatePath=#{URI.encode_www_form(path)}&certificatePassword=secret"
+        )
+
+      certificate = ClientCertificate.load!(connection_string)
+      opts = Chronicle.Connections.Auth.transport_opts(false, false, certificate)
+      assert opts[:transport_opts][:cert] == certificate[:cert]
+      assert opts[:transport_opts][:key] == certificate[:key]
+      assert opts[:transport_opts][:verify] == :verify_peer
+    end
+
+    @tag :tmp_dir
+    test "rejects a wrong PKCS#12 password without dialing", %{tmp_dir: tmp_dir} do
+      path = certificate_fixture(tmp_dir)
+
+      connection_string =
+        "chronicle://localhost:35000?certificatePath=#{URI.encode_www_form(path)}&certificatePassword=wrong"
+
+      assert {:error, {%ArgumentError{message: message}, _}} =
+               start_invalid(connection_string)
+
+      assert message =~ "client certificate"
+      assert message =~ path
+    end
+
+    @tag :tmp_dir
+    test "rejects a PEM certificate without its private key", %{tmp_dir: tmp_dir} do
+      certificate_fixture(tmp_dir)
+      path = Path.join(tmp_dir, "cert.pem")
+
+      assert {:error, {%ArgumentError{message: message}, _}} =
+               start_invalid(
+                 "chronicle://localhost:35000?certificatePath=#{URI.encode_www_form(path)}"
+               )
+
+      assert message =~ "invalid client certificate"
+    end
+
+    test "rejects a missing certificate instead of connecting without one" do
+      path = "/missing/chronicle-client.p12"
+      connection_string = "chronicle://localhost:35000?certificatePath=#{path}"
+
+      assert {:error, {%ArgumentError{message: message}, _}} =
+               start_invalid(connection_string)
+
+      assert message =~ path
+    end
+
+    @tag :tmp_dir
+    test "rejects client certificates when TLS is disabled", %{tmp_dir: tmp_dir} do
+      path = certificate_fixture(tmp_dir)
+
+      assert {:error, {%ArgumentError{message: message}, _}} =
+               start_invalid(
+                 "chronicle://localhost:35000?disableTls=true&certificatePath=#{URI.encode_www_form(path)}"
+               )
+
+      assert message =~ "TLS is disabled"
+    end
+
+    test "rejects a certificate password without a certificate path" do
+      assert {:error, {%ArgumentError{message: message}, _}} =
+               start_invalid("chronicle://localhost:35000?certificatePassword=secret")
+
+      assert message =~ "certificatePath"
+    end
+  end
+
+  defp start_invalid(connection_string) do
+    Process.flag(:trap_exit, true)
+    Connection.start_link(connection_string: connection_string, auto_connect: false)
+  end
+
+  defp certificate_fixture(tmp_dir) do
+    key = Path.join(tmp_dir, "key.pem")
+    cert = Path.join(tmp_dir, "cert.pem")
+    path = Path.join(tmp_dir, "client.p12")
+
+    {_, 0} =
+      System.cmd(
+        "openssl",
+        [
+          "req",
+          "-x509",
+          "-newkey",
+          "rsa:2048",
+          "-nodes",
+          "-days",
+          "1",
+          "-subj",
+          "/CN=localhost",
+          "-keyout",
+          key,
+          "-out",
+          cert
+        ],
+        stderr_to_stdout: true
+      )
+
+    {_, 0} =
+      System.cmd(
+        "openssl",
+        [
+          "pkcs12",
+          "-export",
+          "-inkey",
+          key,
+          "-in",
+          cert,
+          "-out",
+          path,
+          "-passout",
+          "pass:secret"
+        ],
+        stderr_to_stdout: true
+      )
+
+    path
   end
 
   describe "TLS validation" do

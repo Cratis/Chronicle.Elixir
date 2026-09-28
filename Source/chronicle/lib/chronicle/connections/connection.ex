@@ -65,6 +65,7 @@ defmodule Chronicle.Connections.Connection do
   alias Chronicle.Connections.{
     AppendCompatibility,
     AuthInterceptor,
+    ClientCertificate,
     TransportFailureInterceptor,
     ConnectionString,
     DnsResolver,
@@ -166,10 +167,12 @@ defmodule Chronicle.Connections.Connection do
   @impl true
   def init(options) do
     connection_string = connection_string_from(options)
+    client_certificate = ClientCertificate.load!(connection_string)
 
     state = %{
       connection_string: connection_string,
-      token_provider: start_token_provider(connection_string),
+      client_certificate: client_certificate,
+      token_provider: start_token_provider(connection_string, client_certificate),
       channel: nil,
       connected?: false,
       append_compatible?: false,
@@ -336,6 +339,7 @@ defmodule Chronicle.Connections.Connection do
     probe_fun = state.probe_fun
     round_robin_counter = state.round_robin_counter
     token_provider = state.token_provider
+    client_certificate = state.client_certificate
 
     Task.start(fn ->
       result =
@@ -343,7 +347,15 @@ defmodule Chronicle.Connections.Connection do
              {:ok, address} <-
                LoadBalancer.select(addresses, connection_string, round_robin_counter, probe_fun) do
           target = target_for(address)
-          opts = build_grpc_options(connection_string, grpc_options, token_provider)
+
+          opts =
+            build_grpc_options(
+              connection_string,
+              grpc_options,
+              token_provider,
+              client_certificate
+            )
+
           connect_fun.(target, opts)
         end
 
@@ -483,7 +495,7 @@ defmodule Chronicle.Connections.Connection do
     end
   end
 
-  defp build_grpc_options(connection_string, grpc_options, token_provider) do
+  defp build_grpc_options(connection_string, grpc_options, token_provider, client_certificate) do
     headers = auth_headers(connection_string)
 
     options =
@@ -496,28 +508,40 @@ defmodule Chronicle.Connections.Connection do
       |> add_transport_failure_interceptor()
 
     cond do
-      connection_string.disable_tls or not Code.ensure_loaded?(GRPC.Credential) ->
+      connection_string.disable_tls ->
         options
 
       connection_string.skip_tls_validation ->
-        # Default: trust any certificate without validating its chain, since a
-        # Chronicle kernel commonly serves an auto-generated self-signed
-        # certificate. Set `skipTlsValidation=false` (or the
-        # `:skip_tls_validation` option) to require full chain validation
-        # instead, against a server whose certificate is verifiable.
-        credential = apply(GRPC.Credential, :new, [[ssl: [verify: :verify_none]]])
-        Keyword.put_new(options, :cred, credential)
+        # Chronicle commonly serves an auto-generated self-signed certificate.
+        add_credential(options, [verify: :verify_none], client_certificate)
 
       true ->
-        # Explicit opt-in: validate the server's certificate chain against the
-        # system trust store.
-        credential =
-          apply(GRPC.Credential, :new, [
-            [ssl: [verify: :verify_peer, cacerts: :public_key.cacerts_get()]]
-          ])
-
-        Keyword.put_new(options, :cred, credential)
+        add_credential(
+          options,
+          [verify: :verify_peer, cacerts: :public_key.cacerts_get()],
+          client_certificate
+        )
     end
+  end
+
+  defp add_credential(options, ssl, []) do
+    Keyword.put_new(options, :cred, GRPC.Credential.new(ssl: ssl))
+  end
+
+  defp add_credential(options, ssl, client_certificate) do
+    if options[:adapter] != GRPC.Client.Adapters.Mint do
+      raise ArgumentError, "client certificates require the Mint gRPC adapter"
+    end
+
+    existing_ssl =
+      case options[:cred] do
+        nil -> ssl
+        %GRPC.Credential{ssl: existing} -> existing
+        _ -> raise ArgumentError, "client certificates require a GRPC.Credential"
+      end
+
+    credential = GRPC.Credential.new(ssl: Keyword.merge(existing_ssl, client_certificate))
+    Keyword.put(options, :cred, credential)
   end
 
   # The API key is static, so it can live in the channel headers. OAuth2
@@ -535,10 +559,15 @@ defmodule Chronicle.Connections.Connection do
   # lifecycle, and every dialed channel gets an interceptor that attaches a
   # fresh token to each RPC. Mirrors the api-key-wins precedence of
   # `auth_headers/1` when both are (mis)configured.
-  defp start_token_provider(connection_string) do
+  defp start_token_provider(connection_string, client_certificate) do
     if present?(connection_string.username) and present?(connection_string.password) and
          not present?(connection_string.api_key) do
-      {:ok, provider} = TokenProvider.start_link(connection_string: connection_string)
+      {:ok, provider} =
+        TokenProvider.start_link(
+          connection_string: connection_string,
+          client_certificate: client_certificate
+        )
+
       provider
     end
   end
