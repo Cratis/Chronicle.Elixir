@@ -93,6 +93,39 @@ defmodule Chronicle.Connections.Auth do
         skip_tls_validation,
         client_certificate
       ) do
+    fetch_token_with_expiry(
+      host,
+      port,
+      client_id,
+      client_secret,
+      disable_tls,
+      skip_tls_validation,
+      client_certificate,
+      &Mint.HTTP.request/5
+    )
+  end
+
+  @doc false
+  @spec fetch_token_with_expiry(
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          String.t(),
+          boolean(),
+          boolean(),
+          keyword(),
+          function()
+        ) :: {:ok, {String.t(), non_neg_integer() | nil}} | {:error, term()}
+  def fetch_token_with_expiry(
+        host,
+        port,
+        client_id,
+        client_secret,
+        disable_tls,
+        skip_tls_validation,
+        client_certificate,
+        request_fun
+      ) do
     scheme = if disable_tls, do: :http, else: :https
 
     body =
@@ -111,10 +144,8 @@ defmodule Chronicle.Connections.Auth do
     mint_opts = transport_opts(disable_tls, skip_tls_validation, client_certificate)
 
     with {:ok, conn} <- Mint.HTTP.connect(scheme, host, port, mint_opts),
-         {:ok, conn, _ref} <- Mint.HTTP.request(conn, "POST", "/connect/token", headers, body),
+         {:ok, conn, _ref} <- request_fun.(conn, "POST", "/connect/token", headers, body),
          {:ok, {status, resp_body}} <- receive_response(conn) do
-      Mint.HTTP.close(conn)
-
       case status do
         200 ->
           case Jason.decode(resp_body) do
@@ -127,8 +158,12 @@ defmodule Chronicle.Connections.Auth do
           {:error, {:http_error, other, resp_body}}
       end
     else
-      {:error, _conn, reason} -> {:error, {:request_error, reason}}
-      {:error, reason} -> {:error, reason}
+      {:error, conn, reason} ->
+        close_connection(conn)
+        {:error, {:request_error, reason}}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   rescue
     e -> {:error, {:exception, e}}
@@ -165,6 +200,14 @@ defmodule Chronicle.Connections.Auth do
     [transport_opts: trust ++ client_certificate]
   end
 
+  # Mint's close/1 is a no-op once its state is :closed, even if a stream
+  # error marked that state before closing the underlying socket.
+  defp close_connection(%{state: :closed, transport: transport, socket: socket}) do
+    transport.close(socket)
+  end
+
+  defp close_connection(conn), do: Mint.HTTP.close(conn)
+
   defp receive_response(conn, status \\ nil, body \\ "") do
     receive do
       message ->
@@ -179,12 +222,14 @@ defmodule Chronicle.Connections.Auth do
               end)
 
             if done? do
+              close_connection(conn)
               {:ok, {new_status, new_body}}
             else
               receive_response(conn, new_status, new_body)
             end
 
-          {:error, _conn, reason, _} ->
+          {:error, conn, reason, _} ->
+            close_connection(conn)
             {:error, {:stream_error, reason}}
 
           :unknown ->
@@ -192,6 +237,7 @@ defmodule Chronicle.Connections.Auth do
         end
     after
       10_000 ->
+        close_connection(conn)
         {:error, :timeout}
     end
   end
