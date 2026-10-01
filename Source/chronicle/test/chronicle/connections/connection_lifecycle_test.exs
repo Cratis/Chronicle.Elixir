@@ -109,6 +109,7 @@ defmodule Chronicle.Connections.ConnectionLifecycleTest do
     assert DynamicSupervisor.count_children(transport_supervisor).active == 1
 
     caller = spawn(fn -> Connection.append_channel(connection) end)
+    caller_monitor = Process.monitor(caller)
     assert_check_in_flight(connection, System.monotonic_time(:millisecond) + 2_000)
     started = System.monotonic_time(:millisecond)
     assert :ok = Supervisor.stop(client)
@@ -118,7 +119,7 @@ defmodule Chronicle.Connections.ConnectionLifecycleTest do
     assert_receive {:DOWN, ^transport_monitor, :process, ^transport, _}, 2_000
     assert_receive {:DOWN, ^supervisor_monitor, :process, ^transport_supervisor, _}, 2_000
     assert_child_count(before_count, System.monotonic_time(:millisecond) + 2_000)
-    refute Process.alive?(caller)
+    assert_receive {:DOWN, ^caller_monitor, :process, ^caller, _}, 2_000
   end
 
   test "a killed connection closes its supervised transport without terminate" do
