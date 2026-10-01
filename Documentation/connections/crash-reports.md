@@ -60,13 +60,15 @@ end
 
 The filter matches any report that mentions a gRPC client, channel or Mint module, in its state, last message or stacktrace. That includes crashes of other processes that use Mint, such as an HTTP client. It handles the `gen_server` termination report and the `proc_lib` crash report alike. It does not look at messages your own code builds with `Logger.error/1`.
 
+The filter only covers crash reports. When a linked process exits, grpc and the Chronicle client log its exit reason as a plain warning string, and the filter does not inspect those. If such a reason carries the connection state, the credentials can still reach the log, so restrict who can read production logs until the upstream fix tracked in #79 ships.
+
 Also keep these Logger settings, which are the defaults:
 
 ```elixir
 config :logger, handle_sasl_reports: false
 ```
 
-With `handle_sasl_reports: true`, OTP writes a second crash report for the same process, so the credentials appear twice. The filter above catches both, but there is no reason to produce the extra report in production.
+With `handle_sasl_reports: true`, Logger also prints the `proc_lib` crash report for the same process, which can repeat the credentials. The filter above catches it too, but production does not need it.
 
 Two blunter settings also keep these reports out, but at a cost you should weigh first:
 
