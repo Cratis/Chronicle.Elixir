@@ -60,7 +60,7 @@ end
 
 The filter matches any report that mentions a gRPC client, channel or Mint module, in its state, last message or stacktrace. That includes crashes of other processes that use Mint, such as an HTTP client. It handles the `gen_server` termination report and the `proc_lib` crash report alike. It does not look at messages your own code builds with `Logger.error/1`.
 
-The filter only covers crash reports. When a linked process exits, grpc and the Chronicle client log its exit reason as a plain warning string, and the filter does not inspect those. If such a reason carries the connection state, the credentials can still reach the log, so restrict who can read production logs until the upstream fix tracked in #79 ships.
+The filter only covers crash reports. When a linked process exits, grpc and the Chronicle client log its exit reason as a plain warning string, and the filter does not inspect those. If such a reason carries the connection state, the credentials can still reach the log, so restrict who can read production logs until the upstream fix described below ships.
 
 Also keep these Logger settings, which are the defaults:
 
