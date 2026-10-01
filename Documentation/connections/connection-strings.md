@@ -134,4 +134,4 @@ chronicle://my-service:client-secret@chronicle.example.com:35000?skipTlsValidati
 chronicle://chronicle.example.com:35000?apiKey=your-api-key&skipTlsValidation=false
 ```
 
-`Chronicle.Connections.ConnectionString.parse/1` raises `ArgumentError` for a malformed string, so a bad value fails when the client starts rather than on the first call. Don't log a connection string as-is, because it can contain a secret.
+`Chronicle.Connections.ConnectionString.parse/1` raises `ArgumentError` for a malformed string, so a bad value fails when the client starts rather than on the first call. Don't log a connection string as-is, because it can contain a secret. Crash reports from the gRPC libraries can also print credentials; see [Keep credentials out of crash reports](crash-reports.md).

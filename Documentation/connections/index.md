@@ -9,6 +9,7 @@ A Chronicle client keeps one long-lived gRPC connection to a Chronicle kernel. E
 
 - [Connection strings](connection-strings.md): the `chronicle://` and `chronicle+srv://` formats, client credentials and API keys, TLS validation, and the other options.
 - [Resilience and the connection lifecycle](resilience.md): how the client connects, registers your artifacts, detects a dead session and reconnects, and what your calls return while it does.
+- [Keep credentials out of crash reports](crash-reports.md): when gRPC and Mint crash reports can print an API key or bearer token, and the production Logger setup that keeps them out of your logs.
 
 ## At a glance
 

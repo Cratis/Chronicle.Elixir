@@ -4,3 +4,5 @@
   href: resilience.md
 - name: Connection Strings
   href: connection-strings.md
+- name: Keep Credentials Out of Crash Reports
+  href: crash-reports.md
