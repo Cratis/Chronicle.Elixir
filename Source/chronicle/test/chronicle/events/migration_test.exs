@@ -71,6 +71,64 @@ defmodule Chronicle.MigrationTest do
     end
   end
 
+  describe "compiling a migration and its events as separate files" do
+    @tag :tmp_dir
+    test "compiles when the event modules are still being compiled", %{tmp_dir: tmp_dir} do
+      unique = System.unique_integer([:positive])
+      root = "Chronicle.MigrationTest.Parallel#{unique}"
+      sources = Path.join(tmp_dir, "lib")
+      output = Path.join(tmp_dir, "ebin")
+      File.mkdir_p!(sources)
+      File.mkdir_p!(output)
+
+      # The module bodies sleep so that the migration file reaches its before-compile check
+      # while the event modules are not yet defined, which is what Mix's parallel compiler
+      # can do on a project whose files are ordered migration-first.
+      event_source = fn name, generation ->
+        """
+        defmodule #{root}.#{name} do
+          use Chronicle.Events.EventType, id: "parallel-#{unique}", generation: #{generation}
+          defstruct []
+          Process.sleep(500)
+        end
+        """
+      end
+
+      files = [
+        {"a_migration.ex",
+         """
+         defmodule #{root}.Migration do
+           use Chronicle.Events.Migration,
+             from: {#{root}.AccountOpenedV1, generation: 1},
+             to: {#{root}.AccountOpened, generation: 2}
+
+           def upcast(builder), do: builder
+           def downcast(builder), do: builder
+         end
+         """},
+        {"b_account_opened_v1.ex", event_source.("AccountOpenedV1", 1)},
+        {"c_account_opened.ex", event_source.("AccountOpened", 2)}
+      ]
+
+      paths =
+        for {name, contents} <- files do
+          path = Path.join(sources, name)
+          File.write!(path, contents)
+          path
+        end
+
+      result = Kernel.ParallelCompiler.compile_to_path(paths, output, return_diagnostics: true)
+
+      assert {:ok, modules, _diagnostics} = result
+      assert Module.concat(root, "Migration") in modules
+
+      for module <- modules do
+        :code.purge(module)
+        :code.delete(module)
+      end
+    end
+  end
+
   describe "Migrators" do
     test "groups migrations by event type id" do
       migrators = Migrators.new([AccountOpenedV2Migration])

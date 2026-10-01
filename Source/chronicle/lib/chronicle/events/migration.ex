@@ -145,6 +145,11 @@ defmodule Chronicle.Events.Migration do
           to_generation: @chronicle_migration_to_generation
       end
 
+      # Under Mix's parallel compiler the event modules may not be compiled and loaded yet when
+      # this migration is, so wait for them before inspecting what they export.
+      Code.ensure_compiled!(@chronicle_migration_from_module)
+      Code.ensure_compiled!(@chronicle_migration_to_module)
+
       unless function_exported?(@chronicle_migration_from_module, :__chronicle_event_type__, 1) do
         raise ArgumentError,
               "#{inspect(@chronicle_migration_from_module)} must use Chronicle.Events.EventType"
