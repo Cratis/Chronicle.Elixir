@@ -44,7 +44,9 @@ defmodule Chronicle.ReadModels.ReadModel do
 
   Options:
     * `:key` — key expression identifying the model instance.
-      Defaults to `"$eventSourceId"` when omitted.
+      Defaults to `"$eventSourceId"` when omitted. Use `{:composite, parts}` for an
+      ordered list of key-part mappings, and `{:event_context, "Occurred.Week"}`
+      to map a key part to an event-context property path.
     * `:parent_key` — parent key for nested models
     * `:set` — keyword list of `field: expression` pairs to set directly
     * `:add` — keyword list of `field: expression` pairs to add to
@@ -95,6 +97,36 @@ defmodule Chronicle.ReadModels.ReadModel do
       for dictionary fields keyed by event context values
     * `:decrement` — keyword list for decrementing fields; use `{field: {:event_context, :property}}`
       for dictionary fields keyed by event context values
+
+  ## Composite Keys
+
+  Key parts use the same event-field atoms, explicit expression strings, and
+  literals as other keys. Target names are preserved and parts are emitted in
+  list order. A composite key requires a non-empty list of `{name, part}` pairs
+  with string or atom names; nested composite keys are not supported.
+  Event-context paths must be strings containing only letters, dots and
+  parentheses, matching the kernel's accepted characters. Invalid keys raise
+  `ArgumentError` identifying the read model and offending part.
+  Paths are passed to the kernel unchanged, without adding method parentheses:
+
+      from MyApp.Events.AccountOpened,
+        key: {:composite, [
+          {"Year", {:event_context, "Occurred.Year"}},
+          {"Week", {:event_context, "Occurred.Week"}}
+        ]},
+        count: :transaction_count
+
+  This emits
+  `$composite(Year=$eventContext(Occurred.Year),Week=$eventContext(Occurred.Week))`,
+  matching the .NET client. The kernel evaluates the date parts; the client does
+  not calculate them. `Occurred.Week` is the ISO 8601 week number (1–53): weeks
+  start on Monday and week 1 contains the first Thursday.
+
+  `Occurred.Year` is the calendar year, not the ISO week-based year. Pairing it
+  with `Occurred.Week` can split a week around New Year. A week-based-year
+  accessor is tracked in https://github.com/Cratis/Chronicle/issues/4505.
+
+  These key options also work in `Chronicle.Projections.Projection` declarations.
 
   ## Property Expressions
 

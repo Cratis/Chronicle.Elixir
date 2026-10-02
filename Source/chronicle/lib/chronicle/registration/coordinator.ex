@@ -410,7 +410,10 @@ defmodule Chronicle.Registration.Coordinator do
       read_model_module.__chronicle_read_model__(:from)
       |> Enum.map(fn {event_module, opts} ->
         properties = opts |> build_properties() |> auto_map_fields.(event_module, :from)
-        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
+
+        key =
+          opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression(read_model_module)
+
         parent_key = Keyword.get(opts, :parent_key, "")
 
         struct(KeyValuePair_EventType_FromDefinition,
@@ -428,7 +431,10 @@ defmodule Chronicle.Registration.Coordinator do
       read_model_module.__chronicle_read_model__(:join)
       |> Enum.map(fn {event_module, opts} ->
         properties = opts |> build_properties() |> auto_map_fields.(event_module, :join)
-        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
+
+        key =
+          opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression(read_model_module)
+
         # On names the read model property to join on, which keeps its snake_case name.
         on = opts |> Keyword.fetch!(:on) |> to_string()
 
@@ -446,7 +452,9 @@ defmodule Chronicle.Registration.Coordinator do
     removed_with_entries =
       read_model_module.__chronicle_read_model__(:removed_with)
       |> Enum.map(fn {event_module, opts} ->
-        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
+        key =
+          opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression(read_model_module)
+
         parent_key = Keyword.get(opts, :parent_key, "")
 
         struct(KeyValuePair_EventType_RemovedWithDefinition,
@@ -519,7 +527,7 @@ defmodule Chronicle.Registration.Coordinator do
       projection_module.__chronicle_projection__(:from)
       |> Enum.map(fn {event_module, opts} ->
         properties = opts |> build_properties() |> auto_map_fields.(event_module, :from)
-        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
+        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression(model_module)
         parent_key = Keyword.get(opts, :parent_key, "")
 
         struct(KeyValuePair_EventType_FromDefinition,
@@ -537,7 +545,7 @@ defmodule Chronicle.Registration.Coordinator do
       projection_module.__chronicle_projection__(:join)
       |> Enum.map(fn {event_module, opts} ->
         properties = opts |> build_properties() |> auto_map_fields.(event_module, :join)
-        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
+        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression(model_module)
         # On names the read model property to join on, which keeps its snake_case name.
         on = opts |> Keyword.fetch!(:on) |> to_string()
 
@@ -555,7 +563,7 @@ defmodule Chronicle.Registration.Coordinator do
     removed_with_entries =
       projection_module.__chronicle_projection__(:removed_with)
       |> Enum.map(fn {event_module, opts} ->
-        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression()
+        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression(model_module)
         parent_key = Keyword.get(opts, :parent_key, "")
 
         struct(KeyValuePair_EventType_RemovedWithDefinition,
@@ -635,7 +643,7 @@ defmodule Chronicle.Registration.Coordinator do
 
         key ->
           event_type = proto_event_type(event_module)
-          key_expression = resolve_key_expression(key)
+          key_expression = resolve_key_expression(key, Map.get(definition, :ReadModel))
 
           updated_from =
             Enum.map(Map.get(acc, :From), fn entry ->
@@ -797,7 +805,58 @@ defmodule Chronicle.Registration.Coordinator do
   end
 
   @doc false
+  def resolve_key_expression(expr, read_model) do
+    resolve_key_expression(expr)
+  rescue
+    error in ArgumentError ->
+      raise ArgumentError, "Invalid key for read model #{inspect(read_model)}: #{error.message}"
+  end
+
+  @doc false
+  def resolve_key_expression({:composite, [_ | _] = parts}) when is_list(parts) do
+    "$composite(#{Enum.map_join(parts, ",", &composite_key_part/1)})"
+  end
+
+  def resolve_key_expression({:composite, parts}) do
+    raise ArgumentError,
+          "composite keys require a non-empty list of {name, part} pairs; got #{inspect(parts)}"
+  end
+
+  def resolve_key_expression({:event_context, property}) when is_binary(property) do
+    # EventContextPropertyExpressionResolver in the kernel accepts [A-Za-z.()]*.
+    unless Regex.match?(~r/\A[A-Za-z.()]*\z/, property) do
+      raise ArgumentError,
+            "event-context key path #{inspect(property)} must contain only letters, dots and parentheses"
+    end
+
+    "$eventContext(#{property})"
+  end
+
+  def resolve_key_expression({:event_context, property}) do
+    raise ArgumentError,
+          "event-context key paths must be strings such as \"Occurred.Week\"; got #{inspect(property)}"
+  end
+
   def resolve_key_expression(expr), do: resolve_expression(expr)
+
+  defp composite_key_part({_, {:composite, _}} = part) do
+    raise ArgumentError, "nested composite keys are not supported; got key part #{inspect(part)}"
+  end
+
+  defp composite_key_part({name, expr} = part) when is_binary(name) or is_atom(name) do
+    "#{name}=#{resolve_key_expression(expr)}"
+  rescue
+    error in ArgumentError ->
+      raise ArgumentError, "Invalid composite key part #{inspect(part)}: #{error.message}"
+
+    FunctionClauseError ->
+      raise ArgumentError, "Invalid composite key part #{inspect(part)}: unsupported expression"
+  end
+
+  defp composite_key_part(part) do
+    raise ArgumentError,
+          "composite key parts must be {name, part} pairs with string or atom names; got #{inspect(part)}"
+  end
 
   # Public so Chronicle.Projections.VariantReclassifier can build the same EventType identifiers
   # used to key From/Join/RemovedWith entries, so its lookups compare equal.
