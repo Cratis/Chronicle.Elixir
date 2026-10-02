@@ -102,8 +102,12 @@ defmodule Chronicle.ReadModels.ReadModel do
 
   Key parts use the same event-field atoms, explicit expression strings, and
   literals as other keys. Target names are preserved and parts are emitted in
-  list order. Event-context paths are passed to the kernel unchanged, without
-  adding method parentheses:
+  list order. A composite key requires a non-empty list of `{name, part}` pairs
+  with string or atom names; nested composite keys are not supported.
+  Event-context paths must be strings containing only letters, dots and
+  parentheses, matching the kernel's accepted characters. Invalid keys raise
+  `ArgumentError` identifying the read model and offending part.
+  Paths are passed to the kernel unchanged, without adding method parentheses:
 
       from MyApp.Events.AccountOpened,
         key: {:composite, [
