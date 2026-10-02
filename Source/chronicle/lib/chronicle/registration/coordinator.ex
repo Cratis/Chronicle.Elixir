@@ -797,6 +797,19 @@ defmodule Chronicle.Registration.Coordinator do
   end
 
   @doc false
+  def resolve_key_expression({:composite, parts}) when is_list(parts) do
+    expressions =
+      Enum.map_join(parts, ",", fn {field, expr} ->
+        "#{field}=#{resolve_key_expression(expr)}"
+      end)
+
+    "$composite(#{expressions})"
+  end
+
+  def resolve_key_expression({:event_context, property}) when is_binary(property) do
+    "$eventContext(#{property})"
+  end
+
   def resolve_key_expression(expr), do: resolve_expression(expr)
 
   # Public so Chronicle.Projections.VariantReclassifier can build the same EventType identifiers
