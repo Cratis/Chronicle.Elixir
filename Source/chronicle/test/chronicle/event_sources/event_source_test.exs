@@ -82,6 +82,12 @@ defmodule Chronicle.EventSources.EventSourceTest do
       end
     end
 
+    test "an empty event source name is rejected" do
+      assert_raise ArgumentError, ~r/non-empty string/, fn ->
+        Chronicle.EventSources.EventSource.build_definition(Unregistered, "", "", [], [])
+      end
+    end
+
     test "duplicate source names are rejected" do
       assert_raise DuplicateEventSourceName, ~r/"Account"/, fn ->
         EventSources.describe!([AccountEventSource, OtherAccount])
@@ -195,6 +201,23 @@ defmodule Chronicle.EventSources.EventSourceTest do
       assert {second."EventSource", second."EventStreamType"} == {"Order", "All"}
       # Entries that name no source take the batch-level default.
       assert third."EventSource" == "Order"
+    end
+
+    test "a per-event source does not inherit the batch stream", %{opts: opts} do
+      events = [
+        %EventForEventSourceId{event_source_id: "a", event: %Event{}, event_source: "Order"},
+        %EventForEventSourceId{event_source_id: "b", event: %Event{}}
+      ]
+
+      assert :ok =
+               EventLog.append_many_for_event_sources(
+                 events,
+                 opts ++ [event_source: AccountEventSource, event_stream: "Audit"]
+               )
+
+      assert [_tail, %{Events: [first, second]}] = requests()
+      assert {first."EventSource", first."EventStreamType"} == {"Order", "All"}
+      assert {second."EventSource", second."EventStreamType"} == {"Account", "Audit"}
     end
 
     test "batch routing defaults leave other entries untouched when none is given", %{opts: opts} do

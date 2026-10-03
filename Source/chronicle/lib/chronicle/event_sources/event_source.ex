@@ -81,6 +81,10 @@ defmodule Chronicle.EventSources.EventSource do
   def build_definition(module, name, description, concurrency, streams) do
     alias Chronicle.EventSources.{ConcurrencyDimensions, EventSourceDefinition, EventStream}
 
+    unless is_nil(name) or (is_binary(name) and name != "") do
+      raise ArgumentError, "event source name must be a non-empty string, got: #{inspect(name)}"
+    end
+
     names = Enum.map(streams, &elem(&1, 0))
 
     case names -- Enum.uniq(names) do
