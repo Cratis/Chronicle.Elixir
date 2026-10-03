@@ -42,7 +42,7 @@ defmodule Chronicle.MixProject do
 
   defp deps do
     [
-      {:cratis_chronicle_contracts, "~> 19.19"},
+      {:cratis_chronicle_contracts, "~> 19.30"},
       {:grpc, "~> 1.0"},
       {:mint, "~> 1.11"},
       {:telemetry, "~> 1.0"},
@@ -99,6 +99,11 @@ defmodule Chronicle.MixProject do
           Chronicle.EventSequences.TransactionalEventSequence,
           Chronicle.Events.ConcurrencyScope,
           Chronicle.Events.EventTypes,
+          Chronicle.EventSources,
+          Chronicle.EventSources.EventSource,
+          Chronicle.EventSources.EventSourceDefinition,
+          Chronicle.EventSources.EventStream,
+          Chronicle.EventSources.ConcurrencyDimensions,
           Chronicle.EventStores
         ],
         Transactions: [Chronicle.Transactions.UnitOfWork],

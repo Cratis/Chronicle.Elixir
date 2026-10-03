@@ -9,6 +9,7 @@ defmodule Chronicle.Artifacts do
   macros:
 
     * `__chronicle_event_type__/1`
+    * `__chronicle_event_source__/1`
     * `__chronicle_reactor__/1`
     * `__chronicle_reducer__/1`
     * `__chronicle_read_model__/1`
@@ -22,6 +23,7 @@ defmodule Chronicle.Artifacts do
 
   @type discovered :: %{
           event_types: [module()],
+          event_sources: [module()],
           reactors: [module()],
           reducers: [module()],
           read_models: [module()],
@@ -50,6 +52,7 @@ defmodule Chronicle.Artifacts do
       modules,
       %{
         event_types: [],
+        event_sources: [],
         reactors: [],
         reducers: [],
         read_models: [],
@@ -67,6 +70,11 @@ defmodule Chronicle.Artifacts do
             :event_types,
             module,
             function_exported?(module, :__chronicle_event_type__, 1)
+          )
+          |> maybe_put(
+            :event_sources,
+            module,
+            function_exported?(module, :__chronicle_event_source__, 1)
           )
           |> maybe_put(:reactors, module, function_exported?(module, :__chronicle_reactor__, 1))
           |> maybe_put(:reducers, module, function_exported?(module, :__chronicle_reducer__, 1))
@@ -121,6 +129,7 @@ defmodule Chronicle.Artifacts do
       modules,
       %{
         event_types: [],
+        event_sources: [],
         reactors: [],
         reducers: [],
         read_models: [],
@@ -137,6 +146,11 @@ defmodule Chronicle.Artifacts do
           :event_types,
           module,
           function_exported?(module, :__chronicle_event_type__, 1)
+        )
+        |> maybe_put(
+          :event_sources,
+          module,
+          function_exported?(module, :__chronicle_event_source__, 1)
         )
         |> maybe_put(:reactors, module, function_exported?(module, :__chronicle_reactor__, 1))
         |> maybe_put(:reducers, module, function_exported?(module, :__chronicle_reducer__, 1))

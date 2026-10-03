@@ -14,6 +14,12 @@ defmodule Chronicle.EventSequences.EventForEventSourceId do
   scope sends no explicit constraint for this source; a scope, including `none()`,
   is sent unchanged. For repeated sources, the first declared scope wins.
 
+  `event_source` (a `Chronicle.EventSources.EventSource` module or name) and
+  `event_stream` route this event through a registered definition, overriding any
+  batch-level `:event_source`/`:event_stream` option. An explicit `concurrency_scope`
+  always wins over the definition's concurrency dimensions. `routing` is resolved
+  internally and not meant to be set.
+
   Rich batches carry routing, tags, subject, and occurred time per event. Their
   causation and identity remain batch-level: explicit batch causation wins,
   and the first resolved entry identity wins over the batch identity option.
@@ -36,6 +42,9 @@ defmodule Chronicle.EventSequences.EventForEventSourceId do
     :subject,
     :occurred,
     :concurrency_scope,
+    :event_source,
+    :event_stream,
+    :routing,
     causation: [],
     identity: nil
   ]
@@ -50,6 +59,9 @@ defmodule Chronicle.EventSequences.EventForEventSourceId do
           subject: String.t() | nil,
           occurred: DateTime.t() | nil,
           concurrency_scope: ConcurrencyScope.t() | keyword() | nil,
+          event_source: module() | String.t() | nil,
+          event_stream: String.t() | nil,
+          routing: Chronicle.EventSources.Routing.t() | nil,
           causation: [CausationEntry.t()],
           identity: Identity.t() | nil
         }

@@ -86,6 +86,8 @@ defmodule Chronicle.Client do
       `:reducers`, `:read_models`, `:webhooks`, and
       `:event_store_subscriptions` entries.
     * `:event_types` — list of event type modules to register with the event store.
+    * `:event_sources` — list of `Chronicle.EventSources.EventSource` modules to register
+      with the event store (also discovered automatically).
     * `:migrations` — list of migration modules to register with the event store.
     * `:reactors` — list of reactor modules to start (each `use Chronicle.Reactors.Reactor`).
     * `:reducers` — list of reducer modules to start (each `use Chronicle.Reducers.Reducer`).
@@ -176,6 +178,7 @@ defmodule Chronicle.Client do
       else
         %{
           event_types: [],
+          event_sources: [],
           migrations: [],
           reactors: [],
           reducers: [],
@@ -189,6 +192,9 @@ defmodule Chronicle.Client do
       end
 
     event_types = Enum.uniq(Keyword.get(opts, :event_types, []) ++ discovered.event_types)
+    event_sources = Enum.uniq(Keyword.get(opts, :event_sources, []) ++ discovered.event_sources)
+    # Rejects duplicate event source names before anything connects.
+    Chronicle.EventSources.describe!(event_sources)
     migrations = Enum.uniq(Keyword.get(opts, :migrations, []) ++ discovered.migrations)
     reactors = Enum.uniq(Keyword.get(opts, :reactors, []) ++ discovered.reactors)
     reducers = Enum.uniq(Keyword.get(opts, :reducers, []) ++ discovered.reducers)
@@ -215,6 +221,7 @@ defmodule Chronicle.Client do
       event_store: event_store,
       namespace: namespace,
       event_types: event_types,
+      event_sources: event_sources,
       reducers: reducers,
       seeders: seeders,
       webhooks: webhooks,
@@ -301,6 +308,7 @@ defmodule Chronicle.Client do
         {Chronicle.Registration.Coordinator,
          Keyword.merge(observer_opts,
            event_types: event_types,
+           event_sources: event_sources,
            migrations: migrations,
            read_models: read_models,
            reducers: reducers,
