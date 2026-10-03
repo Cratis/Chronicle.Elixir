@@ -23,6 +23,12 @@ defmodule Chronicle.EventSources.EventSourceTest do
     stream("Audit")
   end
 
+  defmodule LedgerEventSource do
+    use Chronicle.EventSources.EventSource,
+      name: "Ledger",
+      concurrency: [:event_source_id, :event_source_type]
+  end
+
   defmodule OrderEventSource do
     use Chronicle.EventSources.EventSource
   end
@@ -389,6 +395,83 @@ defmodule Chronicle.EventSources.EventSourceTest do
                %{EventSourceId: "b", Scope: %{SequenceNumber: 2}}
              ] =
                request."ConcurrencyScopes"
+    end
+  end
+
+  describe "same-id scope safety" do
+    setup do
+      register_sources([AccountEventSource, LedgerEventSource, OrderEventSource])
+      put_response(:tail_sequence_number, 4)
+    end
+
+    defp entry(id, source, fields \\ []) do
+      struct(
+        %EventForEventSourceId{event_source_id: id, event: %Event{}, event_source: source},
+        fields
+      )
+    end
+
+    defp rejected(events, opts, id) do
+      assert {:error, {:incompatible_concurrency_scopes, ^id, [_, _ | _]}} =
+               EventLog.append_many_for_event_sources(events, opts)
+
+      assert requests() == []
+    end
+
+    test "guarded entries with differing stream ids are rejected before any write", %{opts: opts} do
+      events = [
+        entry("a", "Account", event_stream: "Transactions", event_stream_id: "t-1"),
+        entry("a", "Account", event_stream: "Transactions", event_stream_id: "t-2")
+      ]
+
+      rejected(events, opts, "a")
+    end
+
+    test "different definitions with differing guards on one id are rejected", %{opts: opts} do
+      rejected([entry("a", "Account"), entry("a", "Ledger")], opts, "a")
+    end
+
+    test "equivalent predicates share one scope despite irrelevant routing fields", %{opts: opts} do
+      events = [
+        entry("a", "Account", event_stream_id: "ignored-1"),
+        entry("a", "Account", event_stream_id: "ignored-2")
+      ]
+
+      assert :ok = EventLog.append_many_for_event_sources(events, opts)
+
+      assert [%Wire.TailSequenceNumberRequest{}, %Wire.AppendManyForEventSourcesRequest{} = r] =
+               requests()
+
+      assert [%{EventSourceId: "a", Scope: %{SequenceNumber: 4}}] = r."ConcurrencyScopes"
+    end
+
+    test "an unguarded entry first does not suppress a later guarded one", %{opts: opts} do
+      assert :ok =
+               EventLog.append_many_for_event_sources(
+                 [entry("a", "Order"), entry("a", "Account")],
+                 opts
+               )
+
+      assert [%Wire.TailSequenceNumberRequest{}, %Wire.AppendManyForEventSourcesRequest{} = r] =
+               requests()
+
+      assert [%{EventSourceId: "a", Scope: %{SequenceNumber: 4}}] = r."ConcurrencyScopes"
+    end
+
+    test "an explicit shared scope bypasses the automatic collision", %{opts: opts} do
+      events = [
+        entry("a", "Account", concurrency_scope: ConcurrencyScope.for_event_source(7)),
+        entry("a", "Ledger")
+      ]
+
+      assert :ok = EventLog.append_many_for_event_sources(events, opts)
+      assert [%Wire.AppendManyForEventSourcesRequest{} = r] = requests()
+      assert [%{EventSourceId: "a", Scope: %{SequenceNumber: 7}}] = r."ConcurrencyScopes"
+    end
+
+    test "a rejected id leaves the whole batch unwritten", %{opts: opts} do
+      events = [entry("ok", "Account"), entry("a", "Account"), entry("a", "Ledger")]
+      rejected(events, opts, "a")
     end
   end
 

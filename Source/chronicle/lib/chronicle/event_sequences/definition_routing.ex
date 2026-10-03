@@ -7,7 +7,8 @@ defmodule Chronicle.EventSequences.DefinitionRouting do
   # Applies event source definitions to buffered appends: resolves the source /
   # stream routing of every event (per event, so mixed-source batches work), and
   # derives a concurrency scope from the definition's dimensions for event
-  # sources that gave no explicit scope. Nothing is sent until every event
+  # sources that gave no explicit scope. Incompatible derived scopes for one id are
+  # rejected. Nothing is sent until every event
   # resolved, so a rejected routing never leaves a partial append.
 
   alias Chronicle.EventSequences.EventForEventSourceId
@@ -89,47 +90,76 @@ defmodule Chronicle.EventSequences.DefinitionRouting do
           into: MapSet.new(),
           do: id
 
-    events
-    |> Enum.reduce_while({:ok, [], explicit}, fn event, {:ok, acc, done} ->
-      if applies?(event, done) do
-        case derive_scope(event, tail_fun) do
-          {:ok, scope} ->
-            {:cont,
-             {:ok, [%{event | concurrency_scope: scope} | acc],
-              MapSet.put(done, event.event_source_id)}}
+    with {:ok, predicates} <- required_predicates(events, explicit) do
+      events
+      |> Enum.reduce_while({:ok, [], MapSet.new()}, fn event, {:ok, acc, done} ->
+        id = event.event_source_id
 
-          {:error, _} = error ->
-            {:halt, error}
+        if Map.has_key?(predicates, id) and not MapSet.member?(done, id) and
+             predicate(event) != nil do
+          case derive_scope(event, tail_fun) do
+            {:ok, scope} ->
+              {:cont, {:ok, [%{event | concurrency_scope: scope} | acc], MapSet.put(done, id)}}
+
+            {:error, _} = error ->
+              {:halt, error}
+          end
+        else
+          {:cont, {:ok, [event | acc], done}}
         end
-      else
-        {:cont, {:ok, [event | acc], done}}
+      end)
+      |> case do
+        {:ok, result, _} -> {:ok, Enum.reverse(result)}
+        error -> error
       end
-    end)
-    |> case do
-      {:ok, result, _} -> {:ok, Enum.reverse(result)}
-      error -> error
     end
   end
 
-  defp applies?(%{routing: nil}, _done), do: false
+  # The wire carries one scope per event source id, so every guarded entry of an
+  # id must agree on its predicate. Unguarded entries need no guard and never
+  # suppress a later guarded one. Fails before anything is derived or sent.
+  defp required_predicates(events, explicit) do
+    grouped =
+      events
+      |> Enum.reject(&MapSet.member?(explicit, &1.event_source_id))
+      |> Enum.reduce(%{}, fn event, acc ->
+        case predicate(event) do
+          nil -> acc
+          key -> Map.update(acc, event.event_source_id, [key], &[key | &1])
+        end
+      end)
+      |> Map.new(fn {id, keys} -> {id, keys |> Enum.uniq() |> Enum.reverse()} end)
 
-  defp applies?(%{routing: routing, event_source_id: id}, done),
-    do: Routing.dimensions(routing) != [] and not MapSet.member?(done, id)
+    case Enum.find(grouped, fn {_id, keys} -> length(keys) > 1 end) do
+      nil -> {:ok, Map.new(grouped, fn {id, [key]} -> {id, key} end)}
+      {id, keys} -> {:error, {:incompatible_concurrency_scopes, id, keys}}
+    end
+  end
+
+  defp predicate(%{routing: nil}), do: nil
+
+  defp predicate(%{routing: routing} = event) do
+    case Routing.dimensions(routing) do
+      [] -> nil
+      dimensions -> {:event_source_id in dimensions, narrowing(event, routing, dimensions)}
+    end
+  end
+
+  defp narrowing(event, routing, dimensions) do
+    [
+      event_source_type:
+        if(:event_source_type in dimensions, do: Routing.source_type(routing), else: ""),
+      event_stream_type:
+        if(:event_stream_type in dimensions, do: Routing.stream_type(routing), else: ""),
+      event_stream_id:
+        if(:event_stream_id in dimensions, do: event.event_stream_id || "", else: "")
+    ]
+  end
 
   # Reads the tail with exactly the narrowing the scope declares: the kernel
   # validates the append against that, so both must ask the same question.
-  defp derive_scope(%{routing: routing} = event, tail_fun) do
-    dimensions = Routing.dimensions(routing)
-    by_source_id? = :event_source_id in dimensions
-    source_type = if :event_source_type in dimensions, do: Routing.source_type(routing), else: ""
-    stream_type = if :event_stream_type in dimensions, do: Routing.stream_type(routing), else: ""
-    stream_id = if :event_stream_id in dimensions, do: event.event_stream_id || "", else: ""
-
-    narrowing = [
-      event_source_type: source_type,
-      event_stream_type: stream_type,
-      event_stream_id: stream_id
-    ]
+  defp derive_scope(event, tail_fun) do
+    {by_source_id?, narrowing} = predicate(event)
 
     case tail_fun.(if(by_source_id?, do: event.event_source_id), narrowing) do
       {:ok, tail} ->
