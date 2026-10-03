@@ -23,6 +23,11 @@ defmodule Chronicle.Integration.EventSourcesTest do
     stream("Transactions", description: "Money movements")
   end
 
+  defmodule LedgerEventSource do
+    use Chronicle.EventSources.EventSource, name: "ItLedger"
+    stream("Monthly", description: "Per month", concurrency: [:event_source_id, :event_stream_id])
+  end
+
   defmodule Seen do
     use Chronicle.Reactors.Reactor
     @handles AccountOpened
@@ -39,10 +44,11 @@ defmodule Chronicle.Integration.EventSourcesTest do
       Chronicle.Client.start_link(
         name: :event_source_it_client,
         connection_string: System.fetch_env!("CHRONICLE_INTEGRATION_CONNECTION_STRING"),
-        event_store: "#{prefix}-#{System.unique_integer([:positive])}",
+        event_store:
+          "#{prefix}-#{System.system_time(:millisecond)}-#{System.unique_integer([:positive])}",
         discover: false,
         event_types: [AccountOpened],
-        event_sources: [AccountEventSource],
+        event_sources: [AccountEventSource, LedgerEventSource],
         reactors: [Seen]
       )
 
@@ -108,6 +114,8 @@ defmodule Chronicle.Integration.EventSourcesTest do
 
   test "definition dimensions detect a concurrent append" do
     opts = @opts ++ [event_source: AccountEventSource]
+    # Two events, so one sits after sequence number 0 even in a fresh store.
+    assert :ok = EventLog.append("acc-4", %AccountOpened{}, opts)
     assert :ok = EventLog.append("acc-4", %AccountOpened{}, opts)
     stale = ConcurrencyScope.for_event_source(0, event_source_type: "ItAccount")
 
@@ -115,5 +123,77 @@ defmodule Chronicle.Integration.EventSourcesTest do
              EventLog.append("acc-4", %AccountOpened{}, opts ++ [concurrency_scope: stale])
 
     assert :ok = EventLog.append("acc-4", %AccountOpened{}, opts)
+  end
+
+  defp monthly(id, month, extra \\ []) do
+    struct(
+      %EventForEventSourceId{
+        event_source_id: id,
+        event: %AccountOpened{},
+        event_source: LedgerEventSource,
+        event_stream: "Monthly",
+        event_stream_id: month
+      },
+      extra
+    )
+  end
+
+  defp stored(id) do
+    {:ok, events} = EventLog.get_for_event_source(id, @opts)
+    length(events)
+  end
+
+  describe "same-id scope guards" do
+    test "differing guarded stream ids on one id are rejected with nothing stored" do
+      assert :ok = EventLog.append_many_for_event_sources([monthly("led-1", "2026-01")], @opts)
+      before = stored("led-1")
+
+      assert {:error, {:incompatible_concurrency_scopes, "led-1", [_, _]}} =
+               EventLog.append_many_for_event_sources(
+                 [monthly("led-1", "2026-01"), monthly("led-1", "2026-02")],
+                 @opts
+               )
+
+      assert stored("led-1") == before
+    end
+
+    test "an explicit suitably broad shared scope succeeds" do
+      scope = ConcurrencyScope.for_event_source(0, event_source_type: "ItLedger")
+
+      assert :ok =
+               EventLog.append_many_for_event_sources(
+                 [
+                   monthly("led-2", "2026-01", concurrency_scope: scope),
+                   monthly("led-2", "2026-02")
+                 ],
+                 @opts
+               )
+
+      assert stored("led-2") == 2
+    end
+
+    test "a stale explicit shared scope rejects the whole mixed batch" do
+      # Two events, so one sits after sequence number 0 even in a fresh store.
+      assert :ok =
+               EventLog.append_many_for_event_sources(
+                 [monthly("led-3", "2026-01"), monthly("led-3", "2026-01")],
+                 @opts
+               )
+
+      stale = ConcurrencyScope.for_event_source(0, event_source_type: "ItLedger")
+
+      assert {:error, _} =
+               EventLog.append_many_for_event_sources(
+                 [
+                   monthly("led-3", "2026-01", concurrency_scope: stale),
+                   monthly("led-3", "2026-02"),
+                   monthly("led-4", "2026-01")
+                 ],
+                 @opts
+               )
+
+      assert stored("led-3") == 2
+      assert stored("led-4") == 0
+    end
   end
 end

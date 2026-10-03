@@ -67,6 +67,8 @@ Each `Chronicle.EventSequences.EventForEventSourceId` entry can carry its own `e
 
 When you append through a definition without a `:concurrency_scope`, the client reads the tail sequence number narrowed by the dimensions that apply (the stream's, or the source's if the stream declares none) and sends it as the scope. An explicit `:concurrency_scope`, including `ConcurrencyScope.none()`, always wins and no read is made. With no dimensions declared, no scope is sent.
 
+In a batch, every guarded entry of one event source id must agree on its guard: the dimensions and the source type, stream type and stream id they select. Entries with the same effective guard share one scope, and entries without dimensions need none and never suppress a later guarded entry. Chronicle accepts one concurrency scope per event source id, so a batch whose derived guards differ for one id (for example two different stream ids, or two definitions with different dimensions) fails with `{:incompatible_concurrency_scopes, event_source_id, guards}` before anything is read or sent. Pass an explicit `:concurrency_scope` on an entry of that id to choose one guard for it, or append the entries in separate batches.
+
 ## Event context
 
 Reactor and reducer contexts have an `:event_source` key holding the name of the event source the event was appended through, or `nil` for events appended without one.
