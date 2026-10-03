@@ -58,6 +58,7 @@ defmodule Chronicle.ArtifactsTest do
 
       assert Map.keys(discovered) |> Enum.sort() ==
                [
+                 :event_sources,
                  :event_store_subscriptions,
                  :event_types,
                  :global_handlers,

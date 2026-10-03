@@ -22,6 +22,7 @@ defmodule Chronicle.Registration.Coordinator do
   alias Chronicle.Connections.{Connection, Lifecycle}
   alias Chronicle.Events.Constraints
   alias Chronicle.Events.EventTypes
+  alias Chronicle.EventSources
   alias Chronicle.Schemas.JsonSchemaGenerator
   alias Chronicle.Sinks.WellKnownSinkTypes
 
@@ -68,6 +69,7 @@ defmodule Chronicle.Registration.Coordinator do
       event_store: Keyword.fetch!(opts, :event_store),
       namespace: Keyword.get(opts, :namespace, "Default"),
       event_types: Keyword.get(opts, :event_types, []),
+      event_sources: Keyword.get(opts, :event_sources, []),
       migrations: Keyword.get(opts, :migrations, []),
       read_models: Keyword.get(opts, :read_models, []),
       reducers: Keyword.get(opts, :reducers, []),
@@ -167,6 +169,7 @@ defmodule Chronicle.Registration.Coordinator do
          :ok <- ensure_namespace(channel, state.event_store, state.namespace),
          :ok <-
            EventTypes.register(channel, state.event_store, all_event_types, state.migrations),
+         :ok <- EventSources.register(channel, state.event_store, state.event_sources),
          :ok <- register_constraints(channel, state, all_event_types),
          :ok <- register_read_models(channel, state),
          :ok <- register_projections(channel, state) do
