@@ -56,6 +56,8 @@ defmodule Chronicle.Reactors.Reactor do
     * `:event_store` — the event store name
     * `:namespace` — the namespace
     * `:correlation_id` — the correlation ID for the append operation
+    * `:event_source` — the name of the registered event source the event was
+      appended through, or `nil` when it was not appended through one
 
   ## Return values
 

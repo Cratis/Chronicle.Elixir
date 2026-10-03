@@ -76,6 +76,8 @@ defmodule Chronicle.Reducers.Reducer do
     * `:sequence_number` — the event's position in the event log
     * `:occurred` — when the event was appended (ISO 8601 string)
     * `:observation_state` — the observation state (`:initial`, `:replay`, etc.)
+    * `:event_source` — the name of the registered event source the event was
+      appended through, or `nil` when it was not appended through one
 
   ## Replay lifecycle (optional)
 

@@ -91,6 +91,9 @@ defmodule Chronicle.AppendWireCase do
             }
           )
 
+        %Cratis.Chronicle.Contracts.EventSources.RegisterEventSourcesRequest{} ->
+          struct(stream.response_mod, IsAuthorized: true)
+
         %Wire.TailSequenceNumberRequest{} ->
           struct(stream.response_mod,
             IsAuthorized: true,
