@@ -8,6 +8,8 @@
   href: connections/toc.yml
 - name: Context Management
   href: context.md
+- name: Event Sources and Streams
+  href: event-sources.md
 - name: Event Store Discovery
   href: event-stores.md
 - name: Event Store Subscriptions
