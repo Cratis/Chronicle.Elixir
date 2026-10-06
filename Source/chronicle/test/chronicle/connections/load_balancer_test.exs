@@ -171,10 +171,34 @@ defmodule Chronicle.Connections.LoadBalancerTest do
         :reserve, _addr, _cs -> {:ok, :reserved}
       end
 
-      {elapsed_microseconds, {:ok, %{host: "a"}}} =
-        :timer.tc(fn -> LoadBalancer.select(candidates, cs, 0, probe_fun, 0) end)
+      session = :trace.session_create(__MODULE__, self(), [])
 
-      assert elapsed_microseconds < 1_000
+      try do
+        assert :trace.function(session, {Process, :sleep, 1}, true, []) == 1
+
+        task =
+          Task.async(fn ->
+            receive do
+              :select ->
+                result = LoadBalancer.select(candidates, cs, 0, probe_fun, 0)
+                # A positive control proves sleep calls are visible to the tracer.
+                Process.sleep(1)
+                result
+            end
+          end)
+
+        assert :trace.process(session, task.pid, true, [:call]) == 1
+        send(task.pid, :select)
+        assert Task.await(task, 5_000) == {:ok, hd(candidates)}
+
+        # Flush trace events before checking their absence, regardless of scheduler load.
+        delivered = :trace.delivered(session, :all)
+        assert_receive {:trace_delivered, :all, ^delivered}, 5_000
+        assert_received {:trace, _, :call, {Process, :sleep, [1]}}
+        refute_received {:trace, _, :call, {Process, :sleep, _}}
+      after
+        :trace.session_destroy(session)
+      end
     end
   end
 end
