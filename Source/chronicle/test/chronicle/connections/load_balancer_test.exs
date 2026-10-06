@@ -2,7 +2,8 @@
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 defmodule Chronicle.Connections.LoadBalancerTest do
-  use ExUnit.Case, async: true
+  # Classic trace patterns are VM-wide, so this module must not run alongside other specs.
+  use ExUnit.Case, async: false
 
   alias Chronicle.Connections.ConnectionString
   alias Chronicle.Connections.ConnectionString.ServerAddress
@@ -171,33 +172,52 @@ defmodule Chronicle.Connections.LoadBalancerTest do
         :reserve, _addr, _cs -> {:ok, :reserved}
       end
 
-      session = :trace.session_create(__MODULE__, self(), [])
+      parent = self()
+      Code.ensure_loaded!(:timer)
+
+      task =
+        Task.async(fn ->
+          receive do
+            :select ->
+              result = LoadBalancer.select(candidates, cs, 0, probe_fun, 0)
+              send(parent, {:selected, self(), result})
+
+              receive do
+                :positive_controls ->
+                  Process.sleep(1)
+                  :timer.sleep(1)
+                  result
+              end
+          end
+        end)
+
+      pid = task.pid
 
       try do
-        assert :trace.function(session, {Process, :sleep, 1}, true, []) == 1
-
-        task =
-          Task.async(fn ->
-            receive do
-              :select ->
-                result = LoadBalancer.select(candidates, cs, 0, probe_fun, 0)
-                # A positive control proves sleep calls are visible to the tracer.
-                Process.sleep(1)
-                result
-            end
-          end)
-
-        assert :trace.process(session, task.pid, true, [:call]) == 1
-        send(task.pid, :select)
-        assert Task.await(task, 5_000) == {:ok, hd(candidates)}
+        assert :erlang.trace_pattern({Process, :sleep, 1}, true, []) == 1
+        assert :erlang.trace_pattern({:timer, :sleep, 1}, true, []) == 1
+        assert :erlang.trace(pid, true, [:call, {:tracer, parent}]) == 1
+        send(pid, :select)
+        assert_receive {:selected, ^pid, {:ok, %{host: "a"}}}, 5_000
 
         # Flush trace events before checking their absence, regardless of scheduler load.
-        delivered = :trace.delivered(session, :all)
+        delivered = :erlang.trace_delivered(pid)
+        assert_receive {:trace_delivered, ^pid, ^delivered}, 5_000
+        # The assertion covers both Process.sleep and :timer.sleep delays.
+        refute_received {:trace, ^pid, :call, {Process, :sleep, _}}
+        refute_received {:trace, ^pid, :call, {:timer, :sleep, _}}
+
+        # Positive controls prove both sleep functions are visible to the tracer.
+        send(pid, :positive_controls)
+        assert Task.await(task, 5_000) == {:ok, hd(candidates)}
+        delivered = :erlang.trace_delivered(:all)
         assert_receive {:trace_delivered, :all, ^delivered}, 5_000
-        assert_received {:trace, _, :call, {Process, :sleep, [1]}}
-        refute_received {:trace, _, :call, {Process, :sleep, _}}
+        assert_received {:trace, ^pid, :call, {Process, :sleep, [1]}}
+        assert_received {:trace, ^pid, :call, {:timer, :sleep, [1]}}
       after
-        :trace.session_destroy(session)
+        Task.shutdown(task, :brutal_kill)
+        :erlang.trace_pattern({Process, :sleep, 1}, false, [])
+        :erlang.trace_pattern({:timer, :sleep, 1}, false, [])
       end
     end
   end
