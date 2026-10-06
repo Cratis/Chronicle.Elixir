@@ -223,7 +223,7 @@ defmodule Chronicle.EventSequences.EventLog do
 
           case EventSequences.Stub.append_many_for_event_sources(channel, request) do
             {:ok, envelope} ->
-              with {:ok, response} <- WireResult.unwrap(envelope) do
+              with {:ok, response} <- unwrap_append_response(envelope, config) do
                 normalize_response(response)
               end
 
@@ -350,15 +350,15 @@ defmodule Chronicle.EventSequences.EventLog do
             identity: batch_identity(events)
           )
 
-        commit_request(channel, request)
+        commit_request(channel, request, config)
       end
     end
   end
 
-  defp commit_request(channel, request) do
+  defp commit_request(channel, request, config) do
     case EventSequences.Stub.append_many_for_event_sources(channel, request) do
       {:ok, envelope} ->
-        with {:ok, response} <- WireResult.unwrap(envelope) do
+        with {:ok, response} <- unwrap_append_response(envelope, config) do
           response_data = if is_map(response), do: response, else: %{}
 
           result =
@@ -732,7 +732,7 @@ defmodule Chronicle.EventSequences.EventLog do
       )
 
     case EventSequences.Stub.append(channel, request) do
-      {:ok, envelope} -> WireResult.unwrap(envelope)
+      {:ok, envelope} -> unwrap_append_response(envelope, config)
       {:error, reason} -> {:error, reason}
     end
   end
@@ -785,7 +785,7 @@ defmodule Chronicle.EventSequences.EventLog do
 
         case EventSequences.Stub.append_many_for_event_sources(channel, request) do
           {:ok, envelope} ->
-            with {:ok, response} <- WireResult.unwrap(envelope) do
+            with {:ok, response} <- unwrap_append_response(envelope, config) do
               normalize_response(response)
             end
 
@@ -1129,6 +1129,12 @@ defmodule Chronicle.EventSequences.EventLog do
       %EventForEventSourceId{identity: nil} -> nil
       %EventForEventSourceId{identity: identity} -> identity
     end)
+  end
+
+  defp unwrap_append_response(envelope, config) do
+    with {:ok, response} <- WireResult.unwrap(envelope) do
+      {:ok, AppendResponse.resolve_messages(response, Map.get(config, :event_types, []))}
+    end
   end
 
   defp normalize_response(response), do: AppendResponse.normalize(response)

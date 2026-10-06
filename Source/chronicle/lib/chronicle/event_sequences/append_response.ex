@@ -4,6 +4,47 @@
 defmodule Chronicle.EventSequences.AppendResponse do
   @moduledoc false
 
+  alias Chronicle.Events.Constraints
+
+  @doc false
+  @spec resolve_messages(term(), [module()]) :: term()
+  def resolve_messages(response, event_types) when is_map(response) do
+    violations = field(response, :ConstraintViolations, :constraint_violations, [])
+
+    if is_list(violations) and violations != [] do
+      messages =
+        event_types
+        |> Constraints.from_event_types()
+        |> Map.new(&{&1.name, Map.get(&1, :message, "")})
+
+      key =
+        if Map.has_key?(response, :ConstraintViolations),
+          do: :ConstraintViolations,
+          else: :constraint_violations
+
+      Map.put(response, key, Enum.map(violations, &resolve_message(&1, messages)))
+    else
+      response
+    end
+  end
+
+  def resolve_messages(response, _event_types), do: response
+
+  defp resolve_message(violation, messages) when is_map(violation) do
+    name = field(violation, :ConstraintName, :constraint_name, nil)
+
+    case Map.get(messages, name) do
+      message when is_binary(message) and message != "" ->
+        key = if Map.has_key?(violation, :Message), do: :Message, else: :message
+        Map.put(violation, key, message)
+
+      _ ->
+        violation
+    end
+  end
+
+  defp resolve_message(violation, _messages), do: violation
+
   @spec normalize(term()) :: :ok | {:error, term()}
   def normalize(response) when is_map(response) do
     constraints = field(response, :ConstraintViolations, :constraint_violations, [])

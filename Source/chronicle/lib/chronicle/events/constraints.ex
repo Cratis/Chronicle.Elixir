@@ -54,9 +54,10 @@ defmodule Chronicle.Events.Constraints do
       is violated. This is a **client-side-only** concern, matching every
       other Cratis client (C#, TypeScript, Kotlin): the Chronicle kernel's
       wire `Constraint` message has no field for it, so it is never sent as
-      part of registration. It is resolved locally against the `Message` on
-      a returned `ConstraintViolation` once append-time violation resolution
-      is wired up.
+      part of registration. Appends resolve it locally against the `Message`
+      on a returned `ConstraintViolation` using the client's configured event
+      types. Declare it with `unique/2` or `unique_event_type/1`; standalone
+      registration does not retain messages for a client.
 
   Returns `:ok` or `{:error, reason}`.
   """
@@ -152,9 +153,9 @@ defmodule Chronicle.Events.Constraints do
   # struct has no field for it (confirmed against the kernel proto and every
   # other Cratis client: C#'s `ConstraintConverters.ToContract()` never sends
   # a message at registration time either). Returning it alongside the wire
-  # struct is what keeps the caller-supplied message from being silently
-  # discarded — it is what a later, append-time violation-resolution phase
-  # (mirroring C#'s `Constraints.ResolveMessageFor`) will read.
+  # struct preserves it for callers. Append-time violation resolution reads
+  # the same declarations from the client's configured event types, mirroring
+  # C#'s `Constraints.ResolveMessageFor`.
   @spec build_constraint(map()) :: {Constraint.t(), String.t()}
   def build_constraint(
         %{
