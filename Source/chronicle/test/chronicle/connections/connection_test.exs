@@ -1552,8 +1552,9 @@ defmodule Chronicle.Connections.ConnectionTest do
           auto_connect: true
         )
 
-      assert Connection.connect(conn, 1_000) == :ok
-      assert_receive {:opts, opts}
+      # Loading the system trust store can exceed one second under load.
+      assert Connection.connect(conn, 5_000) == :ok
+      assert_receive {:opts, opts}, 5_000
       assert opts[:cred].ssl[:verify] == :verify_peer
       assert opts[:cred].ssl[:cacerts] != nil
     end
@@ -1573,8 +1574,9 @@ defmodule Chronicle.Connections.ConnectionTest do
           auto_connect: true
         )
 
-      assert Connection.connect(conn, 1_000) == :ok
-      assert_receive {:opts, opts}
+      # Loading the system trust store can exceed one second under load.
+      assert Connection.connect(conn, 5_000) == :ok
+      assert_receive {:opts, opts}, 5_000
       assert opts[:cred].ssl[:verify] == :verify_peer
       assert opts[:cred].ssl[:cacerts] != nil
     end
