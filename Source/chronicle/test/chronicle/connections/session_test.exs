@@ -163,7 +163,8 @@ defmodule Chronicle.Connections.SessionTest do
       # cannot carry the Connect RPC — the shape of a stale channel.
       send(session, :connect)
 
-      assert_receive :reconnect_requested, 1_000
+      # Starting the failed RPC may load gRPC modules while other specs run.
+      assert_receive :reconnect_requested, 5_000
     end
   end
 
