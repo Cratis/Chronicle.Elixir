@@ -5,6 +5,7 @@ Event sourcing for Elixir — the idiomatic client for [Cratis Chronicle](https:
 [![Hex.pm](https://img.shields.io/hexpm/v/cratis_chronicle.svg)](https://hex.pm/packages/cratis_chronicle)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/cratis_chronicle)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Discord](https://img.shields.io/discord/1182595891576717413?label=Discord&logo=discord&color=7289da)](https://discord.gg/kt4AMpV8WV)
 
 ## Overview
 
@@ -150,6 +151,10 @@ Set `CHRONICLE_CONNECTION_STRING` to connect to another kernel:
 ```bash
 CHRONICLE_CONNECTION_STRING="chronicle://client-id:client-secret@myserver:35000?skipTlsValidation=false" mix run --no-halt
 ```
+
+## Questions?
+
+Ask questions and get help from the Cratis team and other developers on the [Cratis Discord](https://discord.gg/kt4AMpV8WV). Bugs and feature requests belong in [GitHub Issues](https://github.com/Cratis/Chronicle.Elixir/issues).
 
 ## The Cratis ecosystem
 
