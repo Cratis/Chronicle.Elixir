@@ -493,6 +493,10 @@ defmodule Chronicle.Connections.Connection do
     client_certificate = state.client_certificate
     disconnect_fun = state.disconnect_fun
 
+    # Every dial starts from a fresh token: one that was valid for the previous session says
+    # nothing about the next (the kernel may have restarted with new signing keys).
+    Chronicle.Connections.TokenProvider.invalidate(token_provider)
+
     {:ok, attempt} =
       Task.start(fn ->
         owner_monitor = Process.monitor(parent)

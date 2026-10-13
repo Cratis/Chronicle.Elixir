@@ -323,6 +323,9 @@ defmodule Chronicle.Client do
         [{Chronicle.EventStoreSubscriptions.Registrar, client: name, lifecycle: lifecycle_name}]
       end
 
+    operations_children =
+      lag_children(opts, name) ++ watchdog_children(opts, conn_name, lifecycle_name)
+
     seeder_children =
       if Enum.empty?(seeders) do
         []
@@ -362,6 +365,7 @@ defmodule Chronicle.Client do
         reactor_children ++
         reducer_children ++
         read_model_reactor_children ++
+        operations_children ++
         seeder_children ++
         webhook_children ++
         event_store_subscription_children
@@ -371,6 +375,44 @@ defmodule Chronicle.Client do
     # current phase via the snapshot returned on subscribe.
     Supervisor.init(children, strategy: :rest_for_one)
   end
+
+  defp lag_children(opts, name) do
+    case Keyword.get(opts, :observer_lag) do
+      nil ->
+        []
+
+      false ->
+        []
+
+      lag_opts ->
+        [
+          {Chronicle.Observers.Lag.Reporter,
+           Keyword.merge([client: name], List.wrap(lag_opts) |> normalize_opts())}
+        ]
+    end
+  end
+
+  defp watchdog_children(opts, conn_name, lifecycle_name) do
+    case Keyword.get(opts, :watchdog) do
+      nil ->
+        []
+
+      false ->
+        []
+
+      watchdog_opts ->
+        [
+          {Chronicle.Connections.Watchdog,
+           Keyword.merge(
+             [connection: conn_name, lifecycle: lifecycle_name],
+             normalize_opts(watchdog_opts)
+           )}
+        ]
+    end
+  end
+
+  defp normalize_opts(true), do: []
+  defp normalize_opts(opts) when is_list(opts), do: opts
 
   @doc false
   def connection_name(client_name), do: :"#{client_name}.Connection"
