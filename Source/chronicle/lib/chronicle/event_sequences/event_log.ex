@@ -396,6 +396,9 @@ defmodule Chronicle.EventSequences.EventLog do
     * `:event_stream_type` — the event stream type to filter by (default: all)
     * `:event_stream_id` — the event stream id to filter by (default: all)
 
+    * `:decode` — when `true`, returns `Chronicle.Events.AppendedEvent` structs whose `:event`
+      is the event struct (default: `false`, the raw wire events)
+
   Returns `{:ok, [appended_event]}` or `{:error, reason}`.
   """
   @spec get_for_event_source(String.t(), keyword()) :: {:ok, list()} | {:error, term()}
@@ -420,11 +423,27 @@ defmodule Chronicle.EventSequences.EventLog do
         )
 
       case EventSequences.Stub.for_event_source_id_and_event_types(channel, request) do
-        {:ok, envelope} -> WireResult.unwrap(envelope)
+        {:ok, envelope} -> envelope |> WireResult.unwrap() |> maybe_decode(config, opts)
         {:error, reason} -> {:error, reason}
       end
     end
   end
+
+  # With `decode: true` the wire events become `Chronicle.Events.AppendedEvent` structs whose
+  # `:event` is the registered event struct. The `:event_types` option (used for filtering) and the
+  # client's registered event types are both searched.
+  defp maybe_decode({:ok, events}, config, opts) when is_list(events) do
+    if Keyword.get(opts, :decode, false) do
+      event_types =
+        Enum.uniq(Keyword.get(opts, :event_types, []) ++ Map.get(config, :event_types, []))
+
+      {:ok, Enum.map(events, &Chronicle.Events.AppendedEvent.from_wire(&1, event_types))}
+    else
+      {:ok, events}
+    end
+  end
+
+  defp maybe_decode(other, _config, _opts), do: other
 
   @doc """
   Returns events from (and including) the given sequence number onward.
@@ -438,6 +457,8 @@ defmodule Chronicle.EventSequences.EventLog do
     * `:event_sequence_id` — event sequence id (default: `"event-log"`)
     * `:event_source_id` — optional event source id to filter by (default: all)
     * `:event_types` — list of event type modules to filter by (default: all)
+    * `:decode` — when `true`, returns `Chronicle.Events.AppendedEvent` structs whose `:event`
+      is the event struct (default: `false`, the raw wire events)
 
   Returns `{:ok, [appended_event]}` or `{:error, reason}`.
   """
@@ -460,7 +481,7 @@ defmodule Chronicle.EventSequences.EventLog do
         )
 
       case EventSequences.Stub.from_sequence_number(channel, request) do
-        {:ok, envelope} -> WireResult.unwrap(envelope)
+        {:ok, envelope} -> envelope |> WireResult.unwrap() |> maybe_decode(config, opts)
         {:error, reason} -> {:error, reason}
       end
     end
