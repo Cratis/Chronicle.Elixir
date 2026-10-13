@@ -233,6 +233,7 @@ defmodule Chronicle.ReadModels do
   # The kernel skips page * page_size instances, so page 0 is the first page.
   @default_page 0
   @default_page_size 50
+  @default_max_scan 10_000
 
   @doc """
   Fetches a read model instance by key.
@@ -375,9 +376,101 @@ defmodule Chronicle.ReadModels do
     * `:occurrence` — optional occurrence/container name for a replayed read model
     * `:page` — zero-based page number (default: `0`, the first page)
     * `:page_size` — page size (default: `50`)
+    * `:filter` — keeps only matching instances: a keyword list of `field: condition` pairs, all
+      of which must match. A condition is a value (equality) or one of `{:gt, v}`, `{:gte, v}`,
+      `{:lt, v}`, `{:lte, v}`, `{:ne, v}`, `{:in, [v]}` or `{:contains, v}` (substring of a
+      string, member of a list). An unknown field returns `{:error, {:unknown_field, field}}`.
+    * `:sort` — `field` or `{field, :asc | :desc}`; applied with `:filter` (see below)
+    * `:max_scan` — with `:filter`/`:sort`, the most instances to examine (default: `10_000`)
+
+  ## Filtering is applied by the client
+
+  The Chronicle query contract pages materialized instances but cannot filter or sort them, so
+  `:filter` and `:sort` page through the read model and evaluate in the client. `total_count`
+  then counts the *matching* instances. That is correct and convenient for read models of
+  modest size; a read model larger than `:max_scan` returns
+  `{:error, {:scan_limit_exceeded, max_scan}}` rather than a silently partial answer. Use
+  `:occurrence`/paging without a filter, or a purpose-built projection, for large data.
+
+      Chronicle.ReadModels.query(MyApp.ReadModels.Entry,
+        filter: [schema_id: "invoice", amount: {:gt, 100}],
+        sort: {:amount, :desc},
+        page_size: 20
+      )
   """
   @spec query(module(), keyword()) :: {:ok, QueryResult.t()} | {:error, term()}
   def query(model_module, opts \\ []) do
+    if Keyword.has_key?(opts, :filter) or Keyword.has_key?(opts, :sort) do
+      filtered_query(model_module, opts)
+    else
+      do_query(model_module, opts)
+    end
+  end
+
+  defp filtered_query(model_module, opts) do
+    page = non_negative_integer_option(opts, :page, @default_page)
+    page_size = positive_integer_option(opts, :page_size, @default_page_size)
+    max_scan = positive_integer_option(opts, :max_scan, @default_max_scan)
+    filter = Keyword.get(opts, :filter, [])
+    sort = Keyword.get(opts, :sort)
+
+    with :ok <- validate_filter_fields(model_module, filter, sort),
+         {:ok, instances} <- scan_instances(model_module, opts, max_scan) do
+      matching =
+        instances
+        |> Chronicle.ReadModels.Filter.apply(filter)
+        |> Chronicle.ReadModels.Filter.sort(sort)
+
+      {:ok,
+       %QueryResult{
+         instances: matching |> Enum.drop(page * page_size) |> Enum.take(page_size),
+         total_count: length(matching),
+         page: page,
+         page_size: page_size
+       }}
+    end
+  end
+
+  defp validate_filter_fields(model_module, filter, sort) do
+    known = model_module.__struct__() |> Map.keys()
+
+    sort_field =
+      case sort do
+        {field, _direction} -> field
+        field -> field
+      end
+
+    Enum.find_value(Keyword.keys(filter) ++ List.wrap(sort_field), :ok, fn field ->
+      if field in known, do: nil, else: {:error, {:unknown_field, field}}
+    end)
+  end
+
+  defp scan_instances(model_module, opts, max_scan) do
+    scan_page_size = min(max_scan, 500)
+
+    Stream.iterate(0, &(&1 + 1))
+    |> Enum.reduce_while({:ok, []}, fn page, {:ok, acc} ->
+      scan_opts =
+        Keyword.merge(opts, page: page, page_size: scan_page_size)
+        |> Keyword.drop([:filter, :sort])
+
+      case do_query(model_module, scan_opts) do
+        {:ok, %QueryResult{instances: instances, total_count: total}} ->
+          acc = acc ++ instances
+
+          cond do
+            total > max_scan -> {:halt, {:error, {:scan_limit_exceeded, max_scan}}}
+            instances == [] or length(acc) >= total -> {:halt, {:ok, acc}}
+            true -> {:cont, {:ok, acc}}
+          end
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp do_query(model_module, opts) do
     with {:ok, channel, config} <- resolve_channel(opts) do
       namespace = Keyword.get(opts, :namespace, config.namespace)
       model_id = read_model_id(model_module)
