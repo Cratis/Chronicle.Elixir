@@ -3,23 +3,29 @@ defmodule MyApp.MaterializedPaginationObserving do
   alias Chronicle.ReadModels
   alias MyApp.ReadModels.MaterializedPaginationOrder
 
-  # Elixir has no single "ObserveInstances" call — combine watch/2
-  # (per-instance change notifications) with query/2 (the current
-  # materialized page) to get the same "re-emit the page whenever the
-  # stored data changes" behavior as ObserveInstances(take: 50).
   def run do
-    {:ok, watcher} = ReadModels.watch(MaterializedPaginationOrder)
+    {:ok, observer} = ReadModels.observe(MaterializedPaginationOrder, page: 0, page_size: 50)
 
-    receive do
-      {:chronicle_read_model_changed, MaterializedPaginationOrder, _changeset} ->
-        {:ok, page} = ReadModels.query(MaterializedPaginationOrder, page: 0, page_size: 50)
-        IO.puts("Orders updated: #{length(page.instances)} in view")
+    try do
+      receive_pages()
     after
-      5_000 -> :timeout
+      ReadModels.unobserve(observer)
     end
+  end
 
-    # Stop watching once done, to release the change stream.
-    ReadModels.unwatch(watcher)
+  defp receive_pages do
+    receive do
+      {:chronicle_read_model_instances, MaterializedPaginationOrder, page} ->
+        # Receives the initial stored page and each updated page.
+        IO.puts("Orders updated: #{length(page.instances)} in view")
+        receive_pages()
+
+      {:chronicle_read_model_observe_error, MaterializedPaginationOrder, reason} ->
+        {:error, reason}
+
+      :stop ->
+        :ok
+    end
   end
 end
 ```
