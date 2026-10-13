@@ -67,7 +67,7 @@ defmodule Chronicle.EventSequences.EventLog do
   alias Chronicle.Events.ConcurrencyScope, as: ClientConcurrencyScope
 
   alias Chronicle.Connections.Connection
-  alias Chronicle.EventSequences.AppendResponse
+  alias Chronicle.EventSequences.{AppendResponse, AppendResult}
   alias Chronicle.Transactions.UnitOfWork
 
   alias Bcl.Guid, as: BclGuid
@@ -159,6 +159,90 @@ defmodule Chronicle.EventSequences.EventLog do
       :ok
     else
       do_append_many(event_sequence_id, event_source_id, events, opts)
+    end
+  end
+
+  @doc """
+  Appends a single event and returns the detailed outcome.
+
+  Unlike `append/3` (which returns `:ok | {:error, term}`), this returns a
+  `Chronicle.EventSequences.AppendResult` carrying the assigned sequence number and, on a
+  rejection, the structured constraint and concurrency violations:
+
+      case Chronicle.EventSequences.EventLog.append_with_result("acc-1", %Opened{}) do
+        {:ok, %{sequence_number: n}} -> n
+        {:error, %{constraint_violations: [violation | _]}} -> violation.message
+        {:error, %{concurrency_violations: _}} -> :retry
+        {:error, other} -> other
+      end
+
+  Accepts the options of `append/3`. `{:error, result}` is returned for a kernel rejection;
+  transport and client errors are returned as `{:error, reason}` with a non-result term.
+  """
+  @spec append_with_result(String.t(), struct(), keyword()) ::
+          {:ok, AppendResult.t()} | {:error, AppendResult.t() | term()}
+  def append_with_result(event_source_id, event, opts \\ []) do
+    event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+
+    case raw_append(event_sequence_id, event_source_id, event, opts) do
+      {:ok, response} -> result_for(response, opts)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Appends events atomically for one event source and returns the detailed outcome with every
+  assigned sequence number. See `append_with_result/3`.
+  """
+  @spec append_many_with_result(String.t(), [struct()], keyword()) ::
+          {:ok, AppendResult.t()} | {:error, AppendResult.t() | term()}
+  def append_many_with_result(event_source_id, events, opts \\ [])
+
+  def append_many_with_result(_event_source_id, [], _opts),
+    do: {:ok, %AppendResult{success?: true}}
+
+  def append_many_with_result(event_source_id, events, opts) do
+    event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+
+    with {:ok, channel, config} <- resolve_append_channel(opts) do
+      namespace = Keyword.get(opts, :namespace, config.namespace)
+
+      events_to_append =
+        Enum.map(
+          events,
+          &build_event_for_event_source_id(event_source_id, &1, opts, :append_many)
+        )
+
+      with {:ok, events_to_append} <-
+             prepare_events(events_to_append, config, namespace, event_sequence_id, opts) do
+        request =
+          build_append_many_for_event_sources_request(
+            config,
+            namespace,
+            event_sequence_id,
+            events_to_append,
+            opts
+          )
+
+        case EventSequences.Stub.append_many_for_event_sources(channel, request) do
+          {:ok, envelope} ->
+            with {:ok, response} <- unwrap_append_response(envelope, config) do
+              result_for(response, opts)
+            end
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+      end
+    end
+  end
+
+  defp result_for(response, opts) do
+    result = AppendResult.from_response(response, opts)
+
+    case normalize_response(response) do
+      :ok -> {:ok, result}
+      {:error, _reason} -> {:error, %{result | success?: false}}
     end
   end
 
@@ -277,9 +361,25 @@ defmodule Chronicle.EventSequences.EventLog do
     end
   end
 
-  defp wait_for_observer_completion(event_sequence_id, sequence_number, opts) do
+  defp wait_for_observer_completion(event_sequence_id, sequence_number, opts),
+    do:
+      wait_for_sequence_number(
+        sequence_number,
+        Keyword.put(opts, :event_sequence_id, event_sequence_id)
+      )
+
+  @doc """
+  Waits for every observer affected by events up to `sequence_number` to reach it or fail.
+
+  Options: `:client`, `:namespace`, `:event_sequence_id` and `:timeout`.
+  Returns `{:ok, %{success: boolean(), failed_partitions: [...]}}`.
+  """
+  @spec wait_for_sequence_number(non_neg_integer(), keyword()) :: {:ok, map()} | {:error, term()}
+  def wait_for_sequence_number(sequence_number, opts \\ []) do
+    event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+
     with {:ok, channel, config} <- resolve_channel(opts) do
-      namespace = Keyword.get(opts, :namespace, config.namespace)
+      namespace = Keyword.get(opts, :namespace) || config.namespace
       timeout = Keyword.get(opts, :timeout, @default_wait_for_completion_timeout)
 
       request =
@@ -1093,6 +1193,7 @@ defmodule Chronicle.EventSequences.EventLog do
     |> maybe_put(:EventStreamId, scope.event_stream_id)
     |> maybe_put(:EventSourceType, scope.event_source_type)
     |> maybe_put(:EventTypes, Enum.map(scope.event_types, &build_event_type_for_module/1))
+    |> maybe_put(:ExpectsNoMatchingEvent, scope.expects_no_matching_event)
   end
 
   defp current_datetime_offset do
