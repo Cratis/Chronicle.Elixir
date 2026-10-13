@@ -387,7 +387,7 @@ defmodule Chronicle.Client do
       lag_opts ->
         [
           {Chronicle.Observers.Lag.Reporter,
-           Keyword.merge([client: name], List.wrap(lag_opts) |> normalize_opts())}
+           Keyword.merge([client: name], normalize_opts(lag_opts))}
         ]
     end
   end

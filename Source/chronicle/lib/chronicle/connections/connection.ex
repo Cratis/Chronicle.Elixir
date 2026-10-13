@@ -77,6 +77,8 @@ defmodule Chronicle.Connections.Connection do
 
   alias Chronicle.Connections.ConnectionString.ServerAddress
 
+  require Logger
+
   @default_connect_timeout 10_000
   @default_retry_attempts 5
   @default_reconnect_base_delay 1_000

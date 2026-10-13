@@ -159,17 +159,6 @@ defmodule Chronicle.Connections.ConnectionString do
   end
 
   @doc """
-  Returns the first configured server address.
-
-  Provided as a convenience for callers that only need a single address — such
-  as the OAuth2 token endpoint, which authenticates against the first
-  configured host rather than the address the load balancer eventually picks
-  for the gRPC channel itself. Multi-host and `chronicle+srv://` connection
-  strings still resolve and select among every address for the channel; see
-  `Chronicle.Connections.Connection` and `Chronicle.Connections.LoadBalancer`.
-  """
-  @spec server_address(t()) :: ServerAddress.t() | nil
-  @doc """
   Whether the connection encrypts traffic but does not verify who it is talking to, to a host
   that is not the local machine.
 
@@ -187,6 +176,17 @@ defmodule Chronicle.Connections.ConnectionString do
     end)
   end
 
+  @doc """
+  Returns the first configured server address.
+
+  Provided as a convenience for callers that only need a single address — such
+  as the OAuth2 token endpoint, which authenticates against the first
+  configured host rather than the address the load balancer eventually picks
+  for the gRPC channel itself. Multi-host and `chronicle+srv://` connection
+  strings still resolve and select among every address for the channel; see
+  `Chronicle.Connections.Connection` and `Chronicle.Connections.LoadBalancer`.
+  """
+  @spec server_address(t()) :: ServerAddress.t() | nil
   def server_address(%__MODULE__{server_addresses: [address | _]}), do: address
   def server_address(%__MODULE__{server_addresses: []}), do: nil
 

@@ -77,4 +77,12 @@ defmodule Chronicle.Events.EventContextTest do
     assert ctx.caused_by == nil
     assert ctx.causation == []
   end
+
+  test "replaying? follows the observation state" do
+    refute EventContext.from_wire(%{ObservationState: :Initial}).replaying?
+    refute EventContext.from_wire(%{ObservationState: 1}).replaying?
+    assert EventContext.from_wire(%{ObservationState: :Replay}).replaying?
+    assert EventContext.from_wire(%{ObservationState: 2}).replaying?
+    refute EventContext.from_wire(%{}).replaying?
+  end
 end

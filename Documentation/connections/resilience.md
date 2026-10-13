@@ -85,7 +85,7 @@ Appends and queries are not queued or retried while the client is disconnected. 
 
 ## Seeding waits for registration
 
-Seeders run each time the lifecycle reaches `:registered`: at startup and again after every reconnect. A failed seeding run is retried every five seconds. Seeding skips event sources that already have events, so running it again after a reconnect appends nothing new. See [Seeding](../seeding.md#how-it-runs).
+Seeders run each time the lifecycle reaches `:registered`: at startup and again after every reconnect. A failed seeding run is retried every five seconds. The kernel remembers which seed entries it applied, so running it again after a reconnect applies nothing new. See [Seeding](../seeding.md#how-it-runs).
 
 ## Failure isolation
 
@@ -94,3 +94,47 @@ Each reactor and reducer manages its own observation stream. If one stream fails
 ## What you manage
 
 You don't write reconnect code. The client re-establishes the session, re-registers artifacts and re-attaches observers on its own. What you do own is how your code behaves while the client is not `:registered`: wait for readiness before the first call, and handle `{:error, reason}` from every call.
+
+## Awaiting and inspecting registration
+
+Registration retries on its own, but your code often needs to know when it is done:
+
+```elixir
+:ok = Chronicle.Client.await_registration()                       # waits up to 30 seconds
+{:error, {:failed, status}} = Chronicle.Client.await_registration()  # the kernel rejected something for good
+%{state: :registering, attempts: 2, error: error, next_retry_in: ms} = Chronicle.Client.registration_status()
+```
+
+`registration_status/1` reports `:pending`, `:registering`, `:registered` or `:failed`. A rejection the
+kernel will never accept - a validation failure, an invalid argument - is `:failed` at once and is not
+retried; anything else is retried with backoff. Tune it with the client's `:registration` option:
+
+```elixir
+{Chronicle.Client,
+ registration: [initial_delay: 1_000, max_delay: 30_000, multiplier: 2, jitter: 0.2, max_attempts: 10]}
+```
+
+The default keeps the historical fixed five-second delay and never gives up.
+
+## Expired and rotated tokens
+
+The client attaches a fresh bearer token to every call and refreshes it ahead of expiry. If the
+kernel answers a call with `Unauthenticated` - it restarted with new signing keys, say - the client
+drops its cached token and repeats that call once with a new one, instead of presenting the rejected
+token until it expires. Every reconnect also starts from a fresh token.
+
+## Watchdog
+
+```elixir
+{Chronicle.Client, watchdog: [unregistered_for: 60_000]}
+```
+
+Reconnects a client that has been stuck short of `:registered` for that long (default 60 seconds
+when enabled with `watchdog: true`). It replaces a hand-written supervisor-of-the-client watchdog.
+
+## Silent observers
+
+A kernel can evict a client's connection while appends keep working: observers stop receiving
+events and nothing fails. Watch their [lag](../observers.md#lag) with `observer_lag: [interval: 15_000]`
+and the `[:chronicle, :observer, :lag]` telemetry event.
+

@@ -5,7 +5,7 @@ description: Define Elixir seeders that append baseline events when the client r
 
 Seeding gives a fresh event store the events it needs to be useful, such as reference data or demo accounts, without a separate script. This page shows how to seed events with the Chronicle Elixir client. See [Event seeding](/chronicle/event-seeding/) for the concept this page assumes.
 
-The Elixir client seeds from the client side: every time it finishes registering with the kernel, it runs your seeders and appends their events with ordinary appends, skipping any event source that already has events. That differs from the .NET client in ways that matter when you change seed data; see [How it runs](#how-it-runs).
+Every time the client finishes registering with the kernel it runs your seeders and hands their entries to the kernel's seeding service, exactly as the .NET client does. The kernel tracks which entries it has applied, so running again is safe and only new entries are applied; see [How it runs](#how-it-runs).
 
 ## Define events
 
@@ -112,18 +112,17 @@ The scoped builder supports the same `for/4` and `for_event_source/3` functions 
 ## How it runs
 
 - Seeders run each time the client reaches the `:registered` phase: at startup, and again after every reconnect. See [Resilience](connections/resilience.md).
-- Every seeder's `seed/1` runs first, accumulating events. A seeder that raises is logged with `Failed to execute seeder` and skipped; the others still run.
-- The client then groups the events by namespace and event source id, and appends each group with one `append_many` call, which is atomic for that event source. A group whose event source already has events is skipped as a whole.
-- If an append fails, for example because the kernel rejects an event, seeding stops, logs `Seeding failed`, and runs again from the start five seconds later.
+- Every seeder's `seed/1` runs first, accumulating entries. A seeder that raises is logged as an error and contributes **none** of its entries (a seeder is applied whole or not at all); the other seeders still run.
+- The client groups the entries by namespace, event type and event source and sends them in one request to the kernel's seeding service. Event type tags (`use Chronicle.Events.EventType, tags: [...]`) travel with each entry.
+- The kernel remembers which entries it has applied, by event source, event type, content and tags. **An entry you add later to an event source that was seeded before is applied; an entry that was applied is not applied again.** Entries without `for_namespace/3` are global: the kernel applies them to every namespace it knows about.
+- If the request fails, for example because the kernel rejects an event, seeding logs `Seeding failed` and runs again from the start five seconds later.
 
-The check and the append are two separate calls, so the skip only prevents duplicates from one writer at a time. If several application instances can start together against the same event store, seed from one of them, or let a [unique constraint](/chronicle/constraints/) reject the second copy. Version 3.5.0 never found existing events and appended the seed events again on every run; upgrade to 3.5.1 or later.
-
-Because seeding works per event source, editing a seeder for an event source that already has events doesn't change the stored events. To correct seed data that is already stored, append correcting events yourself, or seed a fresh event store.
+Because the kernel does the bookkeeping, it is safe for several application instances to start together. Editing the *content* of an entry that was already applied is a new entry: the old event stays. To correct stored seed data, append correcting events yourself.
 
 ## Best practices
 
-- Keep seed data minimal and deterministic, with fixed event source ids, so reruns skip cleanly.
-- Give each seeded event source its complete set of events in one seeder run. Events added to an already seeded event source later are never appended.
-- Use typed defaults on seeded event types, just like any other event. A schema violation stops seeding and retries it every five seconds.
+- Keep seed data minimal and deterministic, with fixed event source ids and content, so reruns apply nothing.
+- You can add entries to an already seeded event source later; only the new entries are applied.
+- Use typed defaults on seeded event types, just like any other event. A schema violation fails the request and seeding retries every five seconds.
 - Use the `:id` option on `use Chronicle.Seeding.Seeder` only if you need a stable identifier for tooling. The client doesn't send it to Chronicle.
 - Use `for_namespace/3` when seed data is tenant-specific or environment-specific.
