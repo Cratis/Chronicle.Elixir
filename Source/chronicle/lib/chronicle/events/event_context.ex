@@ -21,7 +21,7 @@ defmodule Chronicle.Events.EventContext do
     * `:causation` — list of `Chronicle.Auditing.CausationEntry`
     * `:tags` — list of tag strings; `:named_tags` — map of name to value
     * `:hash`, `:subject`, `:appended_generation`
-    * `:observation_state` — reducers only
+    * `:observation_state` — the observation state; `:replaying?` is `true` while the observer is replaying
     * `:delivery_id` — reactors only; see `delivery_id/1`
   """
 
@@ -48,6 +48,7 @@ defmodule Chronicle.Events.EventContext do
             subject: "",
             appended_generation: 0,
             observation_state: 0,
+            replaying?: false,
             delivery_id: nil
 
   @type t :: %__MODULE__{}
@@ -82,7 +83,8 @@ defmodule Chronicle.Events.EventContext do
       hash: Map.get(ctx, :Hash, ""),
       subject: Map.get(ctx, :Subject, ""),
       appended_generation: Map.get(ctx, :AppendedGeneration, 0),
-      observation_state: Map.get(ctx, :ObservationState, 0)
+      observation_state: Map.get(ctx, :ObservationState, 0),
+      replaying?: Map.get(ctx, :ObservationState, 0) in [:Replay, 2]
     }
 
     case Keyword.get(opts, :reactor_id) do

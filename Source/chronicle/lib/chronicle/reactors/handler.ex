@@ -190,7 +190,8 @@ defmodule Chronicle.Reactors.Handler do
     end
   end
 
-  defp build_registration(state, conn_id) do
+  @doc false
+  def build_registration(state, conn_id) do
     event_types =
       Enum.map(state.event_type_map, fn {id, module} ->
         struct(EventTypeWithKeyExpression,
@@ -218,7 +219,8 @@ defmodule Chronicle.Reactors.Handler do
                   ReactorId: reactor_id,
                   EventSequenceId: "event-log",
                   EventTypes: event_types,
-                  IsReplayable: true,
+                  IsReplayable: not once_only_class?(state.module),
+                  IsNotReplayable: once_only_class?(state.module),
                   Tags: [],
                   Filters: struct(ObserverFilters)
                 )
@@ -285,9 +287,18 @@ defmodule Chronicle.Reactors.Handler do
         case decode_event(event_module, content) do
           {:ok, event} ->
             try do
-              event
-              |> state.module.handle(ctx)
-              |> handle_result(state, ctx.event_source_id)
+              case replay_action(state.module, event_module, ctx) do
+                :skip ->
+                  :ok
+
+                :handle_replay ->
+                  event
+                  |> state.module.handle_replay(ctx)
+                  |> handle_result(state, ctx.event_source_id)
+
+                :handle ->
+                  event |> state.module.handle(ctx) |> handle_result(state, ctx.event_source_id)
+              end
             rescue
               e -> {:error, e}
             end
@@ -396,6 +407,31 @@ defmodule Chronicle.Reactors.Handler do
 
   # An unset or empty wire value means the event was not appended through a
   # registered event source; no name is invented for it.
+  @doc false
+  def once_only_class?(module), do: module.__chronicle_reactor__(:once_only) == true
+
+  # What to do with an event delivered while the reactor may be replaying (see
+  # Chronicle.Reactors.Reactor): skip handlers marked once-only, prefer handle_replay/2 when the
+  # reactor defines it, otherwise handle normally.
+  @doc false
+  def replay_action(module, event_module, %{replaying?: true}) do
+    cond do
+      once_only_class?(module) -> :skip
+      event_module in once_only_events(module) -> :skip
+      function_exported?(module, :handle_replay, 2) -> :handle_replay
+      true -> :handle
+    end
+  end
+
+  def replay_action(_module, _event_module, _context), do: :handle
+
+  defp once_only_events(module) do
+    case module.__chronicle_reactor__(:once_only) do
+      events when is_list(events) -> events
+      _ -> []
+    end
+  end
+
   @doc false
   def build_context(ctx, opts \\ []), do: Chronicle.Events.EventContext.from_wire(ctx, opts)
 
