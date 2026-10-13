@@ -147,6 +147,7 @@ defmodule Chronicle.Events.EventType do
       Module.register_attribute(__MODULE__, :unique, accumulate: true)
       Module.register_attribute(__MODULE__, :remove_constraint, accumulate: true)
       Module.register_attribute(__MODULE__, :unique_event_type, accumulate: true)
+      Module.register_attribute(__MODULE__, :closes_stream, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_pii, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_encrypted, accumulate: true)
 
@@ -156,7 +157,9 @@ defmodule Chronicle.Events.EventType do
           unique: 2,
           unique_event_type: 0,
           unique_event_type: 1,
-          remove_constraint: 1
+          remove_constraint: 1,
+          closes_stream: 0,
+          closes_stream: 1
         ]
 
       import Chronicle.Compliance, only: [pii: 1, pii: 2]
@@ -190,11 +193,16 @@ defmodule Chronicle.Events.EventType do
       def __chronicle_event_type__(:generation), do: @chronicle_event_type_generation
 
       def __chronicle_event_type__(:constraints) do
-        %{
+        constraints = %{
           unique: Enum.reverse(@unique),
           unique_event_type: Enum.reverse(@unique_event_type),
           remove_constraint: Enum.reverse(@remove_constraint)
         }
+
+        # Only present when declared, so event types without a closing event keep their shape.
+        if @closes_stream == [],
+          do: constraints,
+          else: Map.put(constraints, :closes_stream, Enum.reverse(@closes_stream))
       end
 
       @doc false
@@ -223,6 +231,9 @@ defmodule Chronicle.Events.EventType do
   This is equivalent to setting `@unique`. Supported `opts`:
 
     * `:name` — explicit constraint name (defaults to the first field name)
+    * `:mode` — `:per_event_source` (default) keeps one value per event source and releases the
+      previous value when it is replaced; `:per_value` keeps every value until a removal event
+      (`remove_constraint/1`) releases it
     * `:ignore_casing` — compare values case-insensitively
     * `:message` — human-readable message to use when the constraint is
       violated
@@ -257,6 +268,39 @@ defmodule Chronicle.Events.EventType do
   defmacro unique_event_type(opts \\ []) do
     quote do
       @unique_event_type unquote(opts)
+    end
+  end
+
+  @doc """
+  Declares that appending this event **closes a stream scope** (a *closing event*).
+
+  The kernel writes the event and the closure together; every later event inside the closed
+  scope is refused with a stream-closed violation, while events elsewhere are unaffected. Use it
+  when a domain fact ends something: a delivered report, closed books, a superseded version.
+  Mirrors .NET's `[ClosesStream]`. Supported `opts`:
+
+    * `:dimensions` - the participating dimensions, a list of `:event_source_id`,
+      `:event_source_type`, `:event_stream_type` and `:event_stream_id`. Defaults to
+      `[:event_source_id, :event_stream_type, :event_stream_id]`.
+    * `:event_stream_id_from` - the event field supplying the stream id instead of the append
+      (implies the `:event_stream_id` dimension)
+    * `:reopened_by` - event type modules that lift the closure of exactly this scope
+    * `:name` - the owning constraint name (defaults to the event type id); declarations that
+      share a name merge, and must use the same dimensions and stream id field
+    * `:event_sequences` - restrict the declaration to specific event sequences (default: all)
+
+  Registering a declaration closes nothing in history; only later appends close scopes.
+
+      defmodule MyApp.Events.PeriodClosed do
+        use Chronicle.Events.EventType, id: "period-closed"
+        defstruct period: ""
+
+        closes_stream event_stream_id_from: :period, reopened_by: [MyApp.Events.PeriodReopened]
+      end
+  """
+  defmacro closes_stream(opts \\ []) do
+    quote do
+      @closes_stream unquote(opts)
     end
   end
 
