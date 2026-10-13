@@ -292,7 +292,7 @@ defmodule Chronicle.Reducers.Handler do
         {:ok, model}
 
       event_module ->
-        ctx = build_context(context)
+        ctx = build_context(context, event_sequence_id: "event-log")
         content = Map.get(appended_event, :Content, "")
 
         case decode_event(event_module, content) do
@@ -334,25 +334,8 @@ defmodule Chronicle.Reducers.Handler do
 
   # An unset or empty wire value means the event was not appended through a
   # registered event source; no name is invented for it.
-  defp event_source(ctx) do
-    case Map.get(ctx, :EventSource) do
-      name when is_binary(name) and name != "" -> name
-      _ -> nil
-    end
-  end
-
   @doc false
-  def build_context(ctx) do
-    occurred = Map.get(ctx, :Occurred)
-
-    %{
-      event_source_id: Map.get(ctx, :EventSourceId, ""),
-      sequence_number: Map.get(ctx, :SequenceNumber, 0),
-      occurred: occurred && Map.get(occurred, :Value),
-      event_source: event_source(ctx),
-      observation_state: Map.get(ctx, :ObservationState, 0)
-    }
-  end
+  def build_context(ctx, opts \\ []), do: Chronicle.Events.EventContext.from_wire(ctx, opts)
 
   defp schedule_stream_reconnect(%{reconnect_timer: timer} = state) when not is_nil(timer),
     do: state

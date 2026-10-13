@@ -48,16 +48,12 @@ defmodule Chronicle.Reactors.Reactor do
 
   ## Event context
 
-  The second argument to `handle/2` is a map with the following keys:
-
-    * `:event_source_id` — the event source (e.g. aggregate ID)
-    * `:sequence_number` — the event's position in the event log
-    * `:occurred` — when the event was appended (ISO 8601 string)
-    * `:event_store` — the event store name
-    * `:namespace` — the namespace
-    * `:correlation_id` — the correlation ID for the append operation
-    * `:event_source` — the name of the registered event source the event was
-      appended through, or `nil` when it was not appended through one
+  The second argument to `handle/2` is a `Chronicle.Events.EventContext` struct (a map, so
+  existing pattern matches on keys such as `:event_source_id` keep working). It carries the
+  event type, event source and stream, sequence number, occurred time, event store, namespace,
+  correlation id, `:caused_by` identity, causation chain, tags, hash and subject, plus a
+  stable `:delivery_id` for building idempotency keys (the same value on every redelivery of
+  the same event to this reactor).
 
   ## Return values
 
