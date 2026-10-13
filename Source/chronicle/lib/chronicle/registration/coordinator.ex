@@ -590,6 +590,11 @@ defmodule Chronicle.Registration.Coordinator do
       From: from_entries,
       Join: join_entries,
       RemovedWith: removed_with_entries,
+      Children:
+        Chronicle.Projections.Children.build_map(
+          read_model_module.__chronicle_read_model__(:children),
+          read_model_module
+        ),
       All: from_every,
       AutoMap: auto_map_value(auto_map),
       NoAutoMapProperties: Enum.map(no_auto_map_properties, &to_string/1),
@@ -696,6 +701,11 @@ defmodule Chronicle.Registration.Coordinator do
       From: from_entries,
       Join: join_entries,
       RemovedWith: removed_with_entries,
+      Children:
+        Chronicle.Projections.Children.build_map(
+          projection_module.__chronicle_projection__(:children),
+          model_module
+        ),
       All: from_every,
       AutoMap: auto_map_value(auto_map),
       NoAutoMapProperties: Enum.map(no_auto_map_properties, &to_string/1),
@@ -821,7 +831,14 @@ defmodule Chronicle.Registration.Coordinator do
           {to_string(field), "$decrement"}
       end)
 
+    clear_fields =
+      opts
+      |> Keyword.get(:clear, [])
+      |> List.wrap()
+      |> Enum.map(fn field -> {to_string(field), "$null"} end)
+
     (set_props ++
+       clear_fields ++
        add_props ++
        subtract_props ++
        count_fields ++

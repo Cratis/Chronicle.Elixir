@@ -187,6 +187,7 @@ defmodule Chronicle.ReadModels.ReadModel do
       Module.register_attribute(__MODULE__, :chronicle_projection_removed_with, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_from_every, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_no_auto_map, accumulate: true)
+      Module.register_attribute(__MODULE__, :chronicle_projection_children, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_pii, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_encrypted, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_subject, [])
@@ -216,6 +217,7 @@ defmodule Chronicle.ReadModels.ReadModel do
           enters_on: 2
         ]
 
+      import Chronicle.Projections.Children, only: [children: 2, children: 3]
       import Chronicle.Compliance, only: [pii: 1, pii: 2, subject: 1]
       import Chronicle.Confidentiality, only: [encrypted: 1, encrypted: 2, encrypted: 3]
 
@@ -365,6 +367,9 @@ defmodule Chronicle.ReadModels.ReadModel do
 
       def __chronicle_read_model__(:removed_with),
         do: @chronicle_projection_removed_with |> Enum.reverse()
+
+      def __chronicle_read_model__(:children),
+        do: @chronicle_projection_children |> Enum.reverse()
 
       def __chronicle_read_model__(:from_every),
         do: @chronicle_projection_from_every |> Enum.reverse()
