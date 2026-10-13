@@ -61,6 +61,12 @@ defmodule Chronicle.Events.EventType do
       option is given, and decides whose erasure key protects the event's PII. Without it the
       kernel falls back to the event source id.
     * `:tags` — tags every append of this event type carries, merged with per-append `:tags`
+    * `:tombstone` — marks the event type as a tombstone (the last event of an event source's life)
+      (mirrors .NET's `[Tombstone]`)
+    * `:public` — makes the event type visible to other event stores, e.g. through event store
+      subscriptions (mirrors `[Public]`)
+    * `:compensation_for` — the event type module this event compensates for
+      (mirrors `[CompensationFor<T>]`)
     * `:types` — type hints for nested fields; see `Chronicle.Serialization`
 
   When you append an event, the client encodes its fields as camelCase JSON:
@@ -112,7 +118,17 @@ defmodule Chronicle.Events.EventType do
   Accepts `:id`, `:generation`, or `:constraints` as the key.
   """
   @callback __chronicle_event_type__(
-              key :: :id | :generation | :constraints | :pii | :encrypted | :subject | :tags
+              key ::
+                :id
+                | :generation
+                | :constraints
+                | :pii
+                | :encrypted
+                | :subject
+                | :tags
+                | :tombstone
+                | :public
+                | :compensation_for
             ) :: term()
 
   defmacro __using__(opts) do
@@ -121,6 +137,9 @@ defmodule Chronicle.Events.EventType do
     field_types = Keyword.get(opts, :types, [])
     subject = Keyword.get(opts, :subject)
     tags = Keyword.get(opts, :tags, [])
+    tombstone = Keyword.get(opts, :tombstone, false)
+    public = Keyword.get(opts, :public, false)
+    compensation_for = Keyword.get(opts, :compensation_for)
 
     quote do
       @behaviour Chronicle.Events.EventType
@@ -148,6 +167,9 @@ defmodule Chronicle.Events.EventType do
       @chronicle_field_types unquote(field_types)
       @chronicle_event_subject unquote(subject)
       @chronicle_event_tags unquote(tags)
+      @chronicle_event_tombstone unquote(tombstone)
+      @chronicle_event_public unquote(public)
+      @chronicle_event_compensation_for unquote(compensation_for)
 
       @before_compile Chronicle.Events.EventType
     end
@@ -180,6 +202,9 @@ defmodule Chronicle.Events.EventType do
 
       def __chronicle_event_type__(:subject), do: @chronicle_event_subject
       def __chronicle_event_type__(:tags), do: @chronicle_event_tags
+      def __chronicle_event_type__(:tombstone), do: @chronicle_event_tombstone
+      def __chronicle_event_type__(:public), do: @chronicle_event_public
+      def __chronicle_event_type__(:compensation_for), do: @chronicle_event_compensation_for
 
       def __chronicle_event_type__(:pii), do: Enum.reverse(@chronicle_pii)
       def __chronicle_event_type__(:encrypted), do: Enum.reverse(@chronicle_encrypted)
