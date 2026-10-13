@@ -148,6 +148,39 @@ defmodule Chronicle.Client do
   end
 
   @doc """
+  The registration status of a client: whether its event types, constraints, read models,
+  projections and the rest have been registered with the kernel.
+
+  Returns `%{state: :pending | :registering | :registered | :failed, attempts: n, error: term | nil,
+  next_retry_in: ms | nil}`. Registration is retried with backoff (see
+  `Chronicle.Registration.RetryPolicy`), so `:registering` with a non-nil `:error` means the kernel
+  could not be reached or rejected an attempt, and `:failed` means it was rejected for good.
+  """
+  @spec registration_status(atom()) :: map()
+  def registration_status(client \\ __MODULE__) do
+    Chronicle.Registration.Coordinator.status(Chronicle.Registration.Coordinator.name_for(client))
+  end
+
+  @doc """
+  Waits until registration has completed, so appends and reads that depend on the registered
+  artifacts can start.
+
+  Returns `:ok` once registered, `{:error, {:failed, status}}` if the kernel rejected a
+  registration for good (the status carries the kernel's message), or `{:error, :timeout}`.
+  `timeout` is in milliseconds (default `30_000`).
+
+      {:ok, _} = Chronicle.Client.start_link(...)
+      :ok = Chronicle.Client.await_registration()
+  """
+  @spec await_registration(atom(), timeout()) :: :ok | {:error, term()}
+  def await_registration(client \\ __MODULE__, timeout \\ 30_000) do
+    Chronicle.Registration.Coordinator.await(
+      Chronicle.Registration.Coordinator.name_for(client),
+      timeout
+    )
+  end
+
+  @doc """
   Returns the stored configuration for the given client name.
 
   Used internally by `Chronicle.EventSequences.EventLog`, `Chronicle.ReadModels`, etc.
@@ -204,6 +237,7 @@ defmodule Chronicle.Client do
     global_handlers =
       Enum.uniq(Keyword.get(opts, :global_handlers, []) ++ discovered.global_handlers)
 
+    read_model_reactors = Enum.uniq(Keyword.get(opts, :read_model_reactors, []))
     seeders = Enum.uniq(Keyword.get(opts, :seeders, []) ++ discovered.seeders)
     webhooks = Enum.uniq(Keyword.get(opts, :webhooks, []) ++ discovered.webhooks)
 
@@ -267,6 +301,14 @@ defmodule Chronicle.Client do
         )
       end)
 
+    read_model_reactor_children =
+      Enum.map(read_model_reactors, fn module ->
+        Supervisor.child_spec(
+          {Chronicle.ReadModels.Reactors.Handler, Keyword.put(observer_opts, :module, module)},
+          id: {Chronicle.ReadModels.Reactors.Handler, module}
+        )
+      end)
+
     webhook_children =
       if Enum.empty?(webhooks) do
         []
@@ -280,6 +322,9 @@ defmodule Chronicle.Client do
       else
         [{Chronicle.EventStoreSubscriptions.Registrar, client: name, lifecycle: lifecycle_name}]
       end
+
+    operations_children =
+      lag_children(opts, name) ++ watchdog_children(opts, conn_name, lifecycle_name)
 
     seeder_children =
       if Enum.empty?(seeders) do
@@ -307,6 +352,7 @@ defmodule Chronicle.Client do
          connection: conn_name, client_name: name, lifecycle: lifecycle_name},
         {Chronicle.Registration.Coordinator,
          Keyword.merge(observer_opts,
+           registration: Keyword.get(opts, :registration),
            event_types: event_types,
            event_sources: event_sources,
            migrations: migrations,
@@ -318,6 +364,8 @@ defmodule Chronicle.Client do
       ] ++
         reactor_children ++
         reducer_children ++
+        read_model_reactor_children ++
+        operations_children ++
         seeder_children ++
         webhook_children ++
         event_store_subscription_children
@@ -327,6 +375,44 @@ defmodule Chronicle.Client do
     # current phase via the snapshot returned on subscribe.
     Supervisor.init(children, strategy: :rest_for_one)
   end
+
+  defp lag_children(opts, name) do
+    case Keyword.get(opts, :observer_lag) do
+      nil ->
+        []
+
+      false ->
+        []
+
+      lag_opts ->
+        [
+          {Chronicle.Observers.Lag.Reporter,
+           Keyword.merge([client: name], normalize_opts(lag_opts))}
+        ]
+    end
+  end
+
+  defp watchdog_children(opts, conn_name, lifecycle_name) do
+    case Keyword.get(opts, :watchdog) do
+      nil ->
+        []
+
+      false ->
+        []
+
+      watchdog_opts ->
+        [
+          {Chronicle.Connections.Watchdog,
+           Keyword.merge(
+             [connection: conn_name, lifecycle: lifecycle_name],
+             normalize_opts(watchdog_opts)
+           )}
+        ]
+    end
+  end
+
+  defp normalize_opts(true), do: []
+  defp normalize_opts(opts) when is_list(opts), do: opts
 
   @doc false
   def connection_name(client_name), do: :"#{client_name}.Connection"

@@ -30,7 +30,8 @@ defmodule Chronicle.Events.ConcurrencyScope do
             event_stream_type: "",
             event_stream_id: "",
             event_source_type: "",
-            event_types: []
+            event_types: [],
+            expects_no_matching_event: false
 
   @type event_type_module :: module()
 
@@ -40,6 +41,7 @@ defmodule Chronicle.Events.ConcurrencyScope do
           | {:event_stream_id, String.t() | atom() | nil}
           | {:event_source_type, String.t() | atom() | nil}
           | {:event_types, [event_type_module()] | nil}
+          | {:expects_no_matching_event, boolean()}
 
   @type t :: %__MODULE__{
           sequence_number: non_neg_integer(),
@@ -47,7 +49,8 @@ defmodule Chronicle.Events.ConcurrencyScope do
           event_stream_type: String.t(),
           event_stream_id: String.t(),
           event_source_type: String.t(),
-          event_types: [event_type_module()]
+          event_types: [event_type_module()],
+          expects_no_matching_event: boolean()
         }
 
   @doc """
@@ -64,7 +67,8 @@ defmodule Chronicle.Events.ConcurrencyScope do
       event_stream_type: normalize_string(Keyword.get(opts, :event_stream_type, "")),
       event_stream_id: normalize_string(Keyword.get(opts, :event_stream_id, "")),
       event_source_type: normalize_string(Keyword.get(opts, :event_source_type, "")),
-      event_types: normalize_event_types(Keyword.get(opts, :event_types, []))
+      event_types: normalize_event_types(Keyword.get(opts, :event_types, [])),
+      expects_no_matching_event: Keyword.get(opts, :expects_no_matching_event, false)
     }
   end
 
@@ -79,6 +83,28 @@ defmodule Chronicle.Events.ConcurrencyScope do
   @spec for_event_source(non_neg_integer(), [option()]) :: t()
   def for_event_source(sequence_number, opts \\ []) do
     new(sequence_number, Keyword.put(opts, :event_source_id, true))
+  end
+
+  @doc """
+  Creates a scope asserting that **no** event matches the scope's dimensions yet - the guard for
+  creation-only operations ("this event source must not have been registered already").
+
+  Mirrors .NET's `ConcurrencyScopeBuilder.ExpectingNoMatchingEvent()`. It sends the kernel's explicit
+  no-matching-event condition; leaving the sequence number unset is not a substitute, because
+  that disables the check instead of asserting anything. The narrowing options are those of
+  `new/2` - typically the event source and the event types that would make the append invalid:
+
+      scope =
+        ConcurrencyScope.expecting_no_matching_event(
+          event_source_id: true,
+          event_types: [MyApp.Events.UserRegistered]
+        )
+
+      Chronicle.append("user-1", %UserRegistered{}, concurrency_scope: scope)
+  """
+  @spec expecting_no_matching_event([option()]) :: t()
+  def expecting_no_matching_event(opts \\ []) do
+    new(@unset_sequence_number, Keyword.put(opts, :expects_no_matching_event, true))
   end
 
   @doc """
@@ -97,7 +123,8 @@ defmodule Chronicle.Events.ConcurrencyScope do
       event_stream_type: scope.event_stream_type,
       event_stream_id: scope.event_stream_id,
       event_source_type: scope.event_source_type,
-      event_types: scope.event_types
+      event_types: scope.event_types,
+      expects_no_matching_event: scope.expects_no_matching_event
     )
   end
 

@@ -63,6 +63,18 @@ defmodule Chronicle.Connections.TokenProvider do
     GenServer.call(provider, :authorization_headers)
   end
 
+  @doc """
+  Forgets the cached token so the next call fetches a fresh one.
+
+  For when the kernel rejected the token as unauthenticated - for example because it restarted
+  with new signing keys - and for every reconnect: a token that was valid for the previous
+  session proves nothing about the next. Without this the client keeps presenting the rejected
+  token until it expires, up to an hour.
+  """
+  @spec invalidate(GenServer.server() | nil) :: :ok
+  def invalidate(nil), do: :ok
+  def invalidate(provider), do: GenServer.cast(provider, :invalidate)
+
   @impl true
   def init(opts) do
     state = %{
@@ -101,6 +113,10 @@ defmodule Chronicle.Connections.TokenProvider do
   end
 
   @impl true
+  def handle_cast(:invalidate, state) do
+    {:noreply, %{state | token: nil, expires_at: nil, last_failed_fetch: nil}}
+  end
+
   def handle_cast(_message, _state) do
     raise FunctionClauseError, module: __MODULE__, function: :handle_cast, arity: 2
   end

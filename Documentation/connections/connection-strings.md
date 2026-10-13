@@ -58,6 +58,8 @@ A host without a port uses `35000`. IPv6 addresses use brackets, as in `chronicl
 The Chronicle kernel always serves TLS. In development it generates a self-signed certificate on every start, which no client can validate. So by default the Elixir client encrypts the connection but **accepts any server certificate without validating it**. That lets you connect to a development kernel with no setup, but on its own it doesn't protect against a server impersonating your kernel.
 
 :::danger[Turn on certificate validation outside development]
+The client logs a warning at startup when a connection to a remote host skips validation.
+
 Give production kernels a certificate your operating system trusts, and add `skipTlsValidation=false` to the connection string:
 
 ```text

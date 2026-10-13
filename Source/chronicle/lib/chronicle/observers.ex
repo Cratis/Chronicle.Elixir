@@ -21,8 +21,11 @@ defmodule Chronicle.Observers do
 
   alias Cratis.Chronicle.Contracts.Observation.{
     AllObserversRequest,
+    ClearObserverQuarantine,
+    ClearPartitionQuarantine,
     Observers,
-    RemoveObserver
+    RemoveObserver,
+    RetryPartition
   }
 
   @event_log_id "event-log"
@@ -139,6 +142,146 @@ defmodule Chronicle.Observers do
       end
     end
   end
+
+  @typedoc "What happened to a requested partition recovery."
+  @type retry_outcome ::
+          :started
+          | :partition_not_found
+          | :observer_quarantined
+          | :partition_quarantined
+          | :unknown
+
+  @doc """
+  Retries a failed partition of an observer.
+
+  `observer` is the observer id, or a reactor/reducer module. Mirrors .NET's
+  `RetryFailedPartitionFor<TReactor>(partition)`.
+
+  Returns `{:ok, outcome}` where outcome is `:started` (a recovery was started or resumed),
+  `:partition_not_found` (nothing failed there), `:observer_quarantined` or `:partition_quarantined`
+  (clear the quarantine first, see `clear_partition_quarantine/3`).
+  """
+  @spec retry_partition(String.t() | module(), String.t(), keyword()) ::
+          {:ok, retry_outcome()} | {:error, term()}
+  def retry_partition(observer, partition, opts \\ []) when is_binary(partition) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      request =
+        struct(RetryPartition,
+          EventStore: config.event_store,
+          Namespace: Keyword.get(opts, :namespace, config.namespace),
+          ObserverId: observer_id(observer),
+          EventSequenceId: Keyword.get(opts, :event_sequence_id, @event_log_id),
+          Partition: partition
+        )
+
+      case Observers.Stub.retry_partition(channel, request) do
+        {:ok, response} -> {:ok, decode_retry_outcome(Map.get(response, :Outcome))}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Releases a quarantined partition of an observer, optionally retrying it straight away.
+
+  Options: `:retry_immediately` (default `true`), plus the common options.
+
+  Returns `{:ok, %{outcome: :cleared | :not_found | :not_quarantined, retry_outcome: outcome}}`
+  where `retry_outcome` is a `t:retry_outcome/0`. Mirrors .NET's
+  `ClearFailedPartitionQuarantineFor<TReactor>(partition, retryImmediately)`.
+  """
+  @spec clear_partition_quarantine(String.t() | module(), String.t(), keyword()) ::
+          {:ok, %{outcome: atom(), retry_outcome: retry_outcome()}} | {:error, term()}
+  def clear_partition_quarantine(observer, partition, opts \\ []) when is_binary(partition) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      request =
+        struct(ClearPartitionQuarantine,
+          EventStore: config.event_store,
+          Namespace: Keyword.get(opts, :namespace, config.namespace),
+          ObserverId: observer_id(observer),
+          EventSequenceId: Keyword.get(opts, :event_sequence_id, @event_log_id),
+          Partition: partition,
+          RetryImmediately: Keyword.get(opts, :retry_immediately, true)
+        )
+
+      case Observers.Stub.clear_partition_quarantine(channel, request) do
+        {:ok, response} ->
+          {:ok,
+           %{
+             outcome: decode_clear_outcome(Map.get(response, :Outcome)),
+             retry_outcome: decode_retry_outcome(Map.get(response, :RetryOutcome))
+           }}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Releases the quarantine of a whole observer. Accepts an observer id or a reactor/reducer module.
+  """
+  @spec clear_observer_quarantine(String.t() | module(), keyword()) :: :ok | {:error, term()}
+  def clear_observer_quarantine(observer, opts \\ []) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      request =
+        struct(ClearObserverQuarantine,
+          EventStore: config.event_store,
+          Namespace: Keyword.get(opts, :namespace, config.namespace),
+          ObserverId: observer_id(observer),
+          EventSequenceId: Keyword.get(opts, :event_sequence_id, @event_log_id)
+        )
+
+      case Observers.Stub.clear_observer_quarantine(channel, request) do
+        {:ok, _} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc false
+  def observer_id(id) when is_binary(id), do: id
+
+  def observer_id(module) when is_atom(module) do
+    Code.ensure_loaded(module)
+
+    cond do
+      function_exported?(module, :__chronicle_reactor__, 1) ->
+        module.__chronicle_reactor__(:id)
+
+      function_exported?(module, :__chronicle_reducer__, 1) ->
+        module.__chronicle_reducer__(:id)
+
+      function_exported?(module, :__chronicle_projection__, 1) ->
+        module.__chronicle_projection__(:id)
+
+      function_exported?(module, :__chronicle_read_model__, 1) ->
+        module.__chronicle_read_model__(:id)
+
+      true ->
+        raise ArgumentError, "#{inspect(module)} is not a reactor, reducer or projection"
+    end
+  end
+
+  @doc false
+  def decode_retry_outcome(outcome) when outcome in [:Started, 0], do: :started
+
+  def decode_retry_outcome(outcome) when outcome in [:PartitionNotFound, 1],
+    do: :partition_not_found
+
+  def decode_retry_outcome(outcome) when outcome in [:ObserverQuarantined, 2],
+    do: :observer_quarantined
+
+  def decode_retry_outcome(outcome) when outcome in [:PartitionQuarantined, 3],
+    do: :partition_quarantined
+
+  def decode_retry_outcome(_), do: :unknown
+
+  @doc false
+  def decode_clear_outcome(outcome) when outcome in [:Cleared, 0], do: :cleared
+  def decode_clear_outcome(outcome) when outcome in [:NotFound, 1], do: :not_found
+  def decode_clear_outcome(outcome) when outcome in [:NotQuarantined, 2], do: :not_quarantined
+  def decode_clear_outcome(_), do: :unknown
 
   @doc false
   def decode_observer_information(observer) do

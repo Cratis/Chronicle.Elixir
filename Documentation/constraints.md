@@ -34,3 +34,30 @@ end
 ```
 
 Without `:scope`, uniqueness is checked globally, as before.
+
+## Unique modes
+
+`unique :code, mode: :per_value` keeps every value until a removal event releases it. The default,
+`mode: :per_event_source`, keeps one value per event source and frees the previous one when it is
+replaced.
+
+## Closing events
+
+An event that ends something declares `closes_stream`. Appending it closes its stream scope; every
+later event inside that scope is refused, events elsewhere are not. Mirrors .NET's `[ClosesStream]`:
+
+```elixir
+defmodule MyApp.Events.PeriodClosed do
+  use Chronicle.Events.EventType, id: "period-closed"
+  defstruct period: ""
+
+  closes_stream event_stream_id_from: :period, reopened_by: [MyApp.Events.PeriodReopened]
+end
+```
+
+Options: `:dimensions` (`:event_source_id`, `:event_source_type`, `:event_stream_type`,
+`:event_stream_id`), `:event_stream_id_from` (the event field that names the stream), `:reopened_by`
+(event types that lift the closure of exactly that scope), `:name` and `:event_sequences`.
+Declarations that share a `:name` merge, and must agree on dimensions and stream id field. A
+registration closes nothing in history; only later appends close scopes. Inspect and operate on
+closed scopes with `Chronicle.EventSequences.Streams`.

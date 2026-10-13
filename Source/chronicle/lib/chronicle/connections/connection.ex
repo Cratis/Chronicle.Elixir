@@ -77,6 +77,8 @@ defmodule Chronicle.Connections.Connection do
 
   alias Chronicle.Connections.ConnectionString.ServerAddress
 
+  require Logger
+
   @default_connect_timeout 10_000
   @default_retry_attempts 5
   @default_reconnect_base_delay 1_000
@@ -178,6 +180,7 @@ defmodule Chronicle.Connections.Connection do
     connection_string = connection_string_from(options)
     client_certificate = ClientCertificate.load!(connection_string)
     grpc_options = Keyword.get(options, :grpc_options, [])
+    warn_if_insecure(connection_string)
     validate_certificate_options!(grpc_options, client_certificate)
     validate_push_options!(grpc_options)
 
@@ -481,6 +484,16 @@ defmodule Chronicle.Connections.Connection do
     {:noreply, state}
   end
 
+  defp warn_if_insecure(connection_string) do
+    if ConnectionString.insecure_remote?(connection_string) do
+      Logger.warning(
+        "Chronicle connection to a remote host does not validate the server certificate " <>
+          "(skipTlsValidation defaults to true). Add skipTlsValidation=false to the connection " <>
+          "string for production."
+      )
+    end
+  end
+
   defp spawn_connect_attempt(state) do
     parent = self()
     connection_string = state.connection_string
@@ -492,6 +505,10 @@ defmodule Chronicle.Connections.Connection do
     token_provider = state.token_provider
     client_certificate = state.client_certificate
     disconnect_fun = state.disconnect_fun
+
+    # Every dial starts from a fresh token: one that was valid for the previous session says
+    # nothing about the next (the kernel may have restarted with new signing keys).
+    Chronicle.Connections.TokenProvider.invalidate(token_provider)
 
     {:ok, attempt} =
       Task.start(fn ->

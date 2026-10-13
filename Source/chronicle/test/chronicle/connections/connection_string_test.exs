@@ -322,4 +322,34 @@ defmodule Chronicle.Connections.ConnectionStringTest do
       assert to_string(cs) == "chronicle://localhost:35000"
     end
   end
+
+  describe "insecure_remote?/1" do
+    alias Chronicle.Connections.ConnectionString
+
+    test "the default against a remote host is insecure" do
+      assert ConnectionString.insecure_remote?(
+               ConnectionString.parse("chronicle://u:p@kernel.example.com:35000")
+             )
+    end
+
+    test "local hosts, disabled TLS and explicit validation are not flagged" do
+      refute ConnectionString.insecure_remote?(
+               ConnectionString.parse("chronicle://u:p@localhost:35000")
+             )
+
+      refute ConnectionString.insecure_remote?(
+               ConnectionString.parse("chronicle://u:p@127.0.0.1:35000")
+             )
+
+      refute ConnectionString.insecure_remote?(
+               ConnectionString.parse("chronicle://u:p@kernel.example.com:35000?disableTls=true")
+             )
+
+      refute ConnectionString.insecure_remote?(
+               ConnectionString.parse(
+                 "chronicle://u:p@kernel.example.com:35000?skipTlsValidation=false"
+               )
+             )
+    end
+  end
 end

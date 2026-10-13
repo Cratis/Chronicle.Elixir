@@ -68,3 +68,80 @@ with it, releasing the resources Chronicle held for it right away.
     session_id
   )
 ```
+
+## Filtering and sorting
+
+`Chronicle.ReadModels.query/2` accepts `:filter` and `:sort`. All conditions must match; a condition
+is a value (equality) or one of `{:gt, v}`, `{:gte, v}`, `{:lt, v}`, `{:lte, v}`, `{:ne, v}`,
+`{:in, [v]}`, `{:contains, v}`:
+
+```elixir
+{:ok, result} =
+  Chronicle.ReadModels.query(MyApp.ReadModels.Entry,
+    filter: [schema_id: "invoice", amount: {:gt, 100}],
+    sort: {:amount, :desc},
+    page_size: 20
+  )
+
+result.total_count   # the number of *matching* instances
+```
+
+An unknown field returns `{:error, {:unknown_field, field}}`.
+
+**The filter is applied by the client.** The kernel's query contract pages instances but cannot
+filter them, so the client pages through the read model and evaluates the filter itself. That is
+right for read models of modest size. A read model with more than `:max_scan` instances (default
+`10_000`) returns `{:error, {:scan_limit_exceeded, max_scan}}` rather than a silently partial
+answer. For large data, give the question its own projection.
+
+## Observing a collection
+
+`Chronicle.ReadModels.observe/2` sends the calling process the page of instances now and again each
+time it changes:
+
+```elixir
+{:ok, observer} = Chronicle.ReadModels.observe(MyApp.ReadModels.AccountInfo, page_size: 25)
+
+receive do
+  {:chronicle_read_model_instances, MyApp.ReadModels.AccountInfo, %{instances: accounts}} -> accounts
+end
+
+Chronicle.ReadModels.unobserve(observer)
+```
+
+An error arrives as `{:chronicle_read_model_observe_error, model, reason}` and ends the observation;
+call `observe/2` again to resume. `watch/2` remains the tool for the changes of one instance.
+
+## Read model reactors
+
+A `Chronicle.ReadModels.Reactor` reacts to *changes of a read model* rather than to events:
+
+```elixir
+defmodule MyApp.Reactors.BalanceWatcher do
+  use Chronicle.ReadModels.Reactor, model: MyApp.ReadModels.AccountInfo
+
+  @impl true
+  def on_modified(account, _changeset) do
+    if account.balance < 0, do: Alerts.overdrawn(account)
+    :ok
+  end
+end
+
+{Chronicle.Client, read_model_reactors: [MyApp.Reactors.BalanceWatcher], ...}
+```
+
+`on_added/2`, `on_modified/2` and `on_removed/2` are all optional. The reactor receives changes that
+happen while it runs and re-establishes its watch after a reconnect.
+
+## Map fields and nested structs
+
+A field whose default is a plain map (`parameters: %{}`) is registered as an object, its keys kept
+exactly as you wrote them. Nested structs keep their multi-word field names. Fields that default to
+`nil`, or hold a list of structs, are declared with `types:`:
+
+```elixir
+use Chronicle.ReadModels.ReadModel,
+  types: [lines: {:list, MyApp.OrderLine}, address: MyApp.Address, labels: :map]
+```
+
+See `Chronicle.Serialization`.

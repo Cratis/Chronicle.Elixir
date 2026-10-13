@@ -81,6 +81,7 @@ defmodule Chronicle.Projections.Projection do
       Module.register_attribute(__MODULE__, :chronicle_projection_removed_with, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_from_every, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_no_auto_map, accumulate: true)
+      Module.register_attribute(__MODULE__, :chronicle_projection_children, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_enters_on, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_variant_identity, [])
       Module.register_attribute(__MODULE__, :chronicle_variant_key, [])
@@ -106,6 +107,7 @@ defmodule Chronicle.Projections.Projection do
         ]
 
       import Chronicle.ReadModels.ReadModel, only: [no_auto_map: 0, no_auto_map: 1]
+      import Chronicle.Projections.Children, only: [children: 2, children: 3]
 
       @before_compile Chronicle.Projections.Projection
     end
@@ -206,6 +208,9 @@ defmodule Chronicle.Projections.Projection do
 
       def __chronicle_projection__(:removed_with),
         do: @chronicle_projection_removed_with |> Enum.reverse()
+
+      def __chronicle_projection__(:children),
+        do: @chronicle_projection_children |> Enum.reverse()
 
       def __chronicle_projection__(:from_every),
         do: @chronicle_projection_from_every

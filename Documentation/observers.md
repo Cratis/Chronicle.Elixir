@@ -77,3 +77,31 @@ observer's own bookkeeping goes.
 {:ok, observers} = Chronicle.Observers.get_all(client: :bank_chronicle)
 {:ok, result} = Chronicle.Observers.remove("MyApp.Reactors.OrderNotifier", client: :bank_chronicle)
 ```
+
+## Recovering a partition
+
+```elixir
+{:ok, :started} = Chronicle.Observers.retry_partition(MyApp.Reactors.OrderNotifier, "order-1")
+{:ok, %{outcome: :cleared, retry_outcome: :started}} =
+  Chronicle.Observers.clear_partition_quarantine(MyApp.Reactors.OrderNotifier, "order-1")
+:ok = Chronicle.Observers.clear_observer_quarantine(MyApp.Reactors.OrderNotifier)
+```
+
+The first argument is an observer id or a reactor, reducer or projection module. `retry_partition/3`
+returns `:started`, `:partition_not_found`, `:observer_quarantined` or `:partition_quarantined`
+(clear the quarantine first). `clear_partition_quarantine/3` retries immediately unless you pass
+`retry_immediately: false`.
+
+## Lag
+
+An observer that was evicted or stalled is invisible from the append side. `Chronicle.Observers.Lag.measure/1`
+returns, per observer, the distance between the tail of the event sequence and the last event it
+handled. Start the reporter to publish it as telemetry:
+
+```elixir
+{Chronicle.Client, observer_lag: [interval: 15_000], ...}
+
+:telemetry.attach("lag", [:chronicle, :observer, :lag], fn _, %{lag: lag}, %{observer_id: id}, _ ->
+  if lag > 1_000, do: Logger.warning("#{id} is #{lag} events behind")
+end, nil)
+```

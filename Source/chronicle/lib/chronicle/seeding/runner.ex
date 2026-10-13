@@ -10,9 +10,9 @@ defmodule Chronicle.Seeding.Runner do
   # spawn that ran on a fixed delay and failed with `:not_connected` when the
   # connection was not yet ready.
   #
-  # Seeding is idempotent: `Chronicle.Seeding.register/1` skips event sources
-  # that already have events (`has_events_for?/2`), so re-running on reconnect is
-  # a cheap no-op. On failure the runner retries with a bounded delay.
+  # Seeding is idempotent: the kernel's seeding service tracks which entries it has applied, so
+  # re-running on reconnect applies only what is new. On failure the runner retries with a
+  # bounded delay.
 
   use GenServer, restart: :permanent
 

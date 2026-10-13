@@ -70,14 +70,12 @@ defmodule Chronicle.Reducers.Reducer do
 
   ## Event context
 
-  The third argument to `reduce/3` is a map with:
-
-    * `:event_source_id` — the event source (e.g. aggregate ID)
-    * `:sequence_number` — the event's position in the event log
-    * `:occurred` — when the event was appended (ISO 8601 string)
-    * `:observation_state` — the observation state (`:initial`, `:replay`, etc.)
-    * `:event_source` — the name of the registered event source the event was
-      appended through, or `nil` when it was not appended through one
+  The third argument to `reduce/3` is a `Chronicle.Events.EventContext` struct (a map, so
+  pattern matches on keys such as `:event_source_id` keep working). Besides the position
+  (`:sequence_number`, `:event_source_id`, `:occurred`) it carries `:caused_by` - the identity
+  that caused the event - the `:causation` chain, `:correlation_id`, `:tags`, `:hash`,
+  `:subject`, the event type and stream, and the `:observation_state`. A reducer can therefore
+  record *who* caused a change without the author being copied into every event payload.
 
   ## Replay lifecycle (optional)
 
@@ -126,6 +124,7 @@ defmodule Chronicle.Reducers.Reducer do
       @chronicle_reducer_model model
       @chronicle_reducer_id Keyword.get(opts, :id, __MODULE__ |> to_string())
       @chronicle_reducer_active Keyword.get(opts, :active, true)
+      @chronicle_reducer_middleware Keyword.get(opts, :middleware, [])
 
       @before_compile Chronicle.Reducers.Reducer
     end
@@ -138,6 +137,7 @@ defmodule Chronicle.Reducers.Reducer do
       def __chronicle_reducer__(:model), do: @chronicle_reducer_model
       def __chronicle_reducer__(:handles), do: @handles |> Enum.reverse()
       def __chronicle_reducer__(:active), do: @chronicle_reducer_active
+      def __chronicle_reducer__(:middleware), do: @chronicle_reducer_middleware
     end
   end
 end

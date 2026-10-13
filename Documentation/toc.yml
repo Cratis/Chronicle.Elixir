@@ -26,3 +26,5 @@
   href: sinks.md
 - name: Seeding
   href: seeding.md
+- name: Limits and Gaps
+  href: limits-and-gaps.md

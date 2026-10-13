@@ -259,8 +259,11 @@ defmodule Chronicle.Reducers.Handler do
     read_model_json =
       case final_state do
         nil -> ""
-        model -> model |> Map.from_struct() |> Jason.encode!()
+        model -> Chronicle.Serialization.to_json(model, :identity)
       end
+
+    {read_model_json, observation_state, exception_messages, stack_trace} =
+      guard_read_model_size(read_model_json, observation_state, exception_messages, stack_trace)
 
     result =
       struct(ReducerMessage,
@@ -282,6 +285,23 @@ defmodule Chronicle.Reducers.Handler do
     {:noreply, state}
   end
 
+  # A read model larger than the message limit makes the kernel answer ResourceExhausted, and the
+  # failed exchange can break the connection every observer shares. Report the reduction as failed
+  # instead (the partition then shows up as a failed partition with a clear reason).
+  defp guard_read_model_size(json, observation_state, messages, stack_trace) do
+    case Chronicle.PayloadLimit.check(json) do
+      :ok ->
+        {json, observation_state, messages, stack_trace}
+
+      {:error, {:payload_too_large, size, limit}} ->
+        message =
+          "Read model state is #{size} bytes, which exceeds the #{limit} byte message limit. " <>
+            "Split it into smaller read models (for example one per child) or raise :max_payload_bytes."
+
+        {"", :failed, [message | messages], stack_trace}
+    end
+  end
+
   defp apply_reduce(state, appended_event, model) do
     context = Map.get(appended_event, :Context, %{})
     event_type = Map.get(context, :EventType, %{})
@@ -292,13 +312,18 @@ defmodule Chronicle.Reducers.Handler do
         {:ok, model}
 
       event_module ->
-        ctx = build_context(context)
+        ctx = build_context(context, event_sequence_id: "event-log")
         content = Map.get(appended_event, :Content, "")
 
         case decode_event(event_module, content) do
           {:ok, event} ->
             try do
-              {:ok, state.module.reduce(event, model, ctx)}
+              middleware = Chronicle.Middleware.for_module(state.module, :reducer)
+
+              {:ok,
+               Chronicle.Middleware.run(middleware, event, ctx, fn event, ctx ->
+                 state.module.reduce(event, model, ctx)
+               end)}
             rescue
               e -> {:error, e}
             end
@@ -314,78 +339,28 @@ defmodule Chronicle.Reducers.Handler do
   defp decode_model(_module, nil), do: nil
 
   defp decode_model(module, json) do
-    case Jason.decode(json) do
-      {:ok, attrs} ->
-        fields =
-          attrs
-          |> Enum.flat_map(fn {key, val} ->
-            try do
-              [{String.to_existing_atom(key), val}]
-            rescue
-              ArgumentError -> []
-            end
-          end)
-          |> Enum.filter(fn {key, _} -> Map.has_key?(module.__struct__(), key) end)
-
-        struct(module, fields)
-
-      {:error, _} ->
-        nil
-    end
+    Chronicle.Serialization.decode(module, json, :identity)
   rescue
     _ -> nil
   end
 
   defp decode_event(event_module, json_content) do
     case Jason.decode(json_content) do
-      {:ok, attrs} ->
-        fields =
-          attrs
-          |> Enum.flat_map(fn {key, val} ->
-            snake_key = pascal_to_snake(key)
+      {:ok, attrs} when is_map(attrs) ->
+        {:ok, Chronicle.Serialization.decode(event_module, attrs, :camel)}
 
-            try do
-              [{String.to_existing_atom(snake_key), val}]
-            rescue
-              ArgumentError -> []
-            end
-          end)
-          |> Enum.filter(fn {key, _} -> Map.has_key?(event_module.__struct__(), key) end)
-
-        {:ok, struct(event_module, fields)}
+      {:ok, other} ->
+        {:error, {:unexpected_content, other}}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp pascal_to_snake(str) do
-    str
-    |> String.replace(~r/(?<=[a-z0-9])([A-Z])/, "_\\1")
-    |> String.downcase()
-  end
-
   # An unset or empty wire value means the event was not appended through a
   # registered event source; no name is invented for it.
-  defp event_source(ctx) do
-    case Map.get(ctx, :EventSource) do
-      name when is_binary(name) and name != "" -> name
-      _ -> nil
-    end
-  end
-
   @doc false
-  def build_context(ctx) do
-    occurred = Map.get(ctx, :Occurred)
-
-    %{
-      event_source_id: Map.get(ctx, :EventSourceId, ""),
-      sequence_number: Map.get(ctx, :SequenceNumber, 0),
-      occurred: occurred && Map.get(occurred, :Value),
-      event_source: event_source(ctx),
-      observation_state: Map.get(ctx, :ObservationState, 0)
-    }
-  end
+  def build_context(ctx, opts \\ []), do: Chronicle.Events.EventContext.from_wire(ctx, opts)
 
   defp schedule_stream_reconnect(%{reconnect_timer: timer} = state) when not is_nil(timer),
     do: state

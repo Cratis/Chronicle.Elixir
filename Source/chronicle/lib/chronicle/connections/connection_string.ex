@@ -159,6 +159,24 @@ defmodule Chronicle.Connections.ConnectionString do
   end
 
   @doc """
+  Whether the connection encrypts traffic but does not verify who it is talking to, to a host
+  that is not the local machine.
+
+  That is the default (`skipTlsValidation` is `true`), which is convenient for development and
+  wrong for production: anyone who can intercept the traffic can impersonate the kernel and read
+  the credentials. The client logs a warning for it at startup.
+  """
+  @spec insecure_remote?(t()) :: boolean()
+  def insecure_remote?(%__MODULE__{disable_tls: true}), do: false
+  def insecure_remote?(%__MODULE__{skip_tls_validation: false}), do: false
+
+  def insecure_remote?(%__MODULE__{server_addresses: addresses}) do
+    Enum.any?(addresses, fn address ->
+      address.host not in ["localhost", "127.0.0.1", "::1", "0.0.0.0", "host.docker.internal"]
+    end)
+  end
+
+  @doc """
   Returns the first configured server address.
 
   Provided as a convenience for callers that only need a single address — such

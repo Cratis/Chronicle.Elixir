@@ -84,13 +84,13 @@ defmodule Chronicle.Registration.CompositeKeyDefinitionTest do
     key = MixedKeyReadModel |> Coordinator.build_projection_definition() |> serialized_key()
 
     assert key ==
-             "$composite(account_id=accountId,month=$eventContext(Occurred.Month),day=$eventContext(Occurred.Day),source=$eventSourceId,occurred=$occurred,name=name,category=$value(1),active=$value(true))"
+             "$composite(account_id=accountId,month=$eventContext(Occurred.Month),day=$eventContext(Occurred.Day),source=$eventSourceId,occurred=$eventContext(Occurred),name=name,category=$value(1),active=$value(true))"
   end
 
   test "existing standalone keys keep their expressions" do
     for {key, expected} <- [
           {:event_source_id, "$eventSourceId"},
-          {:occurred, "$occurred"},
+          {:occurred, "$eventContext(Occurred)"},
           {:account_id, "accountId"},
           {"$composite(legacy=name)", "$composite(legacy=name)"},
           {1, "$value(1)"},
