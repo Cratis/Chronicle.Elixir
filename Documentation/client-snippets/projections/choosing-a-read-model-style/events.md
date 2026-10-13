@@ -9,6 +9,8 @@ defmodule MyApp.Events.ChoosingStyleBookBorrowed do
   use Chronicle.Events.EventType, id: "choosing-style-book-borrowed"
 
   defstruct [:member_name]
+
+  pii :member_name
 end
 
 defmodule MyApp.Events.ChoosingStyleBookReturned do

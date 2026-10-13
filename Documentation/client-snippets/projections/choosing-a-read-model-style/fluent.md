@@ -2,19 +2,23 @@
 defmodule MyApp.ReadModels.ChoosingStyleBookStatusFluent do
   use Chronicle.ReadModels.ReadModel
 
-  defstruct id: "", title: "", isbn: "", is_borrowed: false, borrowed_by: nil
+  defstruct id: nil, title: nil, isbn: nil, is_borrowed: false, borrowed_by: nil
+
+  pii :borrowed_by
 end
 
 defmodule MyApp.Projections.ChoosingStyleBookStatusProjection do
   use Chronicle.Projections.Projection, model: MyApp.ReadModels.ChoosingStyleBookStatusFluent
 
   from MyApp.Events.ChoosingStyleBookRegistered,
-    set: [id: :event_source_id, title: :title, isbn: :isbn, is_borrowed: false, borrowed_by: nil]
+    set: [id: :event_source_id, title: :title, isbn: :isbn, is_borrowed: false],
+    clear: [:borrowed_by]
 
   from MyApp.Events.ChoosingStyleBookBorrowed,
-    set: [is_borrowed: true, borrowed_by: :member_name]
+    set: [id: :event_source_id, is_borrowed: true, borrowed_by: :member_name]
 
   from MyApp.Events.ChoosingStyleBookReturned,
-    set: [is_borrowed: false, borrowed_by: nil]
+    set: [id: :event_source_id, is_borrowed: false],
+    clear: [:borrowed_by]
 end
 ```

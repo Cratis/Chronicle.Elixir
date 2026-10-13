@@ -1,6 +1,10 @@
 ```elixir
 defmodule MyApp.ReadModels.ChoosingStyleBookStatusReducerModel do
-  defstruct title: "", isbn: "", is_borrowed: false, borrowed_by: nil
+  use Chronicle.ReadModels.ReadModel
+
+  defstruct id: nil, title: nil, isbn: nil, is_borrowed: false, borrowed_by: nil
+
+  pii :borrowed_by
 end
 
 defmodule MyApp.Reducers.ChoosingStyleBookStatusReducer do
@@ -17,8 +21,9 @@ defmodule MyApp.Reducers.ChoosingStyleBookStatusReducer do
   @handles ChoosingStyleBookReturned
 
   @impl true
-  def reduce(%ChoosingStyleBookRegistered{} = event, _model, _context) do
+  def reduce(%ChoosingStyleBookRegistered{} = event, _model, context) do
     %MyApp.ReadModels.ChoosingStyleBookStatusReducerModel{
+      id: context.event_source_id,
       title: event.title,
       isbn: event.isbn,
       is_borrowed: false,
@@ -26,11 +31,13 @@ defmodule MyApp.Reducers.ChoosingStyleBookStatusReducer do
     }
   end
 
-  def reduce(%ChoosingStyleBookBorrowed{} = event, model, _context) do
+  def reduce(%ChoosingStyleBookBorrowed{} = event, model, context) do
+    model = model || %MyApp.ReadModels.ChoosingStyleBookStatusReducerModel{id: context.event_source_id}
     %{model | is_borrowed: true, borrowed_by: event.member_name}
   end
 
-  def reduce(%ChoosingStyleBookReturned{}, model, _context) do
+  def reduce(%ChoosingStyleBookReturned{}, model, context) do
+    model = model || %MyApp.ReadModels.ChoosingStyleBookStatusReducerModel{id: context.event_source_id}
     %{model | is_borrowed: false, borrowed_by: nil}
   end
 end
