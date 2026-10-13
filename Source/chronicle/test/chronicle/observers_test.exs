@@ -5,7 +5,38 @@ defmodule Chronicle.ObserversTest do
   use ExUnit.Case, async: true
 
   alias Chronicle.Observers
-  alias Chronicle.Observers.{ObserverInformation, RemovalResult}
+  alias Chronicle.Observers.{FastForwardResult, ObserverInformation, RemovalResult}
+
+  describe "decode_fast_forward_result/1" do
+    test "decodes the outcome and where the observer moved from and to" do
+      wire = %{
+        Outcome: :FastForwarded,
+        PreviousNextEventSequenceNumber: 5,
+        NextEventSequenceNumber: 101
+      }
+
+      assert %FastForwardResult{
+               outcome: :fast_forwarded,
+               previous_next_event_sequence_number: 5,
+               next_event_sequence_number: 101
+             } = Observers.decode_fast_forward_result(wire)
+    end
+
+    test "decodes an observer already at the tail" do
+      assert %FastForwardResult{outcome: :already_at_tail} =
+               Observers.decode_fast_forward_result(%{Outcome: :AlreadyAtTail})
+    end
+
+    test "decodes a replaying observer" do
+      assert %FastForwardResult{outcome: :replaying} =
+               Observers.decode_fast_forward_result(%{Outcome: :Replaying})
+    end
+
+    test "decodes an unrecognized outcome as not available" do
+      assert %FastForwardResult{outcome: :not_available} =
+               Observers.decode_fast_forward_result(%{Outcome: :bogus})
+    end
+  end
 
   describe "decode_observer_information/1" do
     test "decodes every field on a wire observer" do
