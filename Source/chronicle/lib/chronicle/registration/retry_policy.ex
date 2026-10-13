@@ -70,6 +70,14 @@ defmodule Chronicle.Registration.RetryPolicy do
   @doc "Whether a failure could succeed if repeated."
   @spec retryable?(term()) :: boolean()
   def retryable?({:validation_results, _}), do: false
+
+  # The coordinator tags a failure with the stage it happened in; the cause decides.
+  def retryable?({stage, reason}) when is_atom(stage) and stage not in [:error, :ok] do
+    if stage |> Atom.to_string() |> String.starts_with?(["register_", "ensure_"]),
+      do: retryable?(reason),
+      else: true
+  end
+
   def retryable?(%GRPC.RPCError{status: status}), do: status not in [3, 12]
   def retryable?(_), do: true
 end

@@ -44,6 +44,19 @@ defmodule Chronicle.Registration.RetryPolicyTest do
     refute RetryPolicy.retryable?(%GRPC.RPCError{status: 3, message: "invalid"})
     assert RetryPolicy.retryable?(%GRPC.RPCError{status: 14, message: "unavailable"})
     assert RetryPolicy.retryable?(:boom)
+
+    # the coordinator tags a failure with its stage; the cause still decides
+    refute RetryPolicy.retryable?({:register_read_models, {:validation_results, [%{}]}})
+
+    refute RetryPolicy.retryable?(
+             {:register_projections, %GRPC.RPCError{status: 3, message: "x"}}
+           )
+
+    assert RetryPolicy.retryable?(
+             {:register_constraints, %GRPC.RPCError{status: 14, message: "x"}}
+           )
+
+    assert RetryPolicy.retryable?({:ensure_namespace, :not_connected})
     refute RetryPolicy.retry?(RetryPolicy.new(nil), 1, {:validation_results, []})
   end
 end
