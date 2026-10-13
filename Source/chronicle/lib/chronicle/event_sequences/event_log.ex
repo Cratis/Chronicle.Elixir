@@ -866,9 +866,23 @@ defmodule Chronicle.EventSequences.EventLog do
     do: Chronicle.EventSources.Routing.event_source(routing)
 
   defp prepare_events(events, config, namespace, event_sequence_id, opts) do
+    events = Enum.map(events, &apply_event_type_defaults/1)
+
     with :ok <- check_payload_size(events) do
       resolve_events(events, config, namespace, event_sequence_id, opts)
     end
+  end
+
+  # An event type may declare the field holding its data subject and static tags
+  # (see Chronicle.Events.EventType). An explicit subject always wins, tags are merged.
+  defp apply_event_type_defaults(%EventForEventSourceId{event: event} = entry) do
+    subject =
+      if entry.subject in [nil, ""],
+        do: Chronicle.Events.EventType.declared_subject(event) || entry.subject,
+        else: entry.subject
+
+    tags = Enum.uniq((entry.tags || []) ++ Chronicle.Events.EventType.declared_tags(event))
+    %{entry | subject: subject, tags: tags}
   end
 
   # Refuses a batch the kernel would reject with ResourceExhausted before it can break the
