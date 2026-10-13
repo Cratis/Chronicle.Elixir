@@ -85,13 +85,13 @@ defmodule Chronicle.Schemas.JsonSchemaGenerator do
     if function_exported?(module, :__struct__, 0) do
       pii = pii_for(module)
       encrypted = encrypted_for(module)
+      types = Chronicle.Serialization.field_types(module)
 
       module.__struct__()
       |> Map.from_struct()
       |> Enum.map(fn {key, default_value} ->
         schema =
-          default_value
-          |> property_schema(key_transform)
+          typed_schema(Map.get(types, key), default_value, key_transform)
           |> maybe_add_compliance(Map.get(pii, key))
           |> maybe_add_security(Map.get(encrypted, key))
 
@@ -198,18 +198,42 @@ defmodule Chronicle.Schemas.JsonSchemaGenerator do
   defp property_schema([], _key_transform),
     do: %{"type" => "array", "items" => %{"type" => "string"}}
 
+  # A plain map holds free-form key/value data: an object whose keys are data and are
+  # never transformed. When the default carries entries the value type is inferred from
+  # the first one; an empty default stays permissive.
+  defp property_schema(value, key_transform) when is_map(value) and not is_struct(value) do
+    case Enum.at(value, 0) do
+      {_key, first} ->
+        %{"type" => "object", "additionalProperties" => property_schema(first, key_transform)}
+
+      nil ->
+        %{"type" => "object"}
+    end
+  end
+
   defp property_schema(_value, _key_transform), do: %{"type" => "string"}
+
+  # Honors the optional `types:` declaration of a struct module (see Chronicle.Serialization):
+  # a struct that defaults to nil, a list of structs with an empty default, or a map.
+  defp typed_schema(nil, default, key_transform), do: property_schema(default, key_transform)
+  defp typed_schema(:map, _default, _key_transform), do: %{"type" => "object"}
+
+  defp typed_schema({:list, module}, _default, key_transform),
+    do: %{"type" => "array", "items" => property_schema(module.__struct__(), key_transform)}
+
+  defp typed_schema(module, _default, key_transform) when is_atom(module),
+    do: property_schema(module.__struct__(), key_transform)
 
   defp struct_properties(module, key_transform, value) do
     pii = pii_for(module)
     encrypted = encrypted_for(module)
+    types = Chronicle.Serialization.field_types(module)
 
     value
     |> Map.from_struct()
     |> Enum.map(fn {key, default_value} ->
       schema =
-        default_value
-        |> property_schema(key_transform)
+        typed_schema(Map.get(types, key), default_value, key_transform)
         |> maybe_add_compliance(Map.get(pii, key))
         |> maybe_add_security(Map.get(encrypted, key))
 
@@ -294,10 +318,5 @@ defmodule Chronicle.Schemas.JsonSchemaGenerator do
     end
   end
 
-  defp transform_key(key, :identity), do: Atom.to_string(key)
-
-  defp transform_key(key, :camel) do
-    [head | tail] = key |> Atom.to_string() |> String.split("_")
-    head <> Enum.map_join(tail, &String.capitalize/1)
-  end
+  defp transform_key(key, style), do: Chronicle.Serialization.wire_key(key, style)
 end

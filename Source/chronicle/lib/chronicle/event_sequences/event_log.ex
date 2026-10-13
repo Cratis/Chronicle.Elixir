@@ -924,18 +924,7 @@ defmodule Chronicle.EventSequences.EventLog do
     end
   end
 
-  defp encode_event(event) do
-    event
-    |> Map.from_struct()
-    |> Enum.map(fn {key, value} -> {snake_to_camel(Atom.to_string(key)), value} end)
-    |> Map.new()
-    |> Jason.encode!()
-  end
-
-  defp snake_to_camel(snake) do
-    [head | tail] = String.split(snake, "_")
-    head <> Enum.map_join(tail, &String.capitalize/1)
-  end
+  defp encode_event(event), do: Chronicle.Serialization.to_json(event, :camel)
 
   defp build_correlation_id(opts) do
     correlation_id =

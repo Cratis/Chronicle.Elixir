@@ -194,6 +194,7 @@ defmodule Chronicle.ReadModels.ReadModel do
       Module.register_attribute(__MODULE__, :chronicle_variant_identity, [])
       Module.register_attribute(__MODULE__, :chronicle_variant_key, [])
 
+      @chronicle_field_types Keyword.get(opts, :types, [])
       @chronicle_read_model_id Keyword.get(opts, :id, __MODULE__ |> Module.split() |> List.last())
       @chronicle_read_model_passive Keyword.get(opts, :passive, false)
       @chronicle_read_model_rewindable not Keyword.get(opts, :not_rewindable, false)
@@ -391,6 +392,9 @@ defmodule Chronicle.ReadModels.ReadModel do
       def __chronicle_read_model__(:variant_key), do: @chronicle_variant_key
 
       def __chronicle_read_model__(:enters_on), do: @chronicle_enters_on |> Enum.reverse()
+
+      @doc false
+      def __chronicle_field_types__, do: @chronicle_field_types
 
       @doc false
       def __chronicle_pii__, do: Enum.reverse(@chronicle_pii)

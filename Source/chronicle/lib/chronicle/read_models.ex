@@ -746,24 +746,7 @@ defmodule Chronicle.ReadModels do
   end
 
   defp decode_model(module, json) when is_binary(json) and json != "" do
-    case Jason.decode(json) do
-      {:ok, attrs} ->
-        fields =
-          attrs
-          |> Enum.flat_map(fn {key, val} ->
-            try do
-              [{String.to_existing_atom(key), val}]
-            rescue
-              ArgumentError -> []
-            end
-          end)
-          |> Enum.filter(fn {key, _} -> Map.has_key?(module.__struct__(), key) end)
-
-        struct(module, fields)
-
-      {:error, _} ->
-        nil
-    end
+    Chronicle.Serialization.decode(module, json, :identity)
   end
 
   defp decode_model(_module, _), do: nil

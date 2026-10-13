@@ -70,6 +70,7 @@ defmodule Chronicle.Events.EventType do
   defmacro __using__(opts) do
     event_type_id = Keyword.fetch!(opts, :id)
     generation = Keyword.get(opts, :generation, 1)
+    field_types = Keyword.get(opts, :types, [])
 
     quote do
       @behaviour Chronicle.Events.EventType
@@ -94,6 +95,7 @@ defmodule Chronicle.Events.EventType do
 
       @chronicle_event_type_id unquote(event_type_id)
       @chronicle_event_type_generation unquote(generation)
+      @chronicle_field_types unquote(field_types)
 
       @before_compile Chronicle.Events.EventType
     end
@@ -120,6 +122,9 @@ defmodule Chronicle.Events.EventType do
           remove_constraint: Enum.reverse(@remove_constraint)
         }
       end
+
+      @doc false
+      def __chronicle_field_types__, do: @chronicle_field_types
 
       def __chronicle_event_type__(:pii), do: Enum.reverse(@chronicle_pii)
       def __chronicle_event_type__(:encrypted), do: Enum.reverse(@chronicle_encrypted)

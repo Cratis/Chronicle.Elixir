@@ -378,31 +378,15 @@ defmodule Chronicle.Reactors.Handler do
 
   defp decode_event(event_module, json_content) do
     case Jason.decode(json_content) do
-      {:ok, attrs} ->
-        fields =
-          attrs
-          |> Enum.flat_map(fn {key, val} ->
-            snake_key = pascal_to_snake(key)
+      {:ok, attrs} when is_map(attrs) ->
+        {:ok, Chronicle.Serialization.decode(event_module, attrs, :camel)}
 
-            try do
-              [{String.to_existing_atom(snake_key), val}]
-            rescue
-              ArgumentError -> []
-            end
-          end)
-          |> Enum.filter(fn {key, _} -> Map.has_key?(event_module.__struct__(), key) end)
-
-        {:ok, struct(event_module, fields)}
+      {:ok, other} ->
+        {:error, {:unexpected_content, other}}
 
       {:error, reason} ->
         {:error, reason}
     end
-  end
-
-  defp pascal_to_snake(str) do
-    str
-    |> String.replace(~r/(?<=[a-z0-9])([A-Z])/, "_\\1")
-    |> String.downcase()
   end
 
   # An unset or empty wire value means the event was not appended through a
