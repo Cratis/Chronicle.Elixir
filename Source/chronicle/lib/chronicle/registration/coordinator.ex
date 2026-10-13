@@ -738,7 +738,10 @@ defmodule Chronicle.Registration.Coordinator do
   # sent as "ownerName" for the kernel to find it. Booleans are atoms too, but they are
   # constants, not field names. Strings are explicit Chronicle expressions and pass through.
   defp resolve_expression(:event_source_id), do: "$eventSourceId"
-  defp resolve_expression(:occurred), do: "$occurred"
+  # The kernel has no `$occurred` expression (it rejects the definition, so registration never
+  # completes); the occurred time is an event context property.
+  defp resolve_expression(:occurred), do: "$eventContext(Occurred)"
+  defp resolve_expression("$occurred"), do: "$eventContext(Occurred)"
   defp resolve_expression(bool) when is_boolean(bool), do: "$value(#{bool})"
   defp resolve_expression(atom) when is_atom(atom), do: atom |> Atom.to_string() |> camelize()
   defp resolve_expression(int) when is_integer(int), do: "$value(#{int})"
