@@ -148,6 +148,39 @@ defmodule Chronicle.Client do
   end
 
   @doc """
+  The registration status of a client: whether its event types, constraints, read models,
+  projections and the rest have been registered with the kernel.
+
+  Returns `%{state: :pending | :registering | :registered | :failed, attempts: n, error: term | nil,
+  next_retry_in: ms | nil}`. Registration is retried with backoff (see
+  `Chronicle.Registration.RetryPolicy`), so `:registering` with a non-nil `:error` means the kernel
+  could not be reached or rejected an attempt, and `:failed` means it was rejected for good.
+  """
+  @spec registration_status(atom()) :: map()
+  def registration_status(client \\ __MODULE__) do
+    Chronicle.Registration.Coordinator.status(Chronicle.Registration.Coordinator.name_for(client))
+  end
+
+  @doc """
+  Waits until registration has completed, so appends and reads that depend on the registered
+  artifacts can start.
+
+  Returns `:ok` once registered, `{:error, {:failed, status}}` if the kernel rejected a
+  registration for good (the status carries the kernel's message), or `{:error, :timeout}`.
+  `timeout` is in milliseconds (default `30_000`).
+
+      {:ok, _} = Chronicle.Client.start_link(...)
+      :ok = Chronicle.Client.await_registration()
+  """
+  @spec await_registration(atom(), timeout()) :: :ok | {:error, term()}
+  def await_registration(client \\ __MODULE__, timeout \\ 30_000) do
+    Chronicle.Registration.Coordinator.await(
+      Chronicle.Registration.Coordinator.name_for(client),
+      timeout
+    )
+  end
+
+  @doc """
   Returns the stored configuration for the given client name.
 
   Used internally by `Chronicle.EventSequences.EventLog`, `Chronicle.ReadModels`, etc.
@@ -316,6 +349,7 @@ defmodule Chronicle.Client do
          connection: conn_name, client_name: name, lifecycle: lifecycle_name},
         {Chronicle.Registration.Coordinator,
          Keyword.merge(observer_opts,
+           registration: Keyword.get(opts, :registration),
            event_types: event_types,
            event_sources: event_sources,
            migrations: migrations,
