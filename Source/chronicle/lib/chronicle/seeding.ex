@@ -53,7 +53,8 @@ defmodule Chronicle.Seeding do
           namespace: String.t(),
           client: atom() | nil,
           has_events_for: has_events_for_fun() | nil,
-          append_many: append_many_fun() | nil
+          append_many: append_many_fun() | nil,
+          seed_events: (map() -> :ok | {:error, term()}) | nil
         }
 
   defstruct entries: [],
@@ -63,7 +64,8 @@ defmodule Chronicle.Seeding do
             namespace: nil,
             client: nil,
             has_events_for: nil,
-            append_many: nil
+            append_many: nil,
+            seed_events: nil
 
   @doc """
   Discovers seeder modules and invokes them to populate the builder.
@@ -90,7 +92,12 @@ defmodule Chronicle.Seeding do
       rescue
         e ->
           require Logger
-          Logger.warning("Failed to execute seeder #{inspect(module)}: #{Exception.message(e)}")
+
+          Logger.error(
+            "Failed to execute seeder #{inspect(module)}: #{Exception.message(e)}; " <>
+              "none of its entries are seeded"
+          )
+
           acc
       end
     end)
@@ -212,7 +219,15 @@ defmodule Chronicle.Seeding do
   Registers all accumulated seed events with Chronicle.
 
   Organizes entries by global/namespaced, then by event type and event source,
-  and sends them to the Chronicle server via gRPC.
+  and hands them to the kernel's seeding service, which owns the rest: it tracks what it has
+  already applied (by event source, event type, content and tags), so a **new entry added to an
+  event source that was seeded before is applied**, an entry that was applied is not applied
+  again, and global entries reach every namespace the kernel knows - exactly as with the .NET
+  client. Re-running on every start is therefore safe.
+
+  A seeder whose `seed/1` raises is logged as an error and contributes **none** of its entries
+  (a seeder is applied whole or not at all); the other seeders still run. Tags declared on the
+  event type (`tags:`) are sent with each entry.
 
   This is typically called automatically by `Chronicle.Client` during startup.
   """
@@ -223,6 +238,18 @@ defmodule Chronicle.Seeding do
     :ok
   end
 
+  def register(%__MODULE__{has_events_for: nil, append_many: nil} = builder) do
+    require Logger
+
+    Logger.info(
+      "Registering #{length(builder.entries)} seed event(s) with the kernel's seeding service"
+    )
+
+    seed_events(builder).(build_seed_request(builder))
+  end
+
+  # Client-side seeding (append when the event source is empty). Kept for callers that inject
+  # their own `:has_events_for` / `:append_many`; the default path above uses the kernel.
   def register(%__MODULE__{} = builder) do
     require Logger
 
@@ -258,6 +285,97 @@ defmodule Chronicle.Seeding do
     end)
   end
 
+  @doc """
+  Builds the kernel's `SeedEventsRequest` from the accumulated entries: global entries grouped by
+  event type and by event source, namespaced entries grouped per namespace.
+  """
+  @spec build_seed_request(t()) :: map()
+  def build_seed_request(%__MODULE__{} = builder) do
+    {global, namespaced} = Enum.split_with(builder.entries, & &1.is_global)
+
+    {global_by_type, global_by_source} = group_for_wire(global)
+
+    namespaced_entries =
+      namespaced
+      |> Enum.group_by(&(&1.target_namespace || builder.namespace))
+      |> Enum.sort_by(&elem(&1, 0))
+      |> Enum.map(fn {namespace, entries} ->
+        {by_type, by_source} = group_for_wire(entries)
+
+        struct(Cratis.Chronicle.Contracts.Seeding.NamespacedSeedEntries,
+          Namespace: namespace,
+          ByEventType: by_type,
+          ByEventSource: by_source
+        )
+      end)
+
+    struct(Cratis.Chronicle.Contracts.Seeding.SeedEventsRequest,
+      EventStore: builder.event_store,
+      GlobalByEventType: global_by_type,
+      GlobalByEventSource: global_by_source,
+      NamespacedEntries: namespaced_entries
+    )
+  end
+
+  defp group_for_wire(entries) do
+    wire_entries = Enum.map(entries, &{&1, to_wire_entry(&1)})
+
+    by_type =
+      wire_entries
+      |> Enum.group_by(fn {entry, _} -> entry.event_type_id end, &elem(&1, 1))
+      |> Enum.sort_by(&elem(&1, 0))
+      |> Enum.map(fn {id, wire} ->
+        struct(Cratis.Chronicle.Contracts.Seeding.EventTypeSeedEntries,
+          EventTypeId: id,
+          Entries: wire
+        )
+      end)
+
+    by_source =
+      wire_entries
+      |> Enum.group_by(fn {entry, _} -> entry.event_source_id end, &elem(&1, 1))
+      |> Enum.sort_by(&elem(&1, 0))
+      |> Enum.map(fn {id, wire} ->
+        struct(Cratis.Chronicle.Contracts.Seeding.EventSourceSeedEntries,
+          EventSourceId: id,
+          Entries: wire
+        )
+      end)
+
+    {by_type, by_source}
+  end
+
+  defp to_wire_entry(entry) do
+    struct(Cratis.Chronicle.Contracts.Seeding.SeedingEntry,
+      EventSourceId: entry.event_source_id,
+      EventTypeId: entry.event_type_id,
+      Content: Chronicle.Serialization.to_json(entry.event, :camel),
+      Tags: entry.tags,
+      EventSourceType: "",
+      EventStreamType: "",
+      EventStreamId: ""
+    )
+  end
+
+  defp seed_events(%__MODULE__{seed_events: fun}) when is_function(fun, 1), do: fun
+
+  defp seed_events(%__MODULE__{client: client}) do
+    fn request -> send_seed_request(client || Chronicle.Client, request) end
+  end
+
+  defp send_seed_request(client, request) do
+    with config when is_map(config) <- Chronicle.Client.config(client),
+         {:ok, channel} <- Chronicle.Connections.Connection.channel(config.connection),
+         {:ok, envelope} <-
+           Cratis.Chronicle.Contracts.Seeding.EventSeeding.Stub.seed_events(channel, request),
+         {:ok, _} <- Chronicle.WireResult.unwrap(envelope) do
+      :ok
+    else
+      {:error, reason} -> {:error, reason}
+      _ -> {:error, :no_client}
+    end
+  end
+
   # Private helpers
 
   defp group_entries_by_target(%__MODULE__{} = builder) do
@@ -280,5 +398,5 @@ defmodule Chronicle.Seeding do
   defp append_many(%__MODULE__{append_many: fun}) when is_function(fun, 3), do: fun
   defp append_many(_builder), do: &Chronicle.append_many/3
 
-  defp extract_tags(%{__struct__: _module} = _event), do: []
+  defp extract_tags(event), do: Chronicle.Events.EventType.declared_tags(event)
 end
