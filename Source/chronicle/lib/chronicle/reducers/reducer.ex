@@ -124,6 +124,7 @@ defmodule Chronicle.Reducers.Reducer do
       @chronicle_reducer_model model
       @chronicle_reducer_id Keyword.get(opts, :id, __MODULE__ |> to_string())
       @chronicle_reducer_active Keyword.get(opts, :active, true)
+      @chronicle_reducer_middleware Keyword.get(opts, :middleware, [])
 
       @before_compile Chronicle.Reducers.Reducer
     end
@@ -136,6 +137,7 @@ defmodule Chronicle.Reducers.Reducer do
       def __chronicle_reducer__(:model), do: @chronicle_reducer_model
       def __chronicle_reducer__(:handles), do: @handles |> Enum.reverse()
       def __chronicle_reducer__(:active), do: @chronicle_reducer_active
+      def __chronicle_reducer__(:middleware), do: @chronicle_reducer_middleware
     end
   end
 end

@@ -287,18 +287,17 @@ defmodule Chronicle.Reactors.Handler do
         case decode_event(event_module, content) do
           {:ok, event} ->
             try do
-              case replay_action(state.module, event_module, ctx) do
-                :skip ->
-                  :ok
+              middleware = Chronicle.Middleware.for_module(state.module, :reactor)
 
-                :handle_replay ->
-                  event
-                  |> state.module.handle_replay(ctx)
-                  |> handle_result(state, ctx.event_source_id)
-
-                :handle ->
-                  event |> state.module.handle(ctx) |> handle_result(state, ctx.event_source_id)
-              end
+              middleware
+              |> Chronicle.Middleware.run(event, ctx, fn event, ctx ->
+                case replay_action(state.module, event_module, ctx) do
+                  :skip -> :ok
+                  :handle_replay -> state.module.handle_replay(event, ctx)
+                  :handle -> state.module.handle(event, ctx)
+                end
+              end)
+              |> handle_result(state, ctx.event_source_id)
             rescue
               e -> {:error, e}
             end

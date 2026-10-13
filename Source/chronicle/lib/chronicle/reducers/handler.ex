@@ -318,7 +318,12 @@ defmodule Chronicle.Reducers.Handler do
         case decode_event(event_module, content) do
           {:ok, event} ->
             try do
-              {:ok, state.module.reduce(event, model, ctx)}
+              middleware = Chronicle.Middleware.for_module(state.module, :reducer)
+
+              {:ok,
+               Chronicle.Middleware.run(middleware, event, ctx, fn event, ctx ->
+                 state.module.reduce(event, model, ctx)
+               end)}
             rescue
               e -> {:error, e}
             end
