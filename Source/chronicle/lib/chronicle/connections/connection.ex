@@ -178,6 +178,7 @@ defmodule Chronicle.Connections.Connection do
     connection_string = connection_string_from(options)
     client_certificate = ClientCertificate.load!(connection_string)
     grpc_options = Keyword.get(options, :grpc_options, [])
+    warn_if_insecure(connection_string)
     validate_certificate_options!(grpc_options, client_certificate)
     validate_push_options!(grpc_options)
 
@@ -479,6 +480,16 @@ defmodule Chronicle.Connections.Connection do
 
   def handle_info(_message, state) do
     {:noreply, state}
+  end
+
+  defp warn_if_insecure(connection_string) do
+    if ConnectionString.insecure_remote?(connection_string) do
+      Logger.warning(
+        "Chronicle connection to a remote host does not validate the server certificate " <>
+          "(skipTlsValidation defaults to true). Add skipTlsValidation=false to the connection " <>
+          "string for production."
+      )
+    end
   end
 
   defp spawn_connect_attempt(state) do
