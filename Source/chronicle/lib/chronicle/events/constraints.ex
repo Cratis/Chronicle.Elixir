@@ -35,6 +35,7 @@ defmodule Chronicle.Events.Constraints do
     RegisterConstraintsRequest,
     Constraint,
     ConstraintScope,
+    ClosesStreamConstraintDefinition,
     UniqueConstraintDefinition,
     UniqueConstraintEventDefinition,
     UniqueEventTypeConstraintDefinition,
@@ -120,6 +121,7 @@ defmodule Chronicle.Events.Constraints do
               %{event_type: definition.event_type, on: definition.on}
             end)
         }
+        |> maybe_put_mode(unique_mode(name, definitions))
         |> maybe_put_message(Enum.find_value(definitions, "", &Map.get(&1, :message)))
         |> maybe_put_scope(definitions |> Enum.flat_map(&Map.get(&1, :scope, [])) |> Enum.uniq())
         |> with_removed_with_event_type(Map.get(removal_event_types, name))
@@ -139,7 +141,7 @@ defmodule Chronicle.Events.Constraints do
         |> with_removed_with_event_type(Map.get(removal_event_types, constraint.name))
       end)
 
-    (unique_constraints ++ unique_event_type_constraints)
+    (unique_constraints ++ unique_event_type_constraints ++ closes_stream_constraints(event_types))
     |> Enum.sort_by(& &1.name)
   end
 
@@ -181,7 +183,8 @@ defmodule Chronicle.Events.Constraints do
         Value0:
           struct(UniqueConstraintDefinition,
             EventDefinitions: Enum.map(event_definitions, &build_unique_event_definition/1),
-            IgnoreCasing: Map.get(constraint, :ignore_casing, false)
+            IgnoreCasing: Map.get(constraint, :ignore_casing, false),
+            Mode: wire_unique_mode(Map.get(constraint, :mode, :per_event_source))
           )
       )
 
@@ -233,6 +236,149 @@ defmodule Chronicle.Events.Constraints do
         message: Map.get(constraint, :message, "")
       })
     )
+  end
+
+  # A closing event declaration compiles to a ClosesStream constraint: appending one of the
+  # event types closes the scope described by the dimensions, the named reopening events lift it.
+  def build_constraint(
+        %{type: :closes_stream, name: name, event_type_ids: event_type_ids} = constraint
+      ) do
+    wire_constraint =
+      struct(Constraint,
+        Name: name,
+        Type: :ClosesStream,
+        EventSequences: Map.get(constraint, :event_sequences, []),
+        ClosesStream:
+          struct(ClosesStreamConstraintDefinition,
+            EventTypeIds: event_type_ids,
+            Dimensions: closes_stream_dimension_flags(constraint.dimensions),
+            ReopenedBy: Map.get(constraint, :reopened_by, []),
+            EventStreamIdFrom: Map.get(constraint, :event_stream_id_from) || ""
+          )
+      )
+
+    {wire_constraint, Map.get(constraint, :message, "")}
+  end
+
+  defp unique_mode(name, definitions) do
+    case definitions |> Enum.map(&Map.get(&1, :mode, :per_event_source)) |> Enum.uniq() do
+      [mode] ->
+        mode
+
+      modes ->
+        raise ArgumentError,
+              "unique constraint #{inspect(name)} is declared with conflicting modes #{inspect(modes)}; " <>
+                "every declaration sharing a name must use the same :mode"
+    end
+  end
+
+  # The default mode stays implicit so existing definitions keep their shape.
+  defp maybe_put_mode(map, :per_value), do: Map.put(map, :mode, :per_value)
+  defp maybe_put_mode(map, _mode), do: map
+
+  defp wire_unique_mode(:per_value), do: :PerValue
+  defp wire_unique_mode(_), do: :PerEventSource
+
+  @closes_stream_dimensions [
+    event_source_id: 1,
+    event_source_type: 2,
+    event_stream_type: 4,
+    event_stream_id: 8
+  ]
+  @default_closes_stream_dimensions [:event_source_id, :event_stream_type, :event_stream_id]
+
+  defp closes_stream_dimension_flags(dimensions) do
+    Enum.reduce(dimensions, 0, fn dimension, flags ->
+      Bitwise.bor(flags, Keyword.fetch!(@closes_stream_dimensions, dimension))
+    end)
+  end
+
+  # Collects `closes_stream` declarations. Declarations sharing a name merge into one constraint
+  # (closing and reopening event types are combined); they must agree on dimensions and on the
+  # stream id property, mirroring .NET's ConflictingClosesStreamDeclarations.
+  defp closes_stream_constraints(event_types) do
+    event_types
+    |> Enum.flat_map(fn event_type ->
+      event_type
+      |> event_type_constraints()
+      |> Map.get(:closes_stream, [])
+      |> Enum.map(&normalize_closes_stream_declaration(&1, event_type))
+    end)
+    |> Enum.group_by(& &1.name)
+    |> Enum.map(fn {name, declarations} -> merge_closes_stream(name, declarations) end)
+  end
+
+  defp normalize_closes_stream_declaration(opts, event_type) do
+    opts = if is_list(opts), do: opts, else: []
+    stream_id_from = Keyword.get(opts, :event_stream_id_from)
+
+    dimensions =
+      opts
+      |> Keyword.get(:dimensions, @default_closes_stream_dimensions)
+      |> List.wrap()
+      |> then(&if stream_id_from, do: Enum.uniq([:event_stream_id | &1]), else: &1)
+
+    Enum.each(dimensions, fn dimension ->
+      unless Keyword.has_key?(@closes_stream_dimensions, dimension) do
+        raise ArgumentError,
+              "closes_stream on #{inspect(event_type)} has an unknown dimension #{inspect(dimension)}; " <>
+                "expected one of #{inspect(Keyword.keys(@closes_stream_dimensions))}"
+      end
+    end)
+
+    validate_stream_id_property!(event_type, stream_id_from)
+
+    %{
+      name:
+        normalize_constraint_name(
+          Keyword.get(opts, :name, event_type.__chronicle_event_type__(:id))
+        ),
+      event_type: event_type,
+      dimensions: Enum.sort_by(dimensions, &Keyword.fetch!(@closes_stream_dimensions, &1)),
+      event_stream_id_from: stream_id_from && Coordinator.camelize(to_string(stream_id_from)),
+      stream_id_property: stream_id_from,
+      reopened_by: opts |> Keyword.get(:reopened_by, []) |> List.wrap(),
+      event_sequences:
+        opts |> Keyword.get(:event_sequences, []) |> List.wrap() |> Enum.map(&to_string/1)
+    }
+  end
+
+  defp merge_closes_stream(name, [first | _] = declarations) do
+    if declarations
+       |> Enum.map(&{&1.dimensions, &1.event_stream_id_from})
+       |> Enum.uniq()
+       |> length() > 1 do
+      raise ArgumentError,
+            "conflicting closes_stream declarations for constraint #{inspect(name)}: declarations " <>
+              "that share a name must use the same dimensions and event_stream_id_from"
+    end
+
+    reopened_by = declarations |> Enum.flat_map(& &1.reopened_by) |> Enum.uniq()
+
+    Enum.each(reopened_by, &validate_stream_id_property!(&1, first.stream_id_property))
+
+    %{
+      type: :closes_stream,
+      name: name,
+      event_type_ids:
+        declarations |> Enum.map(& &1.event_type.__chronicle_event_type__(:id)) |> Enum.uniq(),
+      dimensions: first.dimensions,
+      event_stream_id_from: first.event_stream_id_from,
+      reopened_by: Enum.map(reopened_by, & &1.__chronicle_event_type__(:id)),
+      event_sequences: declarations |> Enum.flat_map(& &1.event_sequences) |> Enum.uniq()
+    }
+  end
+
+  defp validate_stream_id_property!(_event_type, nil), do: :ok
+
+  defp validate_stream_id_property!(event_type, property) do
+    if Code.ensure_loaded?(event_type) and function_exported?(event_type, :__struct__, 0) and
+         not Map.has_key?(event_type.__struct__(), property) do
+      raise ArgumentError,
+            "event_stream_id_from #{inspect(property)} does not exist on #{inspect(event_type)}"
+    end
+
+    :ok
   end
 
   defp build_unique_event_definition(%{event_type_id: event_type_id, on: properties}) do
@@ -297,7 +443,8 @@ defmodule Chronicle.Events.Constraints do
       normalized_fields,
       Keyword.get(opts, :ignore_casing, false),
       Keyword.get(opts, :message, ""),
-      normalize_scope(Keyword.get(opts, :scope))
+      normalize_scope(Keyword.get(opts, :scope)),
+      Keyword.get(opts, :mode, :per_event_source)
     )
   end
 
@@ -314,7 +461,8 @@ defmodule Chronicle.Events.Constraints do
       normalized_fields,
       Keyword.get(opts, :ignore_casing, false),
       Keyword.get(opts, :message, ""),
-      normalize_scope(Keyword.get(opts, :scope))
+      normalize_scope(Keyword.get(opts, :scope)),
+      Keyword.get(opts, :mode, :per_event_source)
     )
   end
 
@@ -327,7 +475,8 @@ defmodule Chronicle.Events.Constraints do
       normalized_fields,
       false,
       "",
-      []
+      [],
+      :per_event_source
     )
   end
 
@@ -370,15 +519,35 @@ defmodule Chronicle.Events.Constraints do
     end
   end
 
-  defp build_normalized_unique(name, event_type, normalized_fields, ignore_casing, message, scope) do
+  defp build_normalized_unique(
+         name,
+         event_type,
+         normalized_fields,
+         ignore_casing,
+         message,
+         scope,
+         mode
+       ) do
+    validate_unique_mode!(mode, name)
+
     %{
       name: normalize_constraint_name(name),
       event_type: event_type,
       on: normalized_fields,
       ignore_casing: ignore_casing
     }
+    |> maybe_put_mode(mode)
     |> maybe_put_message(message)
     |> maybe_put_scope(scope)
+  end
+
+  defp validate_unique_mode!(mode, _name) when mode in [:per_event_source, :per_value], do: :ok
+
+  defp validate_unique_mode!(mode, name) do
+    raise ArgumentError,
+          "unique constraint #{inspect(name)} has an unknown :mode #{inspect(mode)}; " <>
+            "expected :per_event_source (keep one value per event source) or :per_value " <>
+            "(keep every value until a removal event releases it)"
   end
 
   # Only sets `:message` when a non-empty message was actually declared, so

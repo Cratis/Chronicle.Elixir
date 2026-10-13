@@ -74,4 +74,68 @@ defmodule Chronicle.Registration.CoordinatorTest do
     assert_receive :registered_called, 1_000
     assert_receive {:chronicle_lifecycle, :registered, "conn-2"}, 1_000
   end
+
+  describe "status and awaiting" do
+    test "reports registered and releases waiters", %{lifecycle: lifecycle} do
+      pid = start_coordinator(lifecycle, fn _ -> :ok end)
+      task = Task.async(fn -> Coordinator.await(pid, 2_000) end)
+
+      Lifecycle.connected(lifecycle, "conn-1")
+
+      assert Task.await(task) == :ok
+      assert %{state: :registered, attempts: 0, error: nil} = Coordinator.status(pid)
+      assert Coordinator.await(pid, 100) == :ok
+    end
+
+    test "a rejection that cannot succeed fails for good without retrying", %{
+      lifecycle: lifecycle
+    } do
+      test = self()
+
+      pid =
+        start_coordinator(lifecycle, fn _ ->
+          send(test, :attempt)
+          {:error, {:validation_results, [:bad]}}
+        end)
+
+      Lifecycle.connected(lifecycle, "conn-1")
+
+      assert_receive :attempt, 1_000
+      refute_receive :attempt, 200
+
+      assert {:error,
+              {:failed, %{state: :failed, attempts: 1, error: {:validation_results, [:bad]}}}} =
+               Coordinator.await(pid, 1_000)
+    end
+
+    test "gives up after max_attempts with the configured backoff", %{lifecycle: lifecycle} do
+      test = self()
+
+      {:ok, pid} =
+        Coordinator.start_link(
+          connection: :unused,
+          event_store: "test",
+          lifecycle: lifecycle,
+          registration: [initial_delay: 10, max_delay: 20, max_attempts: 3],
+          register_fun: fn _ ->
+            send(test, :attempt)
+            {:error, :down}
+          end
+        )
+
+      Lifecycle.connected(lifecycle, "conn-1")
+
+      assert {:error, {:failed, %{attempts: 3, error: :down}}} = Coordinator.await(pid, 2_000)
+      assert_received :attempt
+      assert Coordinator.status(pid).state == :failed
+    end
+
+    test "awaiting times out while registration is still being retried", %{lifecycle: lifecycle} do
+      pid = start_coordinator(lifecycle, fn _ -> {:error, :down} end)
+      Lifecycle.connected(lifecycle, "conn-1")
+
+      assert Coordinator.await(pid, 100) == {:error, :timeout}
+      assert %{state: :registering, error: :down, next_retry_in: 5_000} = Coordinator.status(pid)
+    end
+  end
 end

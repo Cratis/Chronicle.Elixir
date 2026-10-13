@@ -79,7 +79,8 @@ defmodule Chronicle.Events.EventTypes do
     end
   end
 
-  defp build_registration(modules, event_store, migrators) do
+  @doc false
+  def build_registration(modules, event_store, migrators) do
     sorted_modules = Enum.sort_by(modules, & &1.__chronicle_event_type__(:generation))
     latest_module = List.last(sorted_modules)
     event_type_id = latest_module.__chronicle_event_type__(:id)
@@ -113,8 +114,10 @@ defmodule Chronicle.Events.EventTypes do
       Type:
         struct(EventType,
           Id: event_type_id,
-          Generation: latest_generation
+          Generation: latest_generation,
+          Tombstone: latest_module.__chronicle_event_type__(:tombstone)
         ),
+      Visibility: visibility(modules),
       Schema: generate_schema(latest_module),
       Generations: generation_definitions,
       Migrations: migration_definitions,
@@ -150,6 +153,24 @@ defmodule Chronicle.Events.EventTypes do
   # Event content is serialized as camelCase, so the schema uses camelCase keys.
   # PII-adorned fields carry compliance metadata into the schema.
   defp generate_schema(module) do
-    JsonSchemaGenerator.generate(module, key_transform: :camel)
+    schema = JsonSchemaGenerator.generate(module, key_transform: :camel)
+
+    case module.__chronicle_event_type__(:compensation_for) do
+      nil ->
+        schema
+
+      compensated ->
+        # Compensation metadata is a schema extension (`compensationFor`: the compensated
+        # event type id), the same key the .NET client's [CompensationFor<T>] writes.
+        schema
+        |> Jason.decode!()
+        |> Map.put("compensationFor", compensated.__chronicle_event_type__(:id))
+        |> Jason.encode!()
+    end
+  end
+
+  # The registration-level metadata of an event type: tombstone and visibility.
+  defp visibility(modules) do
+    if Enum.any?(modules, & &1.__chronicle_event_type__(:public)), do: :Public, else: :Unspecified
   end
 end

@@ -190,7 +190,8 @@ defmodule Chronicle.Reactors.Handler do
     end
   end
 
-  defp build_registration(state, conn_id) do
+  @doc false
+  def build_registration(state, conn_id) do
     event_types =
       Enum.map(state.event_type_map, fn {id, module} ->
         struct(EventTypeWithKeyExpression,
@@ -218,7 +219,8 @@ defmodule Chronicle.Reactors.Handler do
                   ReactorId: reactor_id,
                   EventSequenceId: "event-log",
                   EventTypes: event_types,
-                  IsReplayable: true,
+                  IsReplayable: not once_only_class?(state.module),
+                  IsNotReplayable: once_only_class?(state.module),
                   Tags: [],
                   Filters: struct(ObserverFilters)
                 )
@@ -274,14 +276,27 @@ defmodule Chronicle.Reactors.Handler do
         :ok
 
       event_module ->
-        ctx = build_context(context)
+        ctx =
+          build_context(context,
+            event_sequence_id: "event-log",
+            reactor_id: state.module.__chronicle_reactor__(:id)
+          )
+
         content = Map.get(appended_event, :Content, "")
 
         case decode_event(event_module, content) do
           {:ok, event} ->
             try do
-              event
-              |> state.module.handle(ctx)
+              middleware = Chronicle.Middleware.for_module(state.module, :reactor)
+
+              middleware
+              |> Chronicle.Middleware.run(event, ctx, fn event, ctx ->
+                case replay_action(state.module, event_module, ctx) do
+                  :skip -> :ok
+                  :handle_replay -> state.module.handle_replay(event, ctx)
+                  :handle -> state.module.handle(event, ctx)
+                end
+              end)
               |> handle_result(state, ctx.event_source_id)
             rescue
               e -> {:error, e}
@@ -378,55 +393,46 @@ defmodule Chronicle.Reactors.Handler do
 
   defp decode_event(event_module, json_content) do
     case Jason.decode(json_content) do
-      {:ok, attrs} ->
-        fields =
-          attrs
-          |> Enum.flat_map(fn {key, val} ->
-            snake_key = pascal_to_snake(key)
+      {:ok, attrs} when is_map(attrs) ->
+        {:ok, Chronicle.Serialization.decode(event_module, attrs, :camel)}
 
-            try do
-              [{String.to_existing_atom(snake_key), val}]
-            rescue
-              ArgumentError -> []
-            end
-          end)
-          |> Enum.filter(fn {key, _} -> Map.has_key?(event_module.__struct__(), key) end)
-
-        {:ok, struct(event_module, fields)}
+      {:ok, other} ->
+        {:error, {:unexpected_content, other}}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp pascal_to_snake(str) do
-    str
-    |> String.replace(~r/(?<=[a-z0-9])([A-Z])/, "_\\1")
-    |> String.downcase()
-  end
-
   # An unset or empty wire value means the event was not appended through a
   # registered event source; no name is invented for it.
-  defp event_source(ctx) do
-    case Map.get(ctx, :EventSource) do
-      name when is_binary(name) and name != "" -> name
-      _ -> nil
+  @doc false
+  def once_only_class?(module), do: module.__chronicle_reactor__(:once_only) == true
+
+  # What to do with an event delivered while the reactor may be replaying (see
+  # Chronicle.Reactors.Reactor): skip handlers marked once-only, prefer handle_replay/2 when the
+  # reactor defines it, otherwise handle normally.
+  @doc false
+  def replay_action(module, event_module, %{replaying?: true}) do
+    cond do
+      once_only_class?(module) -> :skip
+      event_module in once_only_events(module) -> :skip
+      function_exported?(module, :handle_replay, 2) -> :handle_replay
+      true -> :handle
+    end
+  end
+
+  def replay_action(_module, _event_module, _context), do: :handle
+
+  defp once_only_events(module) do
+    case module.__chronicle_reactor__(:once_only) do
+      events when is_list(events) -> events
+      _ -> []
     end
   end
 
   @doc false
-  def build_context(ctx) do
-    occurred = Map.get(ctx, :Occurred)
-
-    %{
-      event_source_id: Map.get(ctx, :EventSourceId, ""),
-      sequence_number: Map.get(ctx, :SequenceNumber, 0),
-      occurred: occurred && Map.get(occurred, :Value),
-      event_source: event_source(ctx),
-      event_store: Map.get(ctx, :EventStore, ""),
-      namespace: Map.get(ctx, :Namespace, "")
-    }
-  end
+  def build_context(ctx, opts \\ []), do: Chronicle.Events.EventContext.from_wire(ctx, opts)
 
   defp schedule_stream_reconnect(%{reconnect_timer: timer} = state) when not is_nil(timer),
     do: state

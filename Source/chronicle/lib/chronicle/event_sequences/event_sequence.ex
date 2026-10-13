@@ -47,6 +47,32 @@ defmodule Chronicle.EventSequences.EventSequence do
   end
 
   @doc """
+  Appends a single event and returns the detailed `Chronicle.EventSequences.AppendResult`.
+  """
+  @spec append_with_result(t(), String.t(), struct(), keyword()) ::
+          {:ok, Chronicle.EventSequences.AppendResult.t()} | {:error, term()}
+  def append_with_result(%__MODULE__{} = event_sequence, event_source_id, event, opts \\ []) do
+    Chronicle.EventSequences.EventLog.append_with_result(
+      event_source_id,
+      event,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Appends events atomically and returns the detailed `Chronicle.EventSequences.AppendResult`.
+  """
+  @spec append_many_with_result(t(), String.t(), [struct()], keyword()) ::
+          {:ok, Chronicle.EventSequences.AppendResult.t()} | {:error, term()}
+  def append_many_with_result(%__MODULE__{} = event_sequence, event_source_id, events, opts \\ []) do
+    Chronicle.EventSequences.EventLog.append_many_with_result(
+      event_source_id,
+      events,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
   Gets events for the given event source from the event sequence.
   """
   @spec get_for_event_source(t(), String.t(), keyword()) :: {:ok, list()} | {:error, term()}

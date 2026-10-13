@@ -29,7 +29,7 @@ defmodule Chronicle.ObserversTest do
 
     test "decodes a replaying observer" do
       assert %FastForwardResult{outcome: :replaying} =
-               Observers.decode_fast_forward_result(%{Outcome: :Replaying})
+               Observers.decode_fast_forward_result(%{Outcome: :ObserverReplaying})
     end
 
     test "decodes an unrecognized outcome as not available" do

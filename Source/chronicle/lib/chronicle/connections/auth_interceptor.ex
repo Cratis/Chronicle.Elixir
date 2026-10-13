@@ -14,12 +14,30 @@ defmodule Chronicle.Connections.AuthInterceptor do
 
   alias Chronicle.Connections.TokenProvider
 
+  @unauthenticated 16
+
   @impl GRPC.Client.Interceptor
   def init(opts), do: opts
 
   @impl GRPC.Client.Interceptor
   def call(stream, request, next, opts) do
-    headers = TokenProvider.authorization_headers(Keyword.fetch!(opts, :provider))
+    provider = Keyword.fetch!(opts, :provider)
+
+    case send_with_token(stream, request, next, provider) do
+      {:error, %GRPC.RPCError{status: @unauthenticated}} ->
+        # The kernel refused the token (it may have restarted with new signing keys). Drop the
+        # cached token and retry exactly once with a fresh one; a second refusal is a real
+        # authentication failure and is returned as it is.
+        TokenProvider.invalidate(provider)
+        send_with_token(stream, request, next, provider)
+
+      result ->
+        result
+    end
+  end
+
+  defp send_with_token(stream, request, next, provider) do
+    headers = TokenProvider.authorization_headers(provider)
     next.(GRPC.Client.Stream.put_headers(stream, headers), request)
   end
 end

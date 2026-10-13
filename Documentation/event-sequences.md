@@ -170,3 +170,110 @@ stored:
   [concurrency scope](/chronicle/events/concurrency/) so a retry can't store the event twice.
 
 There is no append-many variant: waiting after `append_many/3` isn't supported.
+
+## Append results
+
+`append/3` and `append_many/3` return `:ok` or `{:error, reason}`. When you need the sequence
+number that was assigned, or the *structured* reason an append was refused, use the `_with_result`
+variants. They return a `Chronicle.EventSequences.AppendResult`; mirrors the .NET `AppendResult`
+and `AppendManyResult`.
+
+```elixir
+case Chronicle.append_with_result("user-1", %MyApp.Events.UserRegistered{email: "a@b.c"}) do
+  {:ok, %{sequence_number: sequence_number}} ->
+    {:registered, sequence_number}
+
+  {:error, %{constraint_violations: [violation | _]}} ->
+    {:rejected, violation.constraint_name, violation.message}
+
+  {:error, %{concurrency_violations: [violation | _]}} ->
+    {:conflict, violation.expected_sequence_number, violation.actual_sequence_number}
+
+  {:error, other} ->
+    {:error, other}
+end
+```
+
+`append_many_with_result/3` returns every assigned sequence number in order. A rejection is
+`{:error, %AppendResult{}}` carrying `:constraint_violations` (each with `:constraint_name`,
+`:message`, `:event_type_id`, `:sequence_number` and `:details`), `:concurrency_violations` (each
+with `:event_source_id`, `:expected_sequence_number` and `:actual_sequence_number`) and `:errors`.
+Transport failures stay plain `{:error, reason}` terms.
+
+To wait until the observers have processed what you appended, call
+`Chronicle.EventSequences.AppendResult.wait_for_completion/2` on a successful result.
+
+## Reading typed events
+
+`get_for_event_source/3` and `get_from_sequence_number/2` return the raw wire events. Pass
+`decode: true` to get `Chronicle.Events.AppendedEvent` structs instead, whose `:event` is the event
+struct you appended:
+
+```elixir
+{:ok, events} =
+  Chronicle.EventSequences.EventLog.get_for_event_source("acc-1", decode: true)
+
+for %{event: %MyApp.Events.FundsDeposited{amount: amount}, context: context} <- events do
+  IO.puts("#{amount} deposited by #{context.caused_by.name} at sequence #{context.sequence_number}")
+end
+```
+
+An event of a type this client does not know has `event: nil` and the decoded payload in `:raw`;
+a redacted event has `redacted?: true` and a `:redaction` with the reason. Nested structs,
+lists of structs and maps decode as described in `Chronicle.Serialization`.
+
+## Event context
+
+Reactors, reducers and `decode: true` reads all give you a `Chronicle.Events.EventContext`:
+the event type and source, sequence number, `occurred`, event store and namespace,
+`correlation_id`, the identity that caused the event (`caused_by`, with `on_behalf_of`), the
+`causation` chain, `tags`, `hash` and `subject`. See [Context management](context.md) for how to
+set the correlation id, identity and causation on the way in.
+
+## Creation-only guards
+
+`Chronicle.Events.ConcurrencyScope.expecting_no_matching_event/1` refuses an append when a
+matching event already exists - the guard for "this can only happen once":
+
+```elixir
+scope =
+  Chronicle.Events.ConcurrencyScope.expecting_no_matching_event(
+    event_source_id: true,
+    event_types: [MyApp.Events.UserRegistered]
+  )
+
+Chronicle.append("user-1", %MyApp.Events.UserRegistered{}, concurrency_scope: scope)
+```
+
+It sends the kernel's explicit no-matching-event condition. Leaving the expected sequence number
+unset is not a substitute: that turns the check off.
+
+## Streams, metadata and verification
+
+`Chronicle.EventSequences.Streams` closes, reopens and inspects stream scopes, reads event
+metadata and verifies stored content:
+
+```elixir
+alias Chronicle.EventSequences.Streams
+
+{:ok, sequence_number} = Streams.complete_scope(event_source_id: "acc-1", event_stream_type: "Period", event_stream_id: "2024")
+{:ok, true} = Streams.scope_completed?(event_source_id: "acc-1", event_stream_type: "Period", event_stream_id: "2024")
+{:ok, closed} = Streams.closed(event_source_id: "acc-1")
+:ok = Streams.reopen_scope("Late invoice arrived", event_source_id: "acc-1", event_stream_type: "Period", event_stream_id: "2024")
+
+{:ok, [metadata]} = Streams.get_metadata([sequence_number])
+{:ok, :equal} = Streams.verify_content(sequence_number, %MyApp.Events.PeriodClosed{period: "2024"})
+```
+
+Events that close a scope as part of their own append are declared with
+`closes_stream`; see [Constraints](constraints.md#closing-events).
+
+## Payload size
+
+The kernel refuses a message larger than 4 MiB. Sending one used to break the connection every
+observer shares, so the client now checks first and returns
+`{:error, {:payload_too_large, size, limit}}`. A reducer whose read model outgrows the limit
+reports the reduction as failed instead. Raise or disable the guard with
+`config :cratis_chronicle, max_payload_bytes: 8 * 1024 * 1024` (or `:infinity`) if your kernel is
+configured for larger messages.
+

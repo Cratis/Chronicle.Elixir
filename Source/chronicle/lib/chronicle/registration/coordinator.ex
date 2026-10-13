@@ -55,11 +55,40 @@ defmodule Chronicle.Registration.Coordinator do
 
   alias Bcl.Guid, as: BclGuid
 
-  @retry_delay 5_000
+  alias Chronicle.Registration.RetryPolicy
 
   def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts)
+    case Keyword.get(opts, :client) do
+      nil -> GenServer.start_link(__MODULE__, opts)
+      client -> GenServer.start_link(__MODULE__, opts, name: name_for(client))
+    end
   end
+
+  @doc """
+  The registered name of a client's coordinator.
+  """
+  def name_for(client), do: :"#{client}.Registration"
+
+  @doc """
+  The registration status of a client.
+
+  Returns a map with `:state` (`:pending`, `:registering`, `:registered` or `:failed`), `:attempts`
+  (failed attempts since the last connect), `:error` (the last failure, or `nil`) and
+  `:next_retry_in` (milliseconds, or `nil`).
+  """
+  def status(server), do: GenServer.call(server, :status)
+
+  @doc """
+  Waits until registration succeeds (`:ok`) or fails for good (`{:error, {:failed, status}}`).
+  """
+  def await(server, timeout) do
+    GenServer.call(server, :await, call_timeout(timeout))
+  catch
+    :exit, {:timeout, _} -> {:error, :timeout}
+  end
+
+  defp call_timeout(:infinity), do: :infinity
+  defp call_timeout(timeout), do: timeout
 
   @impl true
   def init(opts) do
@@ -77,8 +106,15 @@ defmodule Chronicle.Registration.Coordinator do
       global_handlers: Keyword.get(opts, :global_handlers, []),
       default_sink_type_id: Keyword.get(opts, :default_sink_type_id, "MongoDB"),
       register_fun: Keyword.get(opts, :register_fun, &default_register/1),
+      policy: RetryPolicy.new(Keyword.get(opts, :registration)),
+      random: Keyword.get(opts, :random, &:rand.uniform/0),
       retry_timer: nil,
-      registered_done?: false
+      registered_done?: false,
+      status: :pending,
+      attempts: 0,
+      error: nil,
+      next_retry_in: nil,
+      waiters: []
     }
 
     if state.lifecycle do
@@ -92,15 +128,37 @@ defmodule Chronicle.Registration.Coordinator do
   end
 
   @impl true
+  def handle_call(:status, _from, state), do: {:reply, status_of(state), state}
+
+  def handle_call(:await, from, state) do
+    case state.status do
+      :registered -> {:reply, :ok, state}
+      :failed -> {:reply, {:error, {:failed, status_of(state)}}, state}
+      _ -> {:noreply, %{state | waiters: [from | state.waiters]}}
+    end
+  end
+
+  @impl true
   def handle_info({:chronicle_lifecycle, :connected, _connection_id}, state) do
     cancel_timer(state.retry_timer)
     send(self(), :register)
-    {:noreply, %{state | retry_timer: nil, registered_done?: false}}
+
+    {:noreply,
+     %{
+       state
+       | retry_timer: nil,
+         registered_done?: false,
+         attempts: 0,
+         error: nil,
+         status: :pending
+     }}
   end
 
   def handle_info({:chronicle_lifecycle, :disconnected, _connection_id}, state) do
     cancel_timer(state.retry_timer)
-    {:noreply, %{state | retry_timer: nil, registered_done?: false}}
+
+    {:noreply,
+     %{state | retry_timer: nil, registered_done?: false, status: :pending, next_retry_in: nil}}
   end
 
   def handle_info({:chronicle_lifecycle, :registered, _connection_id}, state) do
@@ -109,22 +167,61 @@ defmodule Chronicle.Registration.Coordinator do
   end
 
   def handle_info(:register, state) do
+    state = %{state | status: :registering, next_retry_in: nil}
+
     case state.register_fun.(state) do
       :ok ->
         if state.lifecycle, do: Lifecycle.registered(state.lifecycle)
-        {:noreply, %{state | registered_done?: true, retry_timer: nil}}
+
+        state =
+          reply_waiters(
+            %{state | registered_done?: true, retry_timer: nil, status: :registered, error: nil},
+            :ok
+          )
+
+        {:noreply, state}
 
       {:error, reason} ->
-        Logger.warning(
-          "Chronicle registration failed: #{inspect(reason)}, retrying in #{@retry_delay}ms"
-        )
+        failed = state.attempts + 1
 
-        timer = Process.send_after(self(), :register, @retry_delay)
-        {:noreply, %{state | retry_timer: timer}}
+        if RetryPolicy.retry?(state.policy, failed, reason) do
+          delay = RetryPolicy.delay(state.policy, failed, state.random)
+
+          Logger.warning(
+            "Chronicle registration failed (attempt #{failed}): #{inspect(reason)}, " <>
+              "retrying in #{delay}ms"
+          )
+
+          timer = Process.send_after(self(), :register, delay)
+
+          {:noreply,
+           %{state | retry_timer: timer, attempts: failed, error: reason, next_retry_in: delay}}
+        else
+          Logger.error(
+            "Chronicle registration failed for good after #{failed} attempt(s): #{inspect(reason)}"
+          )
+
+          state = %{state | attempts: failed, error: reason, status: :failed, retry_timer: nil}
+          {:noreply, reply_waiters(state, {:error, {:failed, status_of(state)}})}
+        end
     end
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
+
+  defp status_of(state) do
+    %{
+      state: state.status,
+      attempts: state.attempts,
+      error: state.error,
+      next_retry_in: state.next_retry_in
+    }
+  end
+
+  defp reply_waiters(state, reply) do
+    Enum.each(state.waiters, &GenServer.reply(&1, reply))
+    %{state | waiters: []}
+  end
 
   defp default_register(state) do
     case Connection.channel(state.connection) do
@@ -493,6 +590,11 @@ defmodule Chronicle.Registration.Coordinator do
       From: from_entries,
       Join: join_entries,
       RemovedWith: removed_with_entries,
+      Children:
+        Chronicle.Projections.Children.build_map(
+          read_model_module.__chronicle_read_model__(:children),
+          read_model_module
+        ),
       All: from_every,
       AutoMap: auto_map_value(auto_map),
       NoAutoMapProperties: Enum.map(no_auto_map_properties, &to_string/1),
@@ -599,6 +701,11 @@ defmodule Chronicle.Registration.Coordinator do
       From: from_entries,
       Join: join_entries,
       RemovedWith: removed_with_entries,
+      Children:
+        Chronicle.Projections.Children.build_map(
+          projection_module.__chronicle_projection__(:children),
+          model_module
+        ),
       All: from_every,
       AutoMap: auto_map_value(auto_map),
       NoAutoMapProperties: Enum.map(no_auto_map_properties, &to_string/1),
@@ -724,7 +831,14 @@ defmodule Chronicle.Registration.Coordinator do
           {to_string(field), "$decrement"}
       end)
 
+    clear_fields =
+      opts
+      |> Keyword.get(:clear, [])
+      |> List.wrap()
+      |> Enum.map(fn field -> {to_string(field), "$null"} end)
+
     (set_props ++
+       clear_fields ++
        add_props ++
        subtract_props ++
        count_fields ++
@@ -738,7 +852,10 @@ defmodule Chronicle.Registration.Coordinator do
   # sent as "ownerName" for the kernel to find it. Booleans are atoms too, but they are
   # constants, not field names. Strings are explicit Chronicle expressions and pass through.
   defp resolve_expression(:event_source_id), do: "$eventSourceId"
-  defp resolve_expression(:occurred), do: "$occurred"
+  # The kernel has no `$occurred` expression (it rejects the definition, so registration never
+  # completes); the occurred time is an event context property.
+  defp resolve_expression(:occurred), do: "$eventContext(Occurred)"
+  defp resolve_expression("$occurred"), do: "$eventContext(Occurred)"
   defp resolve_expression(bool) when is_boolean(bool), do: "$value(#{bool})"
   defp resolve_expression(atom) when is_atom(atom), do: atom |> Atom.to_string() |> camelize()
   defp resolve_expression(int) when is_integer(int), do: "$value(#{int})"

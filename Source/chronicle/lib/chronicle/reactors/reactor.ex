@@ -39,6 +39,22 @@ defmodule Chronicle.Reactors.Reactor do
     * `:id` — a stable string identifier for this reactor. Defaults to the
       module's full name. Changing this value causes Chronicle to treat this as
       a different reactor and will reset its observation position.
+    * `:middleware` — modules implementing `Chronicle.Middleware` that wrap every `handle/2`
+      call of this reactor (in addition to application-wide `config :cratis_chronicle, middleware:`)
+    * `:once_only` — controls replay (mirrors .NET's `[OnceOnly]`). Reactors are replayable by
+      default. `once_only: true` registers the reactor as not replayable
+      (`IsNotReplayable: true`), so the kernel never replays it - use it for side effects such as
+      sending an email. `once_only: [MyApp.Events.OrderShipped]` keeps the reactor replayable but
+      skips the handlers of the listed events while replaying.
+
+  ## Replay
+
+  While the kernel replays a reactor, `context.replaying?` is `true`. Define the optional
+  `handle_replay/2` callback to react differently during a replay (mirrors .NET's `[Replay]`):
+  when it is defined it is called **instead of** `handle/2` for replayed events.
+
+  > Replay exclusion is not exactly-once delivery. Recovering a failed partition can deliver an
+  > event again as an ordinary observation; guard side effects with `context.delivery_id`.
 
   ## Registering with Chronicle.Client
 
@@ -48,16 +64,12 @@ defmodule Chronicle.Reactors.Reactor do
 
   ## Event context
 
-  The second argument to `handle/2` is a map with the following keys:
-
-    * `:event_source_id` — the event source (e.g. aggregate ID)
-    * `:sequence_number` — the event's position in the event log
-    * `:occurred` — when the event was appended (ISO 8601 string)
-    * `:event_store` — the event store name
-    * `:namespace` — the namespace
-    * `:correlation_id` — the correlation ID for the append operation
-    * `:event_source` — the name of the registered event source the event was
-      appended through, or `nil` when it was not appended through one
+  The second argument to `handle/2` is a `Chronicle.Events.EventContext` struct (a map, so
+  existing pattern matches on keys such as `:event_source_id` keep working). It carries the
+  event type, event source and stream, sequence number, occurred time, event store, namespace,
+  correlation id, `:caused_by` identity, causation chain, tags, hash and subject, plus a
+  stable `:delivery_id` for building idempotency keys (the same value on every redelivery of
+  the same event to this reactor).
 
   ## Return values
 
@@ -121,7 +133,16 @@ defmodule Chronicle.Reactors.Reactor do
   @doc "Called when replay of a single partition (event source) ends."
   @callback on_partition_replay_end(partition :: String.t()) :: any()
 
-  @optional_callbacks on_replay_begin: 0,
+  @doc """
+  Optional. Handles an event while the reactor is being replayed, instead of `handle/2`.
+
+  Same contract and return values as `handle/2`.
+  """
+  @callback handle_replay(event :: struct(), context :: map()) ::
+              :ok | {:error, term()} | {:ok, struct() | [struct()]}
+
+  @optional_callbacks handle_replay: 2,
+                      on_replay_begin: 0,
                       on_replay_end: 0,
                       on_partition_replay_begin: 1,
                       on_partition_replay_end: 1
@@ -133,6 +154,8 @@ defmodule Chronicle.Reactors.Reactor do
       Module.register_attribute(__MODULE__, :handles, accumulate: true)
 
       @chronicle_reactor_id Keyword.get(opts, :id, __MODULE__ |> to_string())
+      @chronicle_reactor_once_only Keyword.get(opts, :once_only, false)
+      @chronicle_reactor_middleware Keyword.get(opts, :middleware, [])
 
       @before_compile Chronicle.Reactors.Reactor
     end
@@ -143,6 +166,8 @@ defmodule Chronicle.Reactors.Reactor do
       @doc false
       def __chronicle_reactor__(:id), do: @chronicle_reactor_id
       def __chronicle_reactor__(:handles), do: @handles |> Enum.reverse()
+      def __chronicle_reactor__(:once_only), do: @chronicle_reactor_once_only
+      def __chronicle_reactor__(:middleware), do: @chronicle_reactor_middleware
     end
   end
 end

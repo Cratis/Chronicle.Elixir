@@ -318,7 +318,7 @@ defmodule Chronicle.Registration.ProjectionDefinitionTest do
 
       assert properties["increments.$eventContext.type"] == "$increment"
       assert properties["decrements.$eventContext.type"] == "$decrement"
-      assert properties["occurred"] == "$occurred"
+      assert properties["occurred"] == "$eventContext(Occurred)"
       assert map_size(properties) == 3
     end
 

@@ -175,6 +175,29 @@ defmodule Chronicle do
     to: Chronicle.EventSequences.EventLog
 
   @doc """
+  Appends a single event and returns the detailed `Chronicle.EventSequences.AppendResult`
+  (assigned sequence number, structured constraint and concurrency violations).
+
+  Delegates to `Chronicle.EventSequences.EventLog.append_with_result/3`.
+  """
+  @spec append_with_result(String.t(), struct(), keyword()) ::
+          {:ok, Chronicle.EventSequences.AppendResult.t()}
+          | {:error, Chronicle.EventSequences.AppendResult.t() | term()}
+  defdelegate append_with_result(event_source_id, event, opts \\ []),
+    to: Chronicle.EventSequences.EventLog
+
+  @doc """
+  Appends events atomically and returns the detailed `Chronicle.EventSequences.AppendResult`.
+
+  Delegates to `Chronicle.EventSequences.EventLog.append_many_with_result/3`.
+  """
+  @spec append_many_with_result(String.t(), [struct()], keyword()) ::
+          {:ok, Chronicle.EventSequences.AppendResult.t()}
+          | {:error, Chronicle.EventSequences.AppendResult.t() | term()}
+  defdelegate append_many_with_result(event_source_id, events, opts \\ []),
+    to: Chronicle.EventSequences.EventLog
+
+  @doc """
   Creates an event sequence wrapper for the given event sequence id.
   """
   @spec event_sequence(String.t(), keyword()) :: Chronicle.EventSequences.EventSequence.t()

@@ -21,6 +21,9 @@ Shared Chronicle concepts and workflows live in the main Chronicle docs and show
 
 ## Known limitations
 
+See [Limits and gaps](limits-and-gaps.md) for the kernel limits, the consistency guarantees and what the Elixir client does not do yet.
+
+
 - The client doesn't validate the kernel's TLS certificate unless you set `skipTlsValidation=false`. See [Connection strings](connections/connection-strings.md#tls).
 - Version 3.5.0 had defects in read model mappings, reducer registration, constraint registration, seeding, read model paging, and sequence number lookups. Upgrade to 3.5.1 or later.
 
