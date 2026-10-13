@@ -262,6 +262,9 @@ defmodule Chronicle.Reducers.Handler do
         model -> Chronicle.Serialization.to_json(model, :identity)
       end
 
+    {read_model_json, observation_state, exception_messages, stack_trace} =
+      guard_read_model_size(read_model_json, observation_state, exception_messages, stack_trace)
+
     result =
       struct(ReducerMessage,
         Content:
@@ -280,6 +283,23 @@ defmodule Chronicle.Reducers.Handler do
 
     GRPC.Stub.send_request(state.stream, result)
     {:noreply, state}
+  end
+
+  # A read model larger than the message limit makes the kernel answer ResourceExhausted, and the
+  # failed exchange can break the connection every observer shares. Report the reduction as failed
+  # instead (the partition then shows up as a failed partition with a clear reason).
+  defp guard_read_model_size(json, observation_state, messages, stack_trace) do
+    case Chronicle.PayloadLimit.check(json) do
+      :ok ->
+        {json, observation_state, messages, stack_trace}
+
+      {:error, {:payload_too_large, size, limit}} ->
+        message =
+          "Read model state is #{size} bytes, which exceeds the #{limit} byte message limit. " <>
+            "Split it into smaller read models (for example one per child) or raise :max_payload_bytes."
+
+        {"", :failed, [message | messages], stack_trace}
+    end
   end
 
   defp apply_reduce(state, appended_event, model) do

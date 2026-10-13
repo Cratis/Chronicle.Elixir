@@ -745,6 +745,24 @@ defmodule Chronicle.EventSequences.EventLog do
     do: Chronicle.EventSources.Routing.event_source(routing)
 
   defp prepare_events(events, config, namespace, event_sequence_id, opts) do
+    with :ok <- check_payload_size(events) do
+      resolve_events(events, config, namespace, event_sequence_id, opts)
+    end
+  end
+
+  # Refuses a batch the kernel would reject with ResourceExhausted before it can break the
+  # shared connection. See Chronicle.PayloadLimit.
+  defp check_payload_size(events) do
+    if Chronicle.PayloadLimit.limit() == :infinity do
+      :ok
+    else
+      events
+      |> Enum.map(&encode_event(&1.event))
+      |> Chronicle.PayloadLimit.check_all()
+    end
+  end
+
+  defp resolve_events(events, config, namespace, event_sequence_id, opts) do
     if DefinitionRouting.used?(events) do
       client = Keyword.get(opts, :client, Chronicle.Client)
 
