@@ -204,6 +204,7 @@ defmodule Chronicle.Client do
     global_handlers =
       Enum.uniq(Keyword.get(opts, :global_handlers, []) ++ discovered.global_handlers)
 
+    read_model_reactors = Enum.uniq(Keyword.get(opts, :read_model_reactors, []))
     seeders = Enum.uniq(Keyword.get(opts, :seeders, []) ++ discovered.seeders)
     webhooks = Enum.uniq(Keyword.get(opts, :webhooks, []) ++ discovered.webhooks)
 
@@ -267,6 +268,14 @@ defmodule Chronicle.Client do
         )
       end)
 
+    read_model_reactor_children =
+      Enum.map(read_model_reactors, fn module ->
+        Supervisor.child_spec(
+          {Chronicle.ReadModels.Reactors.Handler, Keyword.put(observer_opts, :module, module)},
+          id: {Chronicle.ReadModels.Reactors.Handler, module}
+        )
+      end)
+
     webhook_children =
       if Enum.empty?(webhooks) do
         []
@@ -318,6 +327,7 @@ defmodule Chronicle.Client do
       ] ++
         reactor_children ++
         reducer_children ++
+        read_model_reactor_children ++
         seeder_children ++
         webhook_children ++
         event_store_subscription_children

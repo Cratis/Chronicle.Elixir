@@ -208,6 +208,8 @@ defmodule Chronicle.ReadModels do
     GetInstanceByKeyRequest,
     GetInstancesRequest,
     GetOccurrencesRequest,
+    MaterializedReadModels,
+    ObserveInstancesRequest,
     ReadModelType,
     ReadModels,
     WatchRequest
@@ -728,6 +730,82 @@ defmodule Chronicle.ReadModels do
   def unwatch(watcher) when is_pid(watcher) do
     Process.exit(watcher, :shutdown)
     :ok
+  end
+
+  @doc """
+  Observes a collection of read model instances: the calling process receives the page of
+  instances now, and again every time it changes. Mirrors .NET's `ObserveInstances<T>()`.
+
+  Messages (`result` is a `Chronicle.ReadModels.QueryResult`):
+
+      {:chronicle_read_model_instances, MyApp.ReadModels.AccountInfo, result}
+      {:chronicle_read_model_observe_error, MyApp.ReadModels.AccountInfo, reason}
+
+  After an error message the observation has ended; call `observe/2` again to resume. Stop it
+  with `unobserve/1`. The observer also ends when the subscribing process exits.
+
+  ## Options
+
+    * `:client` - the client name (default: `Chronicle.Client`)
+    * `:namespace` - overrides the client's default namespace
+    * `:occurrence` - observe a specific occurrence of a replayed read model
+    * `:page` / `:page_size` - the page to observe (defaults `0` / `50`)
+  """
+  @spec observe(module(), keyword()) :: {:ok, pid()} | {:error, term()}
+  def observe(model_module, opts \\ []) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      page = non_negative_integer_option(opts, :page, @default_page)
+      page_size = positive_integer_option(opts, :page_size, @default_page_size)
+
+      request =
+        struct(ObserveInstancesRequest,
+          EventStore: config.event_store,
+          Namespace: Keyword.get(opts, :namespace, config.namespace),
+          ReadModel: read_model_id(model_module),
+          Occurrence: Keyword.get(opts, :occurrence, ""),
+          Page: page,
+          PageSize: page_size
+        )
+
+      subscriber = self()
+
+      Task.start(fn ->
+        Process.monitor(subscriber)
+        observe_loop(channel, request, model_module, subscriber)
+      end)
+    end
+  end
+
+  @doc "Stops an observation started by `observe/2`."
+  @spec unobserve(pid()) :: :ok
+  def unobserve(observer) when is_pid(observer) do
+    Process.exit(observer, :shutdown)
+    :ok
+  end
+
+  defp observe_loop(channel, request, model_module, subscriber) do
+    case MaterializedReadModels.Stub.observe_instances(channel, request) do
+      {:ok, reply_stream} ->
+        Enum.each(reply_stream, fn
+          {:ok, response} ->
+            send(
+              subscriber,
+              {:chronicle_read_model_instances, model_module,
+               %QueryResult{
+                 instances: decode_models(model_module, Map.get(response, :Instances, [])),
+                 total_count: Map.get(response, :TotalCount, 0),
+                 page: Map.get(response, :Page, Map.get(request, :Page)),
+                 page_size: Map.get(response, :PageSize, Map.get(request, :PageSize))
+               }}
+            )
+
+          {:error, reason} ->
+            send(subscriber, {:chronicle_read_model_observe_error, model_module, reason})
+        end)
+
+      {:error, reason} ->
+        send(subscriber, {:chronicle_read_model_observe_error, model_module, reason})
+    end
   end
 
   defp watch_loop(channel, request, model_module, subscriber) do
