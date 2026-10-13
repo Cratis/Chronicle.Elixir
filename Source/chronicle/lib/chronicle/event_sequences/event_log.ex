@@ -680,16 +680,10 @@ defmodule Chronicle.EventSequences.EventLog do
           EventStreamId: event_stream_id
         )
 
-      case EventSequences.Stub.complete_stream(channel, request) do
-        {:ok, response} ->
-          if Map.get(response, :IsSuccess, false) do
-            {:ok, normalize_sequence_number(Map.get(response, :SequenceNumber, 0))}
-          else
-            {:error, decode_complete_stream_error(Map.get(response, :Error))}
-          end
-
-        {:error, reason} ->
-          {:error, reason}
+      # CompleteStream answers with a command-result envelope whose payload carries IsSuccess.
+      with {:ok, envelope} <- EventSequences.Stub.complete_stream(channel, request),
+           {:ok, response} <- WireResult.unwrap(envelope) do
+        decode_complete_stream_response(response)
       end
     end
   end
@@ -1350,10 +1344,25 @@ defmodule Chronicle.EventSequences.EventLog do
   # @doc false) so it can be exercised directly in tests without a live
   # connection.
   @doc false
+  def decode_complete_stream_response(response) do
+    if Map.get(response, :IsSuccess, false) do
+      {:ok, normalize_sequence_number(Map.get(response, :SequenceNumber, 0))}
+    else
+      {:error, decode_complete_stream_error(Map.get(response, :Error))}
+    end
+  end
+
+  @doc false
   @spec decode_complete_stream_error(term()) ::
-          :default_stream_cannot_be_completed | :already_completed
+          :default_stream_cannot_be_completed
+          | :already_completed
+          | :empty_scope
+          | :expected_tail_mismatch
   def decode_complete_stream_error(:DefaultStreamCannotBeCompleted),
     do: :default_stream_cannot_be_completed
+
+  def decode_complete_stream_error(:EmptyScope), do: :empty_scope
+  def decode_complete_stream_error(:ExpectedTailMismatch), do: :expected_tail_mismatch
 
   def decode_complete_stream_error(_), do: :already_completed
 end
