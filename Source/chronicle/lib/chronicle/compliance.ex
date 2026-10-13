@@ -37,7 +37,11 @@ defmodule Chronicle.Compliance do
 
   alias Chronicle.Connections.Connection
   alias Cratis.Chronicle.Contracts.Compliance.Compliance, as: ComplianceService
-  alias Cratis.Chronicle.Contracts.Compliance.DeleteEncryptionKeyRequest
+
+  alias Cratis.Chronicle.Contracts.Compliance.{
+    AllowNewEncryptionKeyRequest,
+    DeleteEncryptionKeyRequest
+  }
 
   @doc """
   Marks a struct field as containing Personally Identifiable Information (PII).
@@ -104,6 +108,41 @@ defmodule Chronicle.Compliance do
 
       case ComplianceService.Stub.delete_encryption_key(channel, request) do
         {:ok, _} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Allows a new encryption key to be created for a PII subject after its key was deleted.
+
+  Deleting a key (`delete_encryption_key/2`) does not by itself permit a replacement: until the
+  kernel is told that a new key is allowed, new `[PII]` values for the subject are rejected
+  rather than silently encrypted under a fresh key. Call this when the subject has legitimately
+  returned (for example re-registered) and may be stored again.
+
+      :ok = Chronicle.Compliance.delete_encryption_key("customer-42")
+      # ... later, the person comes back
+      :ok = Chronicle.Compliance.allow_new_encryption_key_for("customer-42")
+
+  Mirrors the .NET `IPIIManager.AllowNewEncryptionKeyFor`. Options: `:client`, `:namespace`.
+  """
+  @spec allow_new_encryption_key_for(String.t(), keyword()) :: :ok | {:error, term()}
+  def allow_new_encryption_key_for(identifier, opts \\ [])
+      when is_binary(identifier) and is_list(opts) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      namespace = Keyword.get(opts, :namespace, config.namespace)
+
+      request =
+        struct(AllowNewEncryptionKeyRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          Identifier: identifier
+        )
+
+      case ComplianceService.Stub.allow_new_encryption_key(channel, request) do
+        {:ok, _} -> :ok
+        {:error, %GRPC.RPCError{status: 12}} -> {:error, :not_supported}
         {:error, reason} -> {:error, reason}
       end
     end
