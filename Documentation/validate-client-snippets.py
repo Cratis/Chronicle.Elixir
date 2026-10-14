@@ -31,6 +31,9 @@ BODY_SNIPPETS = {
     "tutorial/reacting/explicit-append": [
         "",
     ],
+    "tutorial/reacting/once-only": [
+        "",
+    ],
     "tutorial/reacting/reading-state": [
         "",
     ],
