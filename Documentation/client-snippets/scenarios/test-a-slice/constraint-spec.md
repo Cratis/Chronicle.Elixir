@@ -8,34 +8,37 @@ defmodule MyApp.Events.TestSliceConstraintBookAdded do
 end
 
 defmodule MyApp.TestSliceConstraintTest do
-  # Exercises the real client SDK against a running Chronicle event store,
-  # so it's skipped here; remove the tag to run it against a live store.
-  use ExUnit.Case, async: true
-  @moduletag :skip
+  # Runs against an in-memory kernel, which enforces unique constraints on append.
+  use Chronicle.Testing.Case, event_types: [MyApp.Events.TestSliceConstraintBookAdded]
 
+  import Chronicle.Testing.Assertions
+
+  alias Chronicle.EventSequences.EventLog
   alias MyApp.Events.TestSliceConstraintBookAdded
 
-  test "adding a second book with an isbn already in use is rejected" do
-    Chronicle.append(
-      Base.encode16(:crypto.strong_rand_bytes(8), case: :lower),
-      %TestSliceConstraintBookAdded{title: "The Pragmatic Programmer", isbn: "978-0135957059"}
-    )
+  test "adding a second book with an isbn already in use is rejected", %{chronicle: client} do
+    first = "book-#{System.unique_integer([:positive])}"
+    second = "book-#{System.unique_integer([:positive])}"
+
+    :ok =
+      EventLog.append(
+        first,
+        %TestSliceConstraintBookAdded{title: "The Pragmatic Programmer", isbn: "978-0135957059"},
+        client: client
+      )
 
     result =
-      Chronicle.append(
-        Base.encode16(:crypto.strong_rand_bytes(8), case: :lower),
+      EventLog.append(
+        second,
         %TestSliceConstraintBookAdded{
           title: "The Pragmatic Programmer, 2nd ed.",
           isbn: "978-0135957059"
-        }
+        },
+        client: client
       )
 
-    assert {:error, {:constraint_violations, violations}} = result
-
-    assert Enum.any?(violations, fn violation ->
-             Map.get(violation, :Name) == "TestSliceConstraintUniqueIsbn" or
-               Map.get(violation, :name) == "TestSliceConstraintUniqueIsbn"
-           end)
+    assert_constraint_violation(result, "TestSliceConstraintUniqueIsbn")
+    refute_appended(client, TestSliceConstraintBookAdded, event_source_id: second)
   end
 end
 ```

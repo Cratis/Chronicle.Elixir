@@ -1,5 +1,7 @@
 ```elixir
 defmodule MyApp.Events.TaggedOrderPlaced do
+  use Chronicle.Events.EventType, id: "tagged-order-placed"
+
   defstruct [:customer_id, :total]
 end
 

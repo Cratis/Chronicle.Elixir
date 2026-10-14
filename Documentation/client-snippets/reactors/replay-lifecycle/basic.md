@@ -1,15 +1,21 @@
 ```elixir
+defmodule MyApp.Events.ReplayLifecycleOrderPlaced do
+  use Chronicle.Events.EventType, id: "replay-lifecycle-order-placed"
+
+  defstruct [:order_id]
+end
+
 defmodule MyApp.Reactors.ReplayAwareNotifier do
   use Chronicle.Reactors.Reactor
 
   require Logger
 
-  alias MyApp.Events.OrderPlaced
+  alias MyApp.Events.ReplayLifecycleOrderPlaced
 
-  @handles OrderPlaced
+  @handles ReplayLifecycleOrderPlaced
 
   @impl true
-  def handle(%OrderPlaced{}, _context), do: :ok
+  def handle(%ReplayLifecycleOrderPlaced{}, _context), do: :ok
 
   @impl true
   def on_replay_begin, do: Logger.info("Replay starting")
