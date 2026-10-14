@@ -65,6 +65,90 @@ defmodule Chronicle.Integration.ClientParityTest do
     end
   end
 
+  defmodule LedgerCreated do
+    use Chronicle.Events.EventType, id: "pt-ledger-created"
+    defstruct []
+  end
+
+  defmodule LedgerEntryAdded do
+    use Chronicle.Events.EventType, id: "pt-ledger-entry-added"
+    defstruct entry_id: "", name: ""
+  end
+
+  defmodule LedgerEntryRemoved do
+    use Chronicle.Events.EventType, id: "pt-ledger-entry-removed"
+    defstruct entry_id: ""
+  end
+
+  defmodule LedgerNoteAdded do
+    use Chronicle.Events.EventType, id: "pt-ledger-note-added"
+    defstruct entry_id: "", note_id: "", text: ""
+  end
+
+  defmodule LedgerDiscountRemoved do
+    use Chronicle.Events.EventType, id: "pt-ledger-discount-removed"
+    defstruct []
+  end
+
+  defmodule LedgerNote do
+    defstruct note_id: "", text: ""
+  end
+
+  defmodule LedgerEntry do
+    defstruct entry_id: "", name: "", notes: []
+  end
+
+  defmodule Ledger do
+    use Chronicle.ReadModels.ReadModel, id: "ptLedger", types: [entries: {:list, LedgerEntry}]
+
+    defstruct ledger_id: "", entries: [], promo_code: nil, item_count: 0
+
+    from(LedgerCreated, set: [ledger_id: :event_source_id])
+    from(LedgerEntryAdded, set: [promo_code: :name], increment: [item_count: 1])
+    from(LedgerEntryRemoved, decrement: [item_count: 1])
+
+    children :entries, identified_by: :entry_id do
+      from(LedgerEntryAdded, key: :entry_id, set: [entry_id: :entry_id, name: :name])
+      removed_with(LedgerEntryRemoved, key: :entry_id)
+
+      children :notes, identified_by: :note_id do
+        from(LedgerNoteAdded,
+          key: :note_id,
+          parent_key: :entry_id,
+          set: [note_id: :note_id, text: :text]
+        )
+      end
+    end
+
+    clear_with(LedgerDiscountRemoved, [:promo_code])
+  end
+
+  defmodule EntryAddedOneLine do
+    use Chronicle.Events.EventType, id: "pt-one-line-entry-added"
+    defstruct entry_id: "", name: ""
+  end
+
+  defmodule OneLineEntry do
+    defstruct entry_id: "", name: ""
+  end
+
+  defmodule OneLineLedger do
+    use Chronicle.ReadModels.ReadModel,
+      id: "ptOneLineLedger",
+      types: [entries: {:list, OneLineEntry}]
+
+    defstruct ledger_id: "", entries: []
+
+    from(LedgerCreated, set: [ledger_id: :event_source_id])
+
+    children(:entries,
+      from: EntryAddedOneLine,
+      identified_by: :entry_id,
+      key: :entry_id,
+      set: [entry_id: :entry_id, name: :name]
+    )
+  end
+
   defmodule SeededNote do
     use Chronicle.Events.EventType, id: "pt-seeded-note", tags: ["seed"]
     defstruct text: ""
@@ -112,9 +196,21 @@ defmodule Chronicle.Integration.ClientParityTest do
         event_store:
           "#{prefix}-#{System.system_time(:millisecond)}-#{System.unique_integer([:positive])}",
         discover: false,
-        event_types: [Registered, PeriodClosed, BasketCreated, ItemAdded, SeededNote],
+        event_types: [
+          Registered,
+          PeriodClosed,
+          BasketCreated,
+          ItemAdded,
+          LedgerCreated,
+          LedgerEntryAdded,
+          LedgerEntryRemoved,
+          LedgerNoteAdded,
+          LedgerDiscountRemoved,
+          EntryAddedOneLine,
+          SeededNote
+        ],
         read_model_reactors: [Watcher],
-        read_models: [Basket],
+        read_models: [Basket, Ledger, OneLineLedger],
         reactors: [Spy]
       )
 
@@ -271,6 +367,93 @@ defmodule Chronicle.Integration.ClientParityTest do
       )
 
     assert basket.items |> Enum.map(& &1.name) |> Enum.sort() == ["milk", "tea"]
+  end
+
+  test "a one-line children declaration accumulates a list" do
+    id = "ol-1"
+    assert :ok = EventLog.append(id, %LedgerCreated{}, @opts)
+    assert :ok = EventLog.append(id, %EntryAddedOneLine{entry_id: "e-1", name: "first"}, @opts)
+    assert :ok = EventLog.append(id, %EntryAddedOneLine{entry_id: "e-2", name: "second"}, @opts)
+
+    ledger =
+      await_read_model(
+        fn -> Chronicle.ReadModels.get(OneLineLedger, id, @opts) end,
+        &(length(&1.entries) == 2)
+      )
+
+    assert ledger.entries |> Enum.map(& &1.name) |> Enum.sort() == ["first", "second"]
+  end
+
+  test "removed_with removes a child and a root decrement tracks the count" do
+    id = "ld-1"
+    assert :ok = EventLog.append(id, %LedgerCreated{}, @opts)
+    assert :ok = EventLog.append(id, %LedgerEntryAdded{entry_id: "e-1", name: "first"}, @opts)
+    assert :ok = EventLog.append(id, %LedgerEntryAdded{entry_id: "e-2", name: "second"}, @opts)
+
+    _ =
+      await_read_model(
+        fn -> Chronicle.ReadModels.get(Ledger, id, @opts) end,
+        &(length(&1.entries) == 2)
+      )
+
+    assert :ok = EventLog.append(id, %LedgerEntryRemoved{entry_id: "e-1"}, @opts)
+
+    ledger =
+      await_read_model(
+        fn -> Chronicle.ReadModels.get(Ledger, id, @opts) end,
+        &(length(&1.entries) == 1)
+      )
+
+    assert [%{entry_id: "e-2"}] = ledger.entries
+    assert ledger.item_count == 1
+  end
+
+  test "nested children build a grandchild list" do
+    id = "ld-2"
+    assert :ok = EventLog.append(id, %LedgerCreated{}, @opts)
+    assert :ok = EventLog.append(id, %LedgerEntryAdded{entry_id: "e-1", name: "first"}, @opts)
+
+    assert :ok =
+             EventLog.append(
+               id,
+               %LedgerNoteAdded{entry_id: "e-1", note_id: "n-1", text: "hello"},
+               @opts
+             )
+
+    ledger =
+      await_read_model(
+        fn -> Chronicle.ReadModels.get(Ledger, id, @opts) end,
+        &match?([%{notes: [_ | _]}], &1.entries),
+        80
+      )
+
+    # The nested grandchild list decodes as plain maps: only the first list level (`entries`)
+    # carries a `types:` hint, so `notes` travels as raw wire-shaped maps.
+    assert [%{notes: [%{"note_id" => "n-1", "text" => "hello"}]}] = ledger.entries
+  end
+
+  test "clear_with sets a field back to no value" do
+    id = "ld-3"
+    assert :ok = EventLog.append(id, %LedgerCreated{}, @opts)
+
+    assert :ok =
+             EventLog.append(id, %LedgerEntryAdded{entry_id: "e-1", name: "promo-first"}, @opts)
+
+    _ =
+      await_read_model(
+        fn -> Chronicle.ReadModels.get(Ledger, id, @opts) end,
+        &(&1.promo_code == "promo-first")
+      )
+
+    assert :ok = EventLog.append(id, %LedgerDiscountRemoved{}, @opts)
+
+    ledger =
+      await_read_model(
+        fn -> Chronicle.ReadModels.get(Ledger, id, @opts) end,
+        &is_nil(&1.promo_code)
+      )
+
+    assert ledger.promo_code == nil
   end
 
   test "query filters and sorts" do
