@@ -53,12 +53,14 @@ end
 
 ## Migration checks
 
-A few mistakes are rejected before the client connects, so a bad set fails immediately instead of
-being retried:
+A few mistakes are checked before the client connects. By default the client logs the full error
+and carries on; start it with `strict_validation: true` to raise instead, so a bad set fails
+immediately instead of being retried. `Chronicle.Events.EventTypes.validate/2` runs the same
+checks and returns `:ok` or `{:error, exception}`; `validate!/2` raises.
 
-- Two modules representing the same generation of the same event type id raise
+- Two modules representing the same generation of the same event type id are reported as
   `Chronicle.Events.MultipleEventTypesWithSameIdFound`.
-- More than one migration module bridging the same pair of generations raises
+- More than one migration module bridging the same pair of generations is reported as
   `Chronicle.Events.MultipleMigratorsForSameEventTypeGeneration` - exactly one migrator may bridge
   a pair of generations.
 - A migration whose `:from` and `:to` resolve to different event type ids raises

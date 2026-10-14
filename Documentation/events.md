@@ -59,8 +59,11 @@ of one, not both. See [Migrations](./migrations.md) for bridging generations wit
 
 ## Validation errors
 
-A few event type and migration mistakes are rejected before the client connects, so a bad set
-fails immediately instead of being retried by the registration coordinator:
+A few event type and migration mistakes are checked before the client connects. The client logs
+the full error and continues by default; set `strict_validation: true` on `Chronicle.Client` to
+raise instead, so a bad set fails immediately rather than being retried by the registration
+coordinator. `Chronicle.Events.EventTypes.validate/2` returns `:ok | {:error, exception}` and
+`validate!/2` raises:
 
 - `Chronicle.Events.MultipleEventTypesWithSameIdFound` - two modules represent the same
   generation of the same event type id. Each generation must be represented by exactly one

@@ -70,10 +70,54 @@ defmodule Chronicle.Events.EventTypeValidationTest do
     end
   end
 
-  describe "EventTypes.register/4" do
-    test "returns {:error, %MultipleEventTypesWithSameIdFound{}} instead of raising" do
+  describe "EventTypes.validate/2" do
+    test "returns :ok for a set with no duplicates" do
+      assert :ok = EventTypes.validate([OpenedA, OpenedV2], [])
+    end
+
+    test "returns the duplicate event type exception without raising" do
       assert {:error, %Chronicle.Events.MultipleEventTypesWithSameIdFound{}} =
-               EventTypes.register(:unused_channel, "store", [OpenedA, OpenedB])
+               EventTypes.validate([OpenedA, OpenedB], [])
+    end
+
+    test "returns the duplicate migrator exception without raising" do
+      assert {:error, %Chronicle.Events.MultipleMigratorsForSameEventTypeGeneration{}} =
+               EventTypes.validate([OtherMigrationV1, OtherMigrationV2], [
+                 OtherMigration,
+                 DuplicateOtherMigration
+               ])
+    end
+  end
+
+  describe "client startup validation" do
+    import ExUnit.CaptureLog
+
+    defp client_opts(strict?) do
+      name = :"validation_client_#{System.unique_integer([:positive])}"
+      on_exit(fn -> :persistent_term.erase({Chronicle.Client, name}) end)
+
+      [
+        name: name,
+        discover: false,
+        connection_string: "chronicle://u:p@localhost:1",
+        event_types: [OpenedA, OpenedB],
+        drift_policy: :ignore
+      ] ++ if(strict?, do: [strict_validation: true], else: [])
+    end
+
+    test "logs the error and continues by default" do
+      log =
+        capture_log(fn ->
+          assert {:ok, _} = Chronicle.Client.init(client_opts(false))
+        end)
+
+      assert log =~ "validation-opened"
+    end
+
+    test "raises with strict_validation: true" do
+      assert_raise Chronicle.Events.MultipleEventTypesWithSameIdFound, fn ->
+        Chronicle.Client.init(client_opts(true))
+      end
     end
   end
 end

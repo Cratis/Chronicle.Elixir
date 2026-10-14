@@ -151,10 +151,16 @@ defmodule Chronicle.MigrationTest do
       assert Migrators.generations_for(migrators, AccountOpened) == [1, 2]
     end
 
-    test "raises when more than one migrator bridges the same pair of generations" do
-      assert_raise Chronicle.Events.MultipleMigratorsForSameEventTypeGeneration, fn ->
-        Migrators.new([AccountOpenedV2Migration, DuplicateAccountOpenedV2Migration])
-      end
+    test "validate/1 reports more than one migrator bridging the same pair of generations" do
+      assert {:error, %Chronicle.Events.MultipleMigratorsForSameEventTypeGeneration{}} =
+               Migrators.validate([AccountOpenedV2Migration, DuplicateAccountOpenedV2Migration])
+
+      assert :ok = Migrators.validate([AccountOpenedV2Migration])
+    end
+
+    test "new/1 does not reject duplicate bridges, as before" do
+      assert %Migrators{} =
+               Migrators.new([AccountOpenedV2Migration, DuplicateAccountOpenedV2Migration])
     end
 
     test "materializes migration definitions" do
