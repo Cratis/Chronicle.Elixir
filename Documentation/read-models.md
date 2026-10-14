@@ -174,6 +174,12 @@ end
 same read model, receives changes that happen while it runs, and re-establishes its subscription
 after a reconnect.
 
+## Decision reads and the Dynamic Consistency Boundary
+
+`Chronicle.ReadModels.DecisionReads` folds a read model at a key and carries forward the exact
+log position the fold stopped at, so a subsequent append can be guarded against anything else
+changing that read model first. See [Dynamic Consistency Boundary](./dynamic-consistency-boundary.md).
+
 ## Map fields and nested structs
 
 A field whose default is a plain map (`parameters: %{}`) is registered as an object, its keys kept
