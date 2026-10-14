@@ -31,6 +31,7 @@ defmodule Chronicle.Artifacts do
           seeders: [module()],
           webhooks: [module()],
           event_store_subscriptions: [module()],
+          captures: [module()],
           migrations: [module()],
           global_handlers: [module()]
         }
@@ -61,7 +62,8 @@ defmodule Chronicle.Artifacts do
         webhooks: [],
         event_store_subscriptions: [],
         migrations: [],
-        global_handlers: []
+        global_handlers: [],
+        captures: []
       },
       fn module, acc ->
         if Code.ensure_loaded?(module) do
@@ -105,6 +107,7 @@ defmodule Chronicle.Artifacts do
             module,
             function_exported?(module, :__chronicle_global_handler__, 1)
           )
+          |> maybe_put(:captures, module, function_exported?(module, :__chronicle_capture__, 1))
         else
           acc
         end
@@ -138,7 +141,8 @@ defmodule Chronicle.Artifacts do
         webhooks: [],
         event_store_subscriptions: [],
         migrations: [],
-        global_handlers: []
+        global_handlers: [],
+        captures: []
       },
       fn module, acc ->
         acc
@@ -181,6 +185,7 @@ defmodule Chronicle.Artifacts do
           module,
           function_exported?(module, :__chronicle_global_handler__, 1)
         )
+        |> maybe_put(:captures, module, function_exported?(module, :__chronicle_capture__, 1))
       end
     )
     |> Enum.map(fn {key, value} -> {key, Enum.reverse(value)} end)
