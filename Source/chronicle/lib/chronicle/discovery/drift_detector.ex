@@ -12,7 +12,10 @@ defmodule Chronicle.Discovery.DriftDetector do
       as the module that currently declares it — its struct changed without a bumped
       `:generation`.
     * `:observer_missing_from_code` — the kernel has a client-owned reactor, reducer or
-      projection/read-model observer whose id is no longer declared by any current artifact.
+      projection/read-model observer on the `event-log` sequence whose id is no longer
+      declared by any current artifact. Always `:info`: an event store can be shared by
+      several clients, and their observers are also client-owned, so this is evidence only,
+      never a reason to fail startup.
     * `:observer_event_types_changed` — a still-declared observer's handled event type ids no
       longer match what the kernel has recorded for it.
 
@@ -24,9 +27,17 @@ defmodule Chronicle.Discovery.DriftDetector do
   alias Chronicle.Schemas.JsonSchemaGenerator
   alias Chronicle.WireResult
 
-  alias Cratis.Chronicle.Contracts.EventTypes.{AllEventTypeGenerationsRequest, EventTypes}
+  alias Cratis.Chronicle.Contracts.EventTypes.{
+    AllEventTypeGenerationsRequest,
+    AllEventTypesRequest,
+    EventTypes
+  }
 
   alias Cratis.Chronicle.Contracts.Observation.{AllObserversRequest, Observers}
+
+  @deadline 5_000
+  @max_concurrency 8
+  @local_event_sequence "event-log"
 
   @doc """
   Detects likely artifact identity drift for the given report.
@@ -35,46 +46,105 @@ defmodule Chronicle.Discovery.DriftDetector do
   `{:ok, findings}` (possibly empty) or `{:error, reason}` when the kernel could not be
   reached — an indeterminate result, never to be treated the same as a clean one.
 
-  `:fetch_event_type_generations_fun` and `:fetch_observers_fun` are test-only seams
-  replacing the real kernel calls; production code never passes them.
+  The check makes one `AllEventTypes` call, then `AllEventTypeGenerations` only for event
+  types whose local generation is not the kernel's latest (bounded-parallel), all within a
+  total deadline (5 seconds, `:deadline` in milliseconds) after which it returns
+  `{:error, :timeout}`. A raise inside the check is returned as
+  `{:error, {:exception, exception}}`.
+
+  `:fetch_all_event_types_fun`, `:fetch_event_type_generations_fun` and
+  `:fetch_observers_fun` are test-only seams replacing the real kernel calls; production
+  code never passes them.
   """
   @spec detect(term(), Report.t(), keyword()) :: {:ok, [Drift.t()]} | {:error, term()}
   def detect(channel, %Report{} = report, opts) do
+    deadline = Keyword.get(opts, :deadline, @deadline)
+
+    task =
+      Task.async(fn ->
+        try do
+          do_detect(channel, report, opts, deadline)
+        rescue
+          exception -> {:error, {:exception, exception}}
+        end
+      end)
+
+    case Task.yield(task, deadline) || Task.shutdown(task, :brutal_kill) do
+      {:ok, result} -> result
+      {:exit, reason} -> {:error, {:exit, reason}}
+      nil -> {:error, :timeout}
+    end
+  end
+
+  defp do_detect(channel, report, opts, deadline) do
     event_store = Keyword.fetch!(opts, :event_store)
     namespace = Keyword.get(opts, :namespace, "Default")
 
-    fetch_generations_fun =
-      Keyword.get(opts, :fetch_event_type_generations_fun, &fetch_event_type_generations/3)
+    funs = %{
+      all_event_types: Keyword.get(opts, :fetch_all_event_types_fun, &fetch_all_event_types/2),
+      generations:
+        Keyword.get(opts, :fetch_event_type_generations_fun, &fetch_event_type_generations/3)
+    }
 
     fetch_observers_fun = Keyword.get(opts, :fetch_observers_fun, &fetch_observers/3)
 
     with {:ok, observers} <- fetch_observers_fun.(channel, event_store, namespace),
-         {:ok, schema_drift} <- schema_drift(channel, event_store, report, fetch_generations_fun) do
+         {:ok, schema_drift} <- schema_drift(channel, event_store, report, funs, deadline) do
       {:ok, schema_drift ++ observer_drift(observers, report)}
     end
   end
 
-  defp schema_drift(channel, event_store, report, fetch_generations_fun) do
-    report
-    |> Report.of_kind(:event_type)
-    |> Enum.map(& &1.id)
-    |> Enum.uniq()
-    |> Enum.reduce_while({:ok, []}, fn event_type_id, {:ok, acc} ->
-      case fetch_generations_fun.(channel, event_store, event_type_id) do
-        {:ok, stored_generations} ->
-          {:cont, {:ok, acc ++ schema_drift_for(event_type_id, stored_generations, report)}}
+  # One `AllEventTypes` call carries the latest generation and schema of every type. A
+  # per-type `AllEventTypeGenerations` call is only needed when the local generation is not
+  # the latest one the kernel has.
+  defp schema_drift(channel, event_store, report, funs, deadline) do
+    artifacts = Report.of_kind(report, :event_type)
 
-        {:error, reason} ->
-          {:halt, {:error, reason}}
+    with {:ok, all} <- funs.all_event_types.(channel, event_store) do
+      latest = Map.new(all, &{&1."Type"."Id", &1})
+
+      older_ids =
+        artifacts
+        |> Enum.filter(fn artifact ->
+          case Map.fetch(latest, artifact.id) do
+            {:ok, stored} -> stored."Type"."Generation" != artifact.generation
+            :error -> false
+          end
+        end)
+        |> Enum.map(& &1.id)
+        |> Enum.uniq()
+
+      with {:ok, loaded} <-
+             load_generations(channel, event_store, older_ids, funs.generations, deadline) do
+        {:ok,
+         Enum.flat_map(artifacts, fn artifact ->
+           stored_generations =
+             case Map.fetch(loaded, artifact.id) do
+               {:ok, generations} -> generations
+               :error -> List.wrap(Map.get(latest, artifact.id))
+             end
+
+           schema_drift_for_artifact(artifact, stored_generations)
+         end)}
       end
-    end)
+    end
   end
 
-  defp schema_drift_for(event_type_id, stored_generations, report) do
-    report
-    |> Report.of_kind(:event_type)
-    |> Enum.filter(&(&1.id == event_type_id))
-    |> Enum.flat_map(fn artifact -> schema_drift_for_artifact(artifact, stored_generations) end)
+  defp load_generations(_channel, _event_store, [], _fun, _deadline), do: {:ok, %{}}
+
+  defp load_generations(channel, event_store, ids, fun, deadline) do
+    ids
+    |> Task.async_stream(fn id -> {id, fun.(channel, event_store, id)} end,
+      max_concurrency: @max_concurrency,
+      timeout: deadline,
+      on_timeout: :kill_task,
+      ordered: true
+    )
+    |> Enum.reduce_while({:ok, %{}}, fn
+      {:ok, {id, {:ok, generations}}}, {:ok, acc} -> {:cont, {:ok, Map.put(acc, id, generations)}}
+      {:ok, {_id, {:error, reason}}}, _acc -> {:halt, {:error, reason}}
+      {:exit, _reason}, _acc -> {:halt, {:error, :timeout}}
+    end)
   end
 
   defp schema_drift_for_artifact(artifact, stored_generations) do
@@ -111,6 +181,9 @@ defmodule Chronicle.Discovery.DriftDetector do
 
     observers
     |> Enum.filter(&(&1.type in [:reactor, :reducer, :projection] and &1.owner != :kernel))
+    # Local reactors, reducers and projections all observe the event log; an observer on
+    # another sequence belongs to some other client or concern.
+    |> Enum.filter(&(&1.event_sequence_id in [@local_event_sequence, "", nil]))
     |> Enum.flat_map(fn observer ->
       observer_drift_for(observer, Map.get(local_by_kind, observer.type, []))
     end)
@@ -127,7 +200,7 @@ defmodule Chronicle.Discovery.DriftDetector do
             kind: observer.type,
             id: observer.id,
             reason: :observer_missing_from_code,
-            severity: severity_for(observer.type)
+            severity: :info
           }
         ]
 
@@ -172,12 +245,40 @@ defmodule Chronicle.Discovery.DriftDetector do
     do: events_from(module, :__chronicle_read_model__)
 
   defp events_from(module, introspection_fun) do
-    [:from, :join, :removed_with, :removed_with_join, :enters_on]
-    |> Enum.flat_map(fn key ->
-      apply(module, introspection_fun, [key]) |> Enum.map(&elem(&1, 0))
-    end)
+    top_level =
+      [:from, :join, :removed_with, :removed_with_join, :enters_on]
+      |> Enum.flat_map(fn key ->
+        apply(module, introspection_fun, [key]) |> Enum.map(&elem(&1, 0))
+      end)
+
+    # `from_every` maps properties for every event and names no event type of its own.
+    (top_level ++ child_events(apply(module, introspection_fun, [:children])))
     |> Enum.map(& &1.__chronicle_event_type__(:id))
     |> Enum.uniq()
+  end
+
+  defp child_events(children) do
+    Enum.flat_map(children, fn {_name, _opts, declarations} ->
+      Enum.flat_map(declarations, fn
+        {kind, event, _opts} when kind in [:from, :join, :removed_with, :removed_with_join] ->
+          [event]
+
+        {:children, name, opts, nested} ->
+          child_events([{name, opts, nested}])
+
+        _other ->
+          []
+      end)
+    end)
+  end
+
+  defp fetch_all_event_types(channel, event_store) do
+    request = struct(AllEventTypesRequest, EventStore: event_store)
+
+    case EventTypes.Stub.all_event_types(channel, request) do
+      {:ok, envelope} -> WireResult.unwrap(envelope)
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp fetch_event_type_generations(channel, event_store, event_type_id) do

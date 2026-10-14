@@ -76,7 +76,11 @@ kernel already has, and flag three kinds of drift:
   and type category), so reordering keys or widening `integer` to `number` isn't drift, but an
   added, removed or retyped field is.
 - **`:observer_missing_from_code`** — the kernel has a client-owned reactor, reducer, or
-  projection/read-model observer whose id no longer appears in your current code.
+  projection/read-model observer on the `event-log` sequence whose id no longer appears in your
+  current code. This finding is always `:info`, for every observer type: an event store can be
+  shared by several clients, and the observers another client registered are client-owned too,
+  so it is evidence only. It is logged at info level and never fails startup under
+  `drift_policy: :fail`. Observers on other event sequences are not compared.
 - **`:observer_event_types_changed`** — a still-declared observer's handled event types no longer
   match what the kernel has recorded for it.
 
@@ -92,11 +96,17 @@ Control this with the `:drift_policy` client option:
 
 - `:ignore` — skip the check and its kernel calls entirely.
 - `:warn` (default) — log any findings and register anyway.
-- `:fail` — log findings and refuse to register when a `:warning`-severity finding exists (an
-  event type or reactor finding). A reducer or projection finding is `:info`-severity and never
-  blocks registration under any policy. If the check itself cannot complete (the kernel is
-  unreachable), `:warn` logs and continues and `:fail` stops — an indeterminate result is never
-  treated the same as a clean one.
+- `:fail` — log findings and refuse to register when a `:warning`-severity finding exists (a
+  changed event type schema or a reactor whose handled event types changed). `:info` findings,
+  including every `:observer_missing_from_code`, never block registration under any policy. If
+  the check itself cannot complete (the kernel is unreachable, an exception, or the 5 second
+  deadline passes), `:warn` logs and continues and `:fail` stops — an indeterminate result is
+  never treated the same as a clean one. A drift finding under `:fail` is not retried, because
+  the same code drifts the same way on every attempt.
+
+The check costs one `AllEventTypes` call, plus one `AllEventTypeGenerations` call for each event
+type whose local generation is not the latest the kernel has (a few in parallel). It runs once
+per client start; registration retries reuse its result.
 
 :::note[The kernel enforces some of this on its own]
 A schema change without a bumped generation is also rejected by the kernel's own
@@ -110,7 +120,7 @@ Read the most recent findings at any time:
 ```elixir
 Chronicle.Client.identity_drift()
 # => [%Chronicle.Discovery.Drift{kind: :reactor, id: "notification-reactor",
-#      reason: :observer_missing_from_code, severity: :warning}]
+#      reason: :observer_missing_from_code, severity: :info}]
 ```
 
 ## `mix chronicle.discover`

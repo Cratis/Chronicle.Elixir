@@ -61,6 +61,7 @@ defmodule Chronicle.Registration.Coordinator do
   alias Chronicle.Registration.RetryPolicy
 
   @drift_findings_key :chronicle_drift_findings
+  @drift_checked_key :chronicle_drift_checked
 
   def start_link(opts) do
     case Keyword.get(opts, :client) do
@@ -122,6 +123,8 @@ defmodule Chronicle.Registration.Coordinator do
       register_fun: Keyword.get(opts, :register_fun, &default_register/1),
       policy: RetryPolicy.new(Keyword.get(opts, :registration)),
       drift_policy: Keyword.get(opts, :drift_policy, :warn),
+      # Test-only seam replacing `Chronicle.Discovery.DriftDetector.detect/3`.
+      drift_detect_fun: Keyword.get(opts, :drift_detect_fun, &DriftDetector.detect/3),
       random: Keyword.get(opts, :random, &:rand.uniform/0),
       retry_timer: nil,
       registered_done?: false,
@@ -312,12 +315,53 @@ defmodule Chronicle.Registration.Coordinator do
   # anything is (re)registered. Stashes findings in the process dictionary (read back in
   # `handle_info(:register, state)`, which runs in this same process) rather than changing
   # `register_fun`'s `:ok | {:error, reason}` contract.
-  defp check_drift(_channel, %{drift_policy: :ignore}, _event_type_modules) do
+  @doc false
+  def check_drift(_channel, %{drift_policy: :ignore}, _event_type_modules) do
     Process.put(@drift_findings_key, [])
     :ok
   end
 
-  defp check_drift(channel, state, event_type_modules) do
+  # The check runs once per client start: a completed check (with or without findings) is
+  # remembered, so registration retries do not repeat the kernel calls. An indeterminate
+  # result under `:fail` is not remembered, because it must not stand in for a clean one.
+  def check_drift(channel, state, event_type_modules) do
+    if Process.get(@drift_checked_key) do
+      Process.put(@drift_findings_key, state.drift_findings)
+      apply_drift_policy(state.drift_findings, state.drift_policy)
+    else
+      run_drift_check(channel, state, event_type_modules)
+    end
+  end
+
+  defp run_drift_check(channel, state, event_type_modules) do
+    case detect_drift(channel, state, event_type_modules) do
+      {:ok, findings} ->
+        Process.put(@drift_findings_key, findings)
+        Process.put(@drift_checked_key, true)
+        Enum.each(findings, &log_drift(&1, state))
+        apply_drift_policy(findings, state.drift_policy)
+
+      {:error, reason} ->
+        Process.put(@drift_findings_key, [])
+
+        case state.drift_policy do
+          :fail ->
+            {:error, {:artifact_identity_drift_check_failed, reason}}
+
+          _ ->
+            Process.put(@drift_checked_key, true)
+
+            Logger.warning(
+              "Chronicle artifact identity drift check failed for #{state.event_store}/#{state.namespace}: " <>
+                inspect(reason)
+            )
+
+            :ok
+        end
+    end
+  end
+
+  defp detect_drift(channel, state, event_type_modules) do
     report =
       Report.build(%{
         event_types: event_type_modules,
@@ -330,31 +374,12 @@ defmodule Chronicle.Registration.Coordinator do
         warn_defaulted_ids: false
       })
 
-    case DriftDetector.detect(channel, report,
-           event_store: state.event_store,
-           namespace: state.namespace
-         ) do
-      {:ok, findings} ->
-        Process.put(@drift_findings_key, findings)
-        Enum.each(findings, &log_drift(&1, state))
-        apply_drift_policy(findings, state.drift_policy)
-
-      {:error, reason} ->
-        Process.put(@drift_findings_key, [])
-
-        case state.drift_policy do
-          :fail ->
-            {:error, {:artifact_identity_drift_check_failed, reason}}
-
-          _ ->
-            Logger.warning(
-              "Chronicle artifact identity drift check failed for #{state.event_store}/#{state.namespace}: " <>
-                inspect(reason)
-            )
-
-            :ok
-        end
-    end
+    state.drift_detect_fun.(channel, report,
+      event_store: state.event_store,
+      namespace: state.namespace
+    )
+  rescue
+    exception -> {:error, {:exception, exception}}
   end
 
   @doc """
@@ -379,10 +404,14 @@ defmodule Chronicle.Registration.Coordinator do
   def apply_drift_policy(_findings, _policy), do: :ok
 
   defp log_drift(drift, state) do
-    Logger.warning(
+    message =
       "Chronicle artifact identity drift (#{state.event_store}/#{state.namespace}): " <>
         "[#{drift.severity}] #{drift.kind} #{drift.id} — #{drift.reason}"
-    )
+
+    case drift.severity do
+      :info -> Logger.info(message)
+      _ -> Logger.warning(message)
+    end
   end
 
   defp ensure_event_store(channel, event_store) do

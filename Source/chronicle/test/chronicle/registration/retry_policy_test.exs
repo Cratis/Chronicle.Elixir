@@ -58,5 +58,7 @@ defmodule Chronicle.Registration.RetryPolicyTest do
 
     assert RetryPolicy.retryable?({:ensure_namespace, :not_connected})
     refute RetryPolicy.retry?(RetryPolicy.new(nil), 1, {:validation_results, []})
+    refute RetryPolicy.retryable?({:artifact_identity_drift, []})
+    assert RetryPolicy.retryable?({:artifact_identity_drift_check_failed, :timeout})
   end
 end

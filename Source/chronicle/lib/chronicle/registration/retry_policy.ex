@@ -71,6 +71,9 @@ defmodule Chronicle.Registration.RetryPolicy do
   @spec retryable?(term()) :: boolean()
   def retryable?({:validation_results, _}), do: false
 
+  # Under `drift_policy: :fail` the same artifacts drift the same way on every attempt.
+  def retryable?({:artifact_identity_drift, _}), do: false
+
   # The coordinator tags a failure with the stage it happened in; the cause decides.
   def retryable?({stage, reason}) when is_atom(stage) and stage not in [:error, :ok] do
     if stage |> Atom.to_string() |> String.starts_with?(["register_", "ensure_"]),
