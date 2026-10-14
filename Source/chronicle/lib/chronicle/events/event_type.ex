@@ -316,7 +316,9 @@ defmodule Chronicle.Events.EventType do
   `:message` also accepts a `{Module, :function}` callback invoked with the violation to
   compute one; see `Chronicle.Events.ConstraintViolation.details/1`.
 
-  An unknown option, an invalid `:mode`, or an invalid `:scope` value is a compile-time error.
+  An unknown option, an invalid `:mode`, or an invalid `:scope` value emits a compile warning
+  (the declaration still compiles; an unknown `:mode` then raises `ArgumentError` when the
+  constraint definition is built, as in earlier releases).
 
   ## Scoping example
 
@@ -348,7 +350,7 @@ defmodule Chronicle.Events.EventType do
     * `:scope` — see `unique/2`
     * `:event_sequences` — see `unique/2`
 
-  An unknown option or an invalid `:scope` value is a compile-time error.
+  An unknown option or an invalid `:scope` value emits a compile warning.
   """
   defmacro unique_event_type(opts \\ []) do
     validate_unique_opts!(
@@ -364,18 +366,35 @@ defmodule Chronicle.Events.EventType do
   end
 
   @doc false
+  # Option problems are compile warnings, not errors: the options were silently
+  # accepted by earlier releases, so a module that compiled then must still compile.
+  # `opts` is macro AST: when it is not a literal keyword list (for example a module
+  # attribute) nothing can be checked at compile time, and a `:mode`/`:scope` value that
+  # is not a literal is skipped for the same reason.
   def validate_unique_opts!(caller, opts, allowed_keys, context) do
-    case Chronicle.Events.Constraints.validate_unique_opts(opts, allowed_keys) do
-      :ok ->
-        :ok
+    if Keyword.keyword?(opts) do
+      literal = Enum.filter(opts, &literal_option?/1)
 
-      {:error, reason} ->
-        raise CompileError,
-          file: caller.file,
-          line: caller.line,
-          description: "#{inspect(caller.module)}: #{context} #{reason}"
+      case Chronicle.Events.Constraints.validate_unique_opts(literal, allowed_keys) do
+        :ok ->
+          :ok
+
+        {:error, reason} ->
+          IO.warn(
+            "#{inspect(caller.module)}: #{context} #{reason}",
+            Macro.Env.stacktrace(caller)
+          )
+      end
+    else
+      :ok
     end
   end
+
+  defp literal_option?({:mode, value}), do: is_atom(value)
+  defp literal_option?({:scope, value}) when is_atom(value), do: true
+  defp literal_option?({:scope, value}) when is_list(value), do: Enum.all?(value, &is_atom/1)
+  defp literal_option?({:scope, _}), do: false
+  defp literal_option?(_), do: true
 
   @doc """
   Declares that appending this event **closes a stream scope** (a *closing event*).
