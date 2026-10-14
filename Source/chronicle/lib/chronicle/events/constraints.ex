@@ -30,6 +30,9 @@ defmodule Chronicle.Events.Constraints do
 
   alias Chronicle.Registration.Coordinator
 
+  @valid_unique_modes [:per_event_source, :per_value]
+  @valid_scope_dimensions [:per_event_source_type, :per_event_stream_type, :per_event_stream_id]
+
   alias Cratis.Chronicle.Contracts.Events.Constraints.{
     Constraints,
     RegisterConstraintsRequest,
@@ -91,16 +94,22 @@ defmodule Chronicle.Events.Constraints do
   """
   @spec from_event_types([module()]) :: [map()]
   def from_event_types(event_types) when is_list(event_types) do
-    removal_event_types =
+    removal_declarations =
       event_types
       |> Enum.flat_map(fn event_type ->
         event_type
         |> event_type_constraints()
         |> Map.get(:remove_constraint, [])
-        |> Enum.map(&{normalize_constraint_name(&1), event_type})
+        |> Enum.map(&normalize_removal_declaration(&1, event_type))
       end)
-      # Several event types can release the same constraint.
-      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+
+    # Several event types can release the same constraint.
+    removal_event_types = Enum.group_by(removal_declarations, & &1.name, & &1.event_type)
+
+    removal_event_definitions =
+      removal_declarations
+      |> Enum.filter(&(&1.properties != []))
+      |> Enum.group_by(& &1.name)
 
     unique_constraints =
       event_types
@@ -124,7 +133,13 @@ defmodule Chronicle.Events.Constraints do
         |> maybe_put_mode(unique_mode(name, definitions))
         |> maybe_put_message(Enum.find_value(definitions, "", &Map.get(&1, :message)))
         |> maybe_put_scope(definitions |> Enum.flat_map(&Map.get(&1, :scope, [])) |> Enum.uniq())
+        |> maybe_put_event_sequences(
+          definitions
+          |> Enum.flat_map(&Map.get(&1, :event_sequences, []))
+          |> Enum.uniq()
+        )
         |> with_removed_with_event_type(Map.get(removal_event_types, name))
+        |> with_removal_event_definitions(Map.get(removal_event_definitions, name))
       end)
 
     unique_event_type_constraints =
@@ -135,14 +150,81 @@ defmodule Chronicle.Events.Constraints do
         |> Map.get(:unique_event_type, [])
         |> Enum.map(&normalize_unique_event_type_declaration(&1, event_type))
       end)
-      |> Enum.map(fn constraint ->
-        constraint
-        |> Map.put(:type, :unique_event_type)
-        |> with_removed_with_event_type(Map.get(removal_event_types, constraint.name))
+      # Declaring unique_event_type under the same name on more than one event type is how
+      # mutual exclusion is expressed: the declarations become one constraint allowing at most
+      # one event from the named set per event source, mirroring C#'s
+      # MergeUniqueEventTypeConstraintsSharingName.
+      |> Enum.group_by(& &1.name)
+      |> Enum.map(fn {name, declarations} ->
+        %{
+          type: :unique_event_type,
+          name: name,
+          event_type_ids: declarations |> Enum.map(& &1.event_type_id) |> Enum.uniq()
+        }
+        |> maybe_put_message(Enum.find_value(declarations, "", &Map.get(&1, :message)))
+        |> maybe_put_scope(declarations |> Enum.flat_map(&Map.get(&1, :scope, [])) |> Enum.uniq())
+        |> maybe_put_event_sequences(
+          declarations
+          |> Enum.flat_map(&Map.get(&1, :event_sequences, []))
+          |> Enum.uniq()
+        )
+        |> with_removed_with_event_type(Map.get(removal_event_types, name))
       end)
 
     (unique_constraints ++ unique_event_type_constraints ++ closes_stream_constraints(event_types))
     |> Enum.sort_by(& &1.name)
+  end
+
+  @doc """
+  Builds constraint definitions from standalone constraint modules (each
+  `use Chronicle.Events.Constraint`).
+
+  Unlike `from_event_types/1`, constraint names are not merged across modules: a module's
+  own duplicate-name and mode-conflict checks run at compile time (see
+  `Chronicle.Events.Constraint`), and a conflict between two different modules is left for
+  the kernel to reject at registration, mirroring the C# client's per-builder scoping.
+  """
+  @spec from_constraint_modules([module()]) :: [map()]
+  def from_constraint_modules(modules) when is_list(modules) do
+    modules
+    |> Enum.flat_map(fn module ->
+      if function_exported?(module, :__chronicle_constraint__, 1) do
+        module.__chronicle_constraint__(:definitions)
+      else
+        []
+      end
+    end)
+    |> Enum.sort_by(& &1.name)
+  end
+
+  @doc false
+  # Shared by `Chronicle.Events.EventType`'s `unique/2`/`unique_event_type/1` and
+  # `Chronicle.Events.Constraint`'s DSL to validate declared options against the same rules,
+  # so both surfaces reject the same unknown option, invalid mode, and invalid scope.
+  # Returns `:ok` or `{:error, reason}`; the caller decides how to raise (a compile error for
+  # the EventType macros, naming the module for the standalone Constraint module).
+  @spec validate_unique_opts(keyword(), [atom()]) :: :ok | {:error, String.t()}
+  def validate_unique_opts(opts, allowed_keys) when is_list(opts) and is_list(allowed_keys) do
+    unknown = Keyword.keys(opts) -- allowed_keys
+    mode = Keyword.get(opts, :mode)
+    invalid_scope = Keyword.get(opts, :scope) |> List.wrap() |> Kernel.--(@valid_scope_dimensions)
+
+    cond do
+      unknown != [] ->
+        {:error,
+         "has unknown option(s) #{inspect(unknown)}; expected one of #{inspect(allowed_keys)}"}
+
+      not is_nil(mode) and mode not in @valid_unique_modes ->
+        {:error,
+         "has an invalid :mode #{inspect(mode)}; expected one of #{inspect(@valid_unique_modes)}"}
+
+      invalid_scope != [] ->
+        {:error,
+         "has an invalid :scope #{inspect(invalid_scope)}; expected one of #{inspect(@valid_scope_dimensions)}"}
+
+      true ->
+        :ok
+    end
   end
 
   @doc false
@@ -184,7 +266,11 @@ defmodule Chronicle.Events.Constraints do
           struct(UniqueConstraintDefinition,
             EventDefinitions: Enum.map(event_definitions, &build_unique_event_definition/1),
             IgnoreCasing: Map.get(constraint, :ignore_casing, false),
-            Mode: wire_unique_mode(Map.get(constraint, :mode, :per_event_source))
+            Mode: wire_unique_mode(Map.get(constraint, :mode, :per_event_source)),
+            RemovalEventDefinitions:
+              constraint
+              |> Map.get(:removal_event_definitions, [])
+              |> Enum.map(&build_unique_event_definition/1)
           )
       )
 
@@ -194,18 +280,30 @@ defmodule Chronicle.Events.Constraints do
         Type: :Unique,
         RemovedWith: removed_with_event_type_ids(constraint),
         Definition: definition,
-        Scope: build_constraint_scope(Map.get(constraint, :scope, []))
+        Scope: build_constraint_scope(Map.get(constraint, :scope, [])),
+        EventSequences: Map.get(constraint, :event_sequences, [])
       )
 
     {wire_constraint, Map.get(constraint, :message, "")}
   end
 
+  # A single `:event_type_id` is the documented single-entry shape for `register/3`'s raw maps.
+  # Normalized to the repeated `:event_type_ids` shape below, which is what the contract's
+  # `UniqueEventTypeConstraintDefinition.EventTypeIds` field actually carries: `struct/2` drops
+  # an unknown `EventTypeId:` key, so a single-entry build used to send an empty list on the wire.
+  def build_constraint(%{type: :unique_event_type, event_type_id: event_type_id} = constraint) do
+    constraint
+    |> Map.delete(:event_type_id)
+    |> Map.put(:event_type_ids, [event_type_id])
+    |> build_constraint()
+  end
+
   def build_constraint(
-        %{type: :unique_event_type, name: name, event_type_id: event_type_id} = constraint
+        %{type: :unique_event_type, name: name, event_type_ids: event_type_ids} = constraint
       ) do
     definition =
       struct(OneOf_UniqueConstraintDefinition_UniqueEventTypeConstraintDefinition,
-        Value1: struct(UniqueEventTypeConstraintDefinition, EventTypeId: event_type_id)
+        Value1: struct(UniqueEventTypeConstraintDefinition, EventTypeIds: event_type_ids)
       )
 
     wire_constraint =
@@ -213,7 +311,9 @@ defmodule Chronicle.Events.Constraints do
         Name: name,
         Type: :UniqueEventType,
         RemovedWith: removed_with_event_type_ids(constraint),
-        Definition: definition
+        Definition: definition,
+        Scope: build_constraint_scope(Map.get(constraint, :scope, [])),
+        EventSequences: Map.get(constraint, :event_sequences, [])
       )
 
     {wire_constraint, Map.get(constraint, :message, "")}
@@ -444,7 +544,8 @@ defmodule Chronicle.Events.Constraints do
       Keyword.get(opts, :ignore_casing, false),
       Keyword.get(opts, :message, ""),
       normalize_scope(Keyword.get(opts, :scope)),
-      Keyword.get(opts, :mode, :per_event_source)
+      Keyword.get(opts, :mode, :per_event_source),
+      normalize_event_sequences(Keyword.get(opts, :event_sequences))
     )
   end
 
@@ -462,7 +563,8 @@ defmodule Chronicle.Events.Constraints do
       Keyword.get(opts, :ignore_casing, false),
       Keyword.get(opts, :message, ""),
       normalize_scope(Keyword.get(opts, :scope)),
-      Keyword.get(opts, :mode, :per_event_source)
+      Keyword.get(opts, :mode, :per_event_source),
+      normalize_event_sequences(Keyword.get(opts, :event_sequences))
     )
   end
 
@@ -476,7 +578,8 @@ defmodule Chronicle.Events.Constraints do
       false,
       "",
       [],
-      :per_event_source
+      :per_event_source,
+      []
     )
   end
 
@@ -487,6 +590,15 @@ defmodule Chronicle.Events.Constraints do
   defp normalize_scope(scope) when is_atom(scope), do: [scope]
   defp normalize_scope(scope) when is_list(scope), do: scope
 
+  # :event_sequences accepts a single sequence id (atom/string) or a list of them, the same
+  # shape `closes_stream`'s :event_sequences already accepts.
+  defp normalize_event_sequences(nil), do: []
+
+  defp normalize_event_sequences(sequences) when is_list(sequences),
+    do: Enum.map(sequences, &to_string/1)
+
+  defp normalize_event_sequences(sequence), do: [to_string(sequence)]
+
   defp normalize_unique_event_type_declaration(opts, event_type) when is_list(opts) do
     name =
       normalize_constraint_name(
@@ -495,11 +607,25 @@ defmodule Chronicle.Events.Constraints do
 
     %{name: name, event_type_id: event_type.__chronicle_event_type__(:id)}
     |> maybe_put_message(Keyword.get(opts, :message, ""))
+    |> maybe_put_scope(normalize_scope(Keyword.get(opts, :scope)))
+    |> maybe_put_event_sequences(normalize_event_sequences(Keyword.get(opts, :event_sequences)))
   end
 
   defp normalize_unique_event_type_declaration(_opts, event_type) do
     name = normalize_constraint_name(event_type.__chronicle_event_type__(:id))
     %{name: name, event_type_id: event_type.__chronicle_event_type__(:id)}
+  end
+
+  defp normalize_removal_declaration({name, opts}, event_type) when is_list(opts) do
+    %{
+      name: normalize_constraint_name(name),
+      event_type: event_type,
+      properties: opts |> Keyword.get(:properties, []) |> List.wrap() |> Enum.map(&to_string/1)
+    }
+  end
+
+  defp normalize_removal_declaration(name, event_type) do
+    %{name: normalize_constraint_name(name), event_type: event_type, properties: []}
   end
 
   defp normalize_fields(fields) when is_list(fields), do: Enum.map(fields, &to_string/1)
@@ -526,7 +652,8 @@ defmodule Chronicle.Events.Constraints do
          ignore_casing,
          message,
          scope,
-         mode
+         mode,
+         event_sequences
        ) do
     validate_unique_mode!(mode, name)
 
@@ -539,6 +666,7 @@ defmodule Chronicle.Events.Constraints do
     |> maybe_put_mode(mode)
     |> maybe_put_message(message)
     |> maybe_put_scope(scope)
+    |> maybe_put_event_sequences(event_sequences)
   end
 
   defp validate_unique_mode!(mode, _name) when mode in [:per_event_source, :per_value], do: :ok
@@ -554,8 +682,15 @@ defmodule Chronicle.Events.Constraints do
   # constraint definition maps without a custom message keep their existing
   # (message-less) shape — matching every other Cratis client, where an
   # unset message resolves to an empty string rather than a present-but-empty
-  # field.
+  # field. A `{Module, :function}` tuple is a violation message callback,
+  # resolved against the violation at append time (see
+  # `Chronicle.EventSequences.AppendResponse.resolve_messages/3`).
   defp maybe_put_message(map, message) when is_binary(message) and message != "" do
+    Map.put(map, :message, message)
+  end
+
+  defp maybe_put_message(map, {module, function} = message)
+       when is_atom(module) and is_atom(function) do
     Map.put(map, :message, message)
   end
 
@@ -567,10 +702,29 @@ defmodule Chronicle.Events.Constraints do
 
   defp maybe_put_scope(map, _scope), do: map
 
+  defp maybe_put_event_sequences(map, event_sequences)
+       when is_list(event_sequences) and event_sequences != [] do
+    Map.put(map, :event_sequences, event_sequences)
+  end
+
+  defp maybe_put_event_sequences(map, _event_sequences), do: map
+
   defp with_removed_with_event_type(definition, nil), do: definition
 
   defp with_removed_with_event_type(definition, event_types) do
-    Map.put(definition, :removed_with_event_types, List.wrap(event_types))
+    Map.put(definition, :removed_with_event_types, List.wrap(event_types) |> Enum.uniq())
+  end
+
+  defp with_removal_event_definitions(definition, nil), do: definition
+
+  defp with_removal_event_definitions(definition, removal_declarations) do
+    Map.put(
+      definition,
+      :removal_event_definitions,
+      Enum.map(removal_declarations, fn %{event_type: event_type, properties: properties} ->
+        %{event_type: event_type, on: properties}
+      end)
+    )
   end
 
   # RemovedWith is a repeated field: every event type that releases the constraint.

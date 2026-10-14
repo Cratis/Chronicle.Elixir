@@ -227,8 +227,10 @@ lists of structs and maps decode as described in `Chronicle.Serialization`.
 Reactors, reducers and `decode: true` reads all give you a `Chronicle.Events.EventContext`:
 the event type and source, sequence number, `occurred`, event store and namespace,
 `correlation_id`, the identity that caused the event (`caused_by`, with `on_behalf_of`), the
-`causation` chain, `tags`, `hash` and `subject`. See [Context management](context.md) for how to
-set the correlation id, identity and causation on the way in.
+`causation` chain, `tags`, `hash`, `subject` and `appended_generation` (the generation that was
+actually appended, regardless of which generation a reactor or reducer is written against; `0`
+means unknown). See [Context management](context.md) for how to set the correlation id, identity
+and causation on the way in.
 
 ## Creation-only guards
 
@@ -246,7 +248,67 @@ Chronicle.append("user-1", %MyApp.Events.UserRegistered{}, concurrency_scope: sc
 ```
 
 It sends the kernel's explicit no-matching-event condition. Leaving the expected sequence number
-unset is not a substitute: that turns the check off.
+unset is not a substitute: that turns the check off. `expecting_no_matching_event/1` also accepts
+an existing scope, so it composes with the other pipe-able builders below.
+
+## Concurrency
+
+`Chronicle.Events.ConcurrencyScope` offers pipe-able builder helpers in addition to `new/2` and
+`for_event_source/2`: `with_sequence_number/2`, `with_event_source/1`, `with_event_stream_type/2`,
+`with_event_stream_id/2`, `with_event_source_type/2`, `with_event_type/2`, `with_event_types/2`,
+and `expecting_no_matching_event/1` (on a struct as well as on keyword options):
+
+```elixir
+scope =
+  12
+  |> ConcurrencyScope.new()
+  |> ConcurrencyScope.with_event_source()
+  |> ConcurrencyScope.with_event_stream_type("Transactions")
+  |> ConcurrencyScope.with_event_type(MyApp.Events.FundsDeposited)
+```
+
+`ConcurrencyScope.at_tail/2` reads the current tail - narrowed by `:event_stream_type`,
+`:event_stream_id`, `:event_source_type` and `:event_types` the same way the returned scope
+narrows - and returns a scope expecting it, in one call:
+
+```elixir
+{:ok, scope} = ConcurrencyScope.at_tail("account-1", event_stream_type: "Transactions")
+Chronicle.append("account-1", %MyApp.Events.FundsDeposited{amount: 10}, concurrency_scope: scope)
+```
+
+### Default concurrency strategy
+
+By default a client sends no concurrency constraint for an append that declares none and that
+no event source definition derives one for. Opt a client into deriving one automatically with
+the `:concurrency` option on `Chronicle.Client`:
+
+```elixir
+{Chronicle.Client,
+  connection_string: "chronicle://localhost:35000",
+  event_store: "my-store",
+  concurrency: [default: :optimistic, check_first_append: false]}
+```
+
+With `default: :optimistic`, an append that has neither an explicit nor a definition-derived
+scope reads the tail (narrowed exactly the way the append itself is routed) and expects nothing
+to have been appended since - mirroring the .NET client's `OptimisticConcurrencyStrategy`.
+`check_first_append: true` additionally guards the first append into an empty narrowing (an
+empty event source, or the first event under a new stream type/id) with
+`expecting_no_matching_event/1` instead of leaving it unchecked. An explicit or
+definition-derived scope on an append always wins over this default.
+
+### Duplicate explicit scopes in a batch
+
+The wire protocol carries one concurrency scope per event source id in a batch. Two *unequal*
+explicit scopes declared for the same event source id in one `append_many_for_event_sources/2`
+call (or one unit of work) are rejected before anything is sent:
+
+```elixir
+{:error, {:duplicate_concurrency_scope, event_source_id}}
+```
+
+Equal duplicates (the same guard declared more than once) are accepted and collapse to a single
+entry.
 
 ## Streams, metadata and verification
 
@@ -262,11 +324,59 @@ alias Chronicle.EventSequences.Streams
 :ok = Streams.reopen_scope("Late invoice arrived", event_source_id: "acc-1", event_stream_type: "Period", event_stream_id: "2024")
 
 {:ok, [metadata]} = Streams.get_metadata([sequence_number])
+{:ok, metadata} = Streams.get_metadata_at(sequence_number)
 {:ok, :equal} = Streams.verify_content(sequence_number, %MyApp.Events.PeriodClosed{period: "2024"})
 ```
 
 Events that close a scope as part of their own append are declared with
 `closes_stream`; see [Constraints](constraints.md#closing-events).
+
+`get_metadata_at/2` reads a single event's metadata by sequence number, returning
+`{:ok, metadata}` or `{:error, :not_found}`. `get_metadata/2` accepts up to 500 sequence
+numbers, de-duplicating them before the request is sent; above that it returns
+`{:error, {:too_many_event_locators, 500}}` without sending one.
+
+Metadata also carries `:initiator_type` (`:unknown | :user | :agent | :system`) and
+`:resolved_caused_by` - a `Chronicle.EventSequences.ResolvedIdentity` carrying the same
+subject/name/user name as `:caused_by`, plus `:resolution` (how the kernel resolved the
+identity at read time: `:resolved`, `:name_unavailable`, `:missing`, `:not_set` or `:system`)
+and its own `:on_behalf_of` chain. `:caused_by` (a plain `Chronicle.Identity`) also carries
+`:on_behalf_of` now.
+
+## Prepared events
+
+`EventLog.prepare/2` serializes an event once and returns a `Chronicle.EventSequences.PreparedEvent`
+bound to the client, namespace and event sequence that prepared it. Reuse it with
+`EventLog.append_prepared/3` and `Streams.verify_content/3` without re-serializing the event -
+useful when you need to verify stored content against exactly what you intended to send, or when
+preparing is itself expensive (large payloads, custom serialization):
+
+```elixir
+{:ok, prepared} = EventLog.prepare(%MyApp.Events.PeriodClosed{period: "2024"})
+:ok = EventLog.append_prepared("acc-1", prepared)
+{:ok, :equal} = Streams.verify_content(sequence_number, prepared)
+```
+
+Appending a prepared event through a different client, namespace, or event sequence than the one
+that prepared it returns `{:error, :prepared_event_belongs_to_another_sequence}`. Unlike the .NET
+client, single use is not enforced - a prepared event can be appended more than once, exactly like
+appending the same event struct twice.
+
+## Unknown event types
+
+Every append path (`append/3`, `append_many/3`, the `_with_result` variants,
+`append_many_for_event_sources/2`, `EventLog.prepare/2`) and `Streams.verify_content/3` check that
+an event struct `use`s `Chronicle.Events.EventType` before building a request, returning
+`{:error, {:unknown_event_type, module}}` instead of raising deep inside request building:
+
+```elixir
+defmodule MyApp.NotAnEvent do
+  defstruct [:value]
+end
+
+{:error, {:unknown_event_type, MyApp.NotAnEvent}} =
+  Chronicle.append("acc-1", %MyApp.NotAnEvent{value: 1})
+```
 
 ## Payload size
 

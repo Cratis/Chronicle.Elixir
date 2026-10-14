@@ -54,8 +54,19 @@ defmodule Chronicle.Events.EventType do
 
   ## Options
 
-    * `:id` — the stable event type identifier (required)
-    * `:generation` — the generation number (default `1`)
+    * `:id` — the stable event type identifier (required, unless `:generation_for` is given)
+    * `:generation` — the generation number (default `1`; required when `:generation_for` is
+      given)
+    * `:generation_for` — marks this module as a **previous generation** of the event type
+      module it names, instead of giving it its own `:id`. The event type id is resolved from
+      the target module, so the two generations can never drift apart by a hand-typed,
+      mismatched id string. Cannot be combined with `:id`; the target module must itself `use
+      Chronicle.Events.EventType`.
+
+          defmodule MyApp.Events.AccountOpenedV1 do
+            use Chronicle.Events.EventType, generation_for: MyApp.Events.AccountOpened, generation: 1
+            defstruct account_id: "", owner_name: ""
+          end
     * `:subject` — the field holding the event's data subject, the person whose PII the event
       carries (`subject: :customer_id`). It is resolved on append unless an explicit `:subject`
       option is given, and decides whose erasure key protects the event's PII. Without it the
@@ -113,6 +124,20 @@ defmodule Chronicle.Events.EventType do
   def declared_tags(_), do: []
 
   @doc """
+  Returns whether `module` is a Chronicle event type (`use Chronicle.Events.EventType`).
+
+  Every append path checks this before building a request, so an event struct that never
+  registered an event type fails with a structured `{:error, {:unknown_event_type, module}}`
+  instead of raising deep inside request building.
+  """
+  @spec event_type?(module()) :: boolean()
+  def event_type?(module) when is_atom(module) do
+    Code.ensure_loaded?(module) and function_exported?(module, :__chronicle_event_type__, 1)
+  end
+
+  def event_type?(_), do: false
+
+  @doc """
   Returns metadata for this event type module.
 
   Accepts `:id`, `:generation`, or `:constraints` as the key.
@@ -121,6 +146,7 @@ defmodule Chronicle.Events.EventType do
               key ::
                 :id
                 | :generation
+                | :generation_for
                 | :constraints
                 | :pii
                 | :encrypted
@@ -132,7 +158,25 @@ defmodule Chronicle.Events.EventType do
             ) :: term()
 
   defmacro __using__(opts) do
-    event_type_id = Keyword.fetch!(opts, :id)
+    generation_for = Keyword.get(opts, :generation_for)
+    explicit_id = Keyword.get(opts, :id)
+
+    if generation_for && explicit_id do
+      raise Chronicle.Events.EventTypeGenerationForCannotBeCombinedWithEventType,
+        module: __CALLER__.module
+    end
+
+    if generation_for && !Keyword.has_key?(opts, :generation) do
+      raise ArgumentError,
+            "#{inspect(__CALLER__.module)}: generation_for: requires an explicit :generation " <>
+              "(the generation this module represents)"
+    end
+
+    unless generation_for || explicit_id do
+      # Preserve the original KeyError shape for the plain, non-generation_for case.
+      Keyword.fetch!(opts, :id)
+    end
+
     generation = Keyword.get(opts, :generation, 1)
     field_types = Keyword.get(opts, :types, [])
     subject = Keyword.get(opts, :subject)
@@ -158,6 +202,7 @@ defmodule Chronicle.Events.EventType do
           unique_event_type: 0,
           unique_event_type: 1,
           remove_constraint: 1,
+          remove_constraint: 2,
           closes_stream: 0,
           closes_stream: 1
         ]
@@ -165,7 +210,8 @@ defmodule Chronicle.Events.EventType do
       import Chronicle.Compliance, only: [pii: 1, pii: 2]
       import Chronicle.Confidentiality, only: [encrypted: 1, encrypted: 2, encrypted: 3]
 
-      @chronicle_event_type_id unquote(event_type_id)
+      @chronicle_event_type_explicit_id unquote(explicit_id)
+      @chronicle_event_type_generation_for unquote(generation_for)
       @chronicle_event_type_generation unquote(generation)
       @chronicle_field_types unquote(field_types)
       @chronicle_event_subject unquote(subject)
@@ -188,9 +234,30 @@ defmodule Chronicle.Events.EventType do
   # them inline in `__using__` would always see empty lists.
   defmacro __before_compile__(_env) do
     quote do
+      @chronicle_event_type_id (case @chronicle_event_type_generation_for do
+                                  nil ->
+                                    @chronicle_event_type_explicit_id
+
+                                  target_module ->
+                                    Code.ensure_compiled!(target_module)
+
+                                    unless function_exported?(
+                                             target_module,
+                                             :__chronicle_event_type__,
+                                             1
+                                           ) do
+                                      raise Chronicle.Events.EventTypeGenerationReferencesNonEventType,
+                                        module: __MODULE__,
+                                        referenced_module: target_module
+                                    end
+
+                                    target_module.__chronicle_event_type__(:id)
+                                end)
+
       @impl Chronicle.Events.EventType
       def __chronicle_event_type__(:id), do: @chronicle_event_type_id
       def __chronicle_event_type__(:generation), do: @chronicle_event_type_generation
+      def __chronicle_event_type__(:generation_for), do: @chronicle_event_type_generation_for
 
       def __chronicle_event_type__(:constraints) do
         constraints = %{
@@ -243,6 +310,15 @@ defmodule Chronicle.Events.EventType do
       `PerEventStreamId()`. An atom (`:per_event_source_type`,
       `:per_event_stream_type`, or `:per_event_stream_id`) or a list of them.
       Defaults to unscoped (globally unique across the whole event store).
+    * `:event_sequences` — restrict the declaration to specific event
+      sequences (default: all)
+
+  `:message` also accepts a `{Module, :function}` callback invoked with the violation to
+  compute one; see `Chronicle.Events.ConstraintViolation.details/1`.
+
+  An unknown option, an invalid `:mode`, or an invalid `:scope` value emits a compile warning
+  (the declaration still compiles; an unknown `:mode` then raises `ArgumentError` when the
+  constraint definition is built, as in earlier releases).
 
   ## Scoping example
 
@@ -251,6 +327,13 @@ defmodule Chronicle.Events.EventType do
       unique(:email, scope: :per_event_source_type)
   """
   defmacro unique(fields, opts \\ []) do
+    validate_unique_opts!(
+      __CALLER__,
+      opts,
+      [:name, :mode, :ignore_casing, :message, :scope, :event_sequences],
+      "unique/2"
+    )
+
     quote do
       @unique {unquote(fields), unquote(opts)}
     end
@@ -263,13 +346,55 @@ defmodule Chronicle.Events.EventType do
 
     * `:name` — explicit constraint name (defaults to the event type id)
     * `:message` — human-readable message to use when the constraint is
-      violated
+      violated, or a `{Module, :function}` callback; see `unique/2`
+    * `:scope` — see `unique/2`
+    * `:event_sequences` — see `unique/2`
+
+  An unknown option or an invalid `:scope` value emits a compile warning.
   """
   defmacro unique_event_type(opts \\ []) do
+    validate_unique_opts!(
+      __CALLER__,
+      opts,
+      [:name, :message, :scope, :event_sequences],
+      "unique_event_type/1"
+    )
+
     quote do
       @unique_event_type unquote(opts)
     end
   end
+
+  @doc false
+  # Option problems are compile warnings, not errors: the options were silently
+  # accepted by earlier releases, so a module that compiled then must still compile.
+  # `opts` is macro AST: when it is not a literal keyword list (for example a module
+  # attribute) nothing can be checked at compile time, and a `:mode`/`:scope` value that
+  # is not a literal is skipped for the same reason.
+  def validate_unique_opts!(caller, opts, allowed_keys, context) do
+    if Keyword.keyword?(opts) do
+      literal = Enum.filter(opts, &literal_option?/1)
+
+      case Chronicle.Events.Constraints.validate_unique_opts(literal, allowed_keys) do
+        :ok ->
+          :ok
+
+        {:error, reason} ->
+          IO.warn(
+            "#{inspect(caller.module)}: #{context} #{reason}",
+            Macro.Env.stacktrace(caller)
+          )
+      end
+    else
+      :ok
+    end
+  end
+
+  defp literal_option?({:mode, value}), do: is_atom(value)
+  defp literal_option?({:scope, value}) when is_atom(value), do: true
+  defp literal_option?({:scope, value}) when is_list(value), do: Enum.all?(value, &is_atom/1)
+  defp literal_option?({:scope, _}), do: false
+  defp literal_option?(_), do: true
 
   @doc """
   Declares that appending this event **closes a stream scope** (a *closing event*).
@@ -312,6 +437,28 @@ defmodule Chronicle.Events.EventType do
   defmacro remove_constraint(name) do
     quote do
       @remove_constraint unquote(name)
+    end
+  end
+
+  @doc """
+  Declares that appending this event removes a named constraint, carrying the value to
+  release.
+
+  `:properties` names the constrained properties, in the same order as the `unique/2`
+  declaration, that this event carries the value of (empty or omitted releases every value for
+  the event source, same as `remove_constraint/1`). Only meaningful for a `:per_value` unique
+  constraint — a unique event type constraint has no constrained value to carry.
+
+      defmodule MyApp.Events.MappingVersionRemoved do
+        use Chronicle.Events.EventType, id: "mapping-version-removed"
+        defstruct [:version_id]
+
+        remove_constraint("UniqueMappingVersionId", properties: [:version_id])
+      end
+  """
+  defmacro remove_constraint(name, opts) do
+    quote do
+      @remove_constraint {unquote(name), unquote(opts)}
     end
   end
 end

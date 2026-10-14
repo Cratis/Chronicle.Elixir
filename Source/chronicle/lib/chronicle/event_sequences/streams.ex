@@ -16,8 +16,11 @@ defmodule Chronicle.EventSequences.Streams do
   """
 
   alias Chronicle.Connections.Connection
-  alias Chronicle.EventSequences.EventLog
+  alias Chronicle.EventSequences.{EventLog, PreparedEvent, ResolvedIdentity}
+  alias Chronicle.Events.EventType
   alias Chronicle.WireResult
+
+  @max_sequence_numbers 500
 
   alias Cratis.Chronicle.Contracts.Sequences.{
     ClosedStreamsRequest,
@@ -164,35 +167,91 @@ defmodule Chronicle.EventSequences.Streams do
 
   Returns `{:ok, [metadata]}` where each entry is a map with `:sequence_number`, `:event_type_id`,
   `:event_source_type`, `:event_source_id`, `:event_stream_type`, `:event_stream_id`, `:occurred`,
-  `:correlation_id`, `:causation`, `:caused_by`, `:tags`, `:subject` and `:event_source`.
+  `:correlation_id`, `:causation`, `:caused_by` (gains `:on_behalf_of`), `:initiator_type`
+  (`:unknown | :user | :agent | :system`), `:resolved_caused_by` (a
+  `Chronicle.EventSequences.ResolvedIdentity`, carrying how the kernel resolved the identity),
+  `:tags`, `:subject` and `:event_source`.
+
+  `sequence_numbers` is de-duplicated before the request is sent. The kernel limits a single
+  request to #{@max_sequence_numbers} locators; above that this returns
+  `{:error, {:too_many_event_locators, #{@max_sequence_numbers}}}` without sending one.
   """
   @spec get_metadata([non_neg_integer()], keyword()) :: {:ok, [map()]} | {:error, term()}
   def get_metadata(sequence_numbers, opts \\ []) when is_list(sequence_numbers) do
-    with {:ok, channel, config, namespace, sequence} <- context(opts) do
-      request =
-        struct(MetadataAtRequest,
-          EventStore: config.event_store,
-          Namespace: namespace,
-          EventSequenceId: sequence,
-          SequenceNumbers: sequence_numbers
-        )
+    deduped = Enum.uniq(sequence_numbers)
 
-      with {:ok, envelope} <- EventSequences.Stub.metadata_at(channel, request),
-           {:ok, data} <- WireResult.unwrap(envelope) do
-        {:ok, Enum.map(data, &decode_metadata/1)}
+    if length(deduped) > @max_sequence_numbers do
+      {:error, {:too_many_event_locators, @max_sequence_numbers}}
+    else
+      with {:ok, channel, config, namespace, sequence} <- context(opts) do
+        request =
+          struct(MetadataAtRequest,
+            EventStore: config.event_store,
+            Namespace: namespace,
+            EventSequenceId: sequence,
+            SequenceNumbers: deduped
+          )
+
+        with {:ok, envelope} <- EventSequences.Stub.metadata_at(channel, request),
+             {:ok, data} <- WireResult.unwrap(envelope) do
+          {:ok, Enum.map(data, &decode_metadata/1)}
+        end
       end
     end
   end
 
   @doc """
-  Verifies that `event` is what was stored at `sequence_number`, by comparing content.
+  Reads the metadata of a single event by sequence number. See `get_metadata/2`.
+
+  Returns `{:ok, metadata}`, `{:error, :not_found}` when no event exists at that sequence
+  number, or `{:error, reason}`.
+  """
+  @spec get_metadata_at(non_neg_integer(), keyword()) :: {:ok, map()} | {:error, term()}
+  def get_metadata_at(sequence_number, opts \\ []) when is_integer(sequence_number) do
+    case get_metadata([sequence_number], opts) do
+      {:ok, [metadata]} -> {:ok, metadata}
+      {:ok, []} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Verifies that `event` is what was stored at `sequence_number`, by comparing content. Accepts
+  either an event struct or a `Chronicle.EventSequences.PreparedEvent` from `EventLog.prepare/2`
+  (verifying against the content it already captured, without re-serializing).
 
   Returns `{:ok, :equal | :different | :unavailable}`; `:unavailable` means the kernel could not
-  compare (for example the content was redacted).
+  compare (for example the content was redacted). Returns `{:error, {:unknown_event_type, module}}`
+  when `event` does not `use Chronicle.Events.EventType`.
   """
-  @spec verify_content(non_neg_integer(), struct(), keyword()) ::
+  @spec verify_content(non_neg_integer(), struct() | PreparedEvent.t(), keyword()) ::
           {:ok, :equal | :different | :unavailable} | {:error, term()}
-  def verify_content(sequence_number, %module{} = event, opts \\ []) do
+  def verify_content(sequence_number, event_or_prepared, opts \\ [])
+
+  def verify_content(sequence_number, %PreparedEvent{} = prepared_event, opts) do
+    send_verify_content(sequence_number, prepared_event.event_type, prepared_event.content, opts)
+  end
+
+  def verify_content(sequence_number, %module{} = event, opts) do
+    if EventType.event_type?(module) do
+      event_type =
+        struct(Cratis.Chronicle.Contracts.Sequences.EventType,
+          Id: module.__chronicle_event_type__(:id),
+          Generation: module.__chronicle_event_type__(:generation)
+        )
+
+      send_verify_content(
+        sequence_number,
+        event_type,
+        Chronicle.Serialization.to_json(event, :camel),
+        opts
+      )
+    else
+      {:error, {:unknown_event_type, module}}
+    end
+  end
+
+  defp send_verify_content(sequence_number, event_type, content, opts) do
     with {:ok, channel, config, namespace, sequence} <- context(opts) do
       request =
         struct(VerifyContentRequest,
@@ -200,12 +259,8 @@ defmodule Chronicle.EventSequences.Streams do
           Namespace: namespace,
           EventSequenceId: sequence,
           SequenceNumber: sequence_number,
-          EventType:
-            struct(Cratis.Chronicle.Contracts.Sequences.EventType,
-              Id: module.__chronicle_event_type__(:id),
-              Generation: module.__chronicle_event_type__(:generation)
-            ),
-          Content: Chronicle.Serialization.to_json(event, :camel),
+          EventType: event_type,
+          Content: content,
           EventSourceId: Keyword.get(opts, :event_source_id, "")
         )
 
@@ -269,24 +324,57 @@ defmodule Chronicle.EventSequences.Streams do
       occurred: offset(Map.get(metadata, :Occurred)),
       correlation_id: context.correlation_id,
       causation: context.causation,
-      caused_by: resolved_identity(Map.get(metadata, :CausedBy)),
+      caused_by: identity_from_resolved(Map.get(metadata, :CausedBy)),
+      initiator_type: initiator_type(Map.get(metadata, :InitiatorType)),
+      resolved_caused_by: resolved_identity(Map.get(metadata, :CausedBy)),
       tags: Map.get(metadata, :Tags, []),
       subject: Map.get(metadata, :Subject, ""),
       event_source: Map.get(metadata, :EventSourceName)
     }
   end
 
+  defp initiator_type(type) when type in [:User, 1], do: :user
+  defp initiator_type(type) when type in [:Agent, 2], do: :agent
+  defp initiator_type(type) when type in [:INITIATOR_TYPE_System, 3], do: :system
+  defp initiator_type(_), do: :unknown
+
+  # `Chronicle.Identity` is what an append declared: subject, name, user name and the
+  # on-behalf-of chain, ignoring how the kernel resolved it.
+  defp identity_from_resolved(nil), do: nil
+
+  defp identity_from_resolved(resolved) do
+    Chronicle.Identity.new(
+      Map.get(resolved, :Subject, ""),
+      Map.get(resolved, :Name, ""),
+      Map.get(resolved, :UserName, ""),
+      identity_from_resolved(Map.get(resolved, :OnBehalfOf))
+    )
+  end
+
+  # `Chronicle.EventSequences.ResolvedIdentity` additionally carries how the kernel resolved it.
   defp resolved_identity(nil), do: nil
 
   defp resolved_identity(resolved) do
-    identity = Map.get(resolved, :Identity) || resolved
-
-    Chronicle.Identity.new(
-      Map.get(identity, :Subject, ""),
-      Map.get(identity, :Name, ""),
-      Map.get(identity, :UserName, "")
-    )
+    %ResolvedIdentity{
+      subject: Map.get(resolved, :Subject, ""),
+      name: Map.get(resolved, :Name, ""),
+      user_name: Map.get(resolved, :UserName, ""),
+      resolution: identity_resolution(Map.get(resolved, :Resolution)),
+      on_behalf_of: resolved_identity(Map.get(resolved, :OnBehalfOf))
+    }
   end
+
+  defp identity_resolution(resolution) when resolution in [:Resolved, 0], do: :resolved
+
+  defp identity_resolution(resolution) when resolution in [:NameUnavailable, 1],
+    do: :name_unavailable
+
+  defp identity_resolution(resolution) when resolution in [:Missing, 2], do: :missing
+
+  defp identity_resolution(resolution) when resolution in [:IDENTITY_RESOLUTION_System, 4],
+    do: :system
+
+  defp identity_resolution(_), do: :not_set
 
   defp offset(%{Value: value}), do: value
   defp offset(_), do: nil

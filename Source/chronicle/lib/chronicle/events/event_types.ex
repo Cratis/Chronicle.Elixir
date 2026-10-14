@@ -79,6 +79,61 @@ defmodule Chronicle.Events.EventTypes do
     end
   end
 
+  @doc """
+  Validates a set of event type and migration modules without raising.
+
+  Returns `{:error, exception}` with a `Chronicle.Events.MultipleEventTypesWithSameIdFound`
+  struct when several modules represent the same generation of the same event type id, or a
+  `Chronicle.Events.MultipleMigratorsForSameEventTypeGeneration` struct when more than one
+  migrator bridges the same pair of generations. Returns `:ok` otherwise.
+
+  The client calls this once at startup, before the first connection attempt: a failure is
+  logged and startup continues, unless the `strict_validation: true` client option is set, in
+  which case `validate!/2` raises it.
+  """
+  @spec validate([module()], [module()]) :: :ok | {:error, Exception.t()}
+  def validate(event_type_modules, migration_modules \\ []) do
+    case duplicate_event_type(event_type_modules) do
+      nil -> Migrators.validate(migration_modules)
+      exception -> {:error, exception}
+    end
+  end
+
+  @doc """
+  Like `validate/2`, but raises the exception instead of returning it.
+  """
+  @spec validate!([module()], [module()]) :: :ok
+  def validate!(event_type_modules, migration_modules \\ []) do
+    case validate(event_type_modules, migration_modules) do
+      :ok -> :ok
+      {:error, exception} -> raise exception
+    end
+  end
+
+  # Each generation of an event type must be represented by exactly one module. Returns the
+  # exception struct (not raised) so `validate/2` can return it and `validate!/2` can raise it.
+  defp duplicate_event_type(event_type_modules) do
+    duplicate =
+      event_type_modules
+      |> Enum.uniq()
+      |> Enum.group_by(fn module ->
+        {module.__chronicle_event_type__(:id), module.__chronicle_event_type__(:generation)}
+      end)
+      |> Enum.find(fn {_key, modules} -> length(modules) > 1 end)
+
+    case duplicate do
+      nil ->
+        nil
+
+      {{event_type_id, generation}, modules} ->
+        Chronicle.Events.MultipleEventTypesWithSameIdFound.exception(
+          event_type_id: event_type_id,
+          generation: generation,
+          modules: modules
+        )
+    end
+  end
+
   @doc false
   def build_registration(modules, event_store, migrators) do
     sorted_modules = Enum.sort_by(modules, & &1.__chronicle_event_type__(:generation))

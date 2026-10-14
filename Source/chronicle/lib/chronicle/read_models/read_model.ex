@@ -2,6 +2,8 @@
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 defmodule Chronicle.ReadModels.ReadModel do
+  alias Chronicle.Projections.Validation
+
   @moduledoc """
   Macro for defining Chronicle read models with embedded model-bound projections.
 
@@ -76,6 +78,33 @@ defmodule Chronicle.ReadModels.ReadModel do
   Options:
     * `:key` — key expression (defaults to `"$eventSourceId"`)
     * `:parent_key` — parent key for nested models
+
+  ### `removed_with_join/2`
+
+  Removes the model instance when a secondary event — from a different event source — matches it
+  by a property instead of by the model's own key. Mirrors the .NET client's
+  `RemovedWithJoin<TEvent>` attribute.
+
+      removed_with_join MyApp.Events.AccountFlaggedForClosure,
+        key: :account_id
+
+  Options:
+    * `:key` — the property on the event that identifies the instance to remove.
+      Defaults to `"$eventSourceId"`.
+
+  ### `clear_with/2`
+
+  Sets a field back to no value when the given event occurs — sugar for
+  `from event, clear: [...]`.
+
+      clear_with MyApp.Events.DiscountRemoved, [:discount_code]
+
+  Equivalent to:
+
+      from MyApp.Events.DiscountRemoved, clear: [:discount_code]
+
+  Options:
+    * `:key`, `:parent_key` — same as `from/2`
 
   ### `from_every/1`
 
@@ -185,6 +214,11 @@ defmodule Chronicle.ReadModels.ReadModel do
       Module.register_attribute(__MODULE__, :chronicle_projection_from, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_join, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_removed_with, accumulate: true)
+
+      Module.register_attribute(__MODULE__, :chronicle_projection_removed_with_join,
+        accumulate: true
+      )
+
       Module.register_attribute(__MODULE__, :chronicle_projection_from_every, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_no_auto_map, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_children, accumulate: true)
@@ -209,6 +243,10 @@ defmodule Chronicle.ReadModels.ReadModel do
           from: 2,
           join: 2,
           removed_with: 2,
+          removed_with_join: 1,
+          removed_with_join: 2,
+          clear_with: 2,
+          clear_with: 3,
           from_every: 1,
           no_auto_map: 0,
           no_auto_map: 1,
@@ -231,6 +269,13 @@ defmodule Chronicle.ReadModels.ReadModel do
   See the `Chronicle.ReadModels.ReadModel` module documentation for full options.
   """
   defmacro from(event_module, opts \\ []) do
+    Validation.reject_duplicate_properties!(
+      Macro.to_string(event_module),
+      opts,
+      __CALLER__.module,
+      __CALLER__
+    )
+
     quote do
       @chronicle_projection_from {unquote(event_module), unquote(opts)}
     end
@@ -242,6 +287,15 @@ defmodule Chronicle.ReadModels.ReadModel do
   See the `Chronicle.ReadModels.ReadModel` module documentation for full options.
   """
   defmacro join(event_module, opts) do
+    Validation.require_on!(Macro.to_string(event_module), opts, __CALLER__.module, __CALLER__)
+
+    Validation.reject_duplicate_properties!(
+      Macro.to_string(event_module),
+      opts,
+      __CALLER__.module,
+      __CALLER__
+    )
+
     quote do
       @chronicle_projection_join {unquote(event_module), unquote(opts)}
     end
@@ -259,11 +313,45 @@ defmodule Chronicle.ReadModels.ReadModel do
   end
 
   @doc """
+  Declares that this model is removed when a secondary event matches it by a property, instead
+  of by its own key.
+
+  See the `Chronicle.ReadModels.ReadModel` module documentation for full options.
+  """
+  defmacro removed_with_join(event_module, opts \\ []) do
+    quote do
+      @chronicle_projection_removed_with_join {unquote(event_module), unquote(opts)}
+    end
+  end
+
+  @doc """
+  Sets a field back to no value when the given event occurs. Sugar for `from event, clear: [...]`.
+
+  See the `Chronicle.ReadModels.ReadModel` module documentation for full options.
+  """
+  defmacro clear_with(event_module, fields, opts \\ []) do
+    merged = Keyword.put(opts, :clear, fields)
+
+    Validation.reject_duplicate_properties!(
+      Macro.to_string(event_module),
+      merged,
+      __CALLER__.module,
+      __CALLER__
+    )
+
+    quote do
+      @chronicle_projection_from {unquote(event_module), unquote(merged)}
+    end
+  end
+
+  @doc """
   Applies property mappings on every event, regardless of type.
 
   See the `Chronicle.ReadModels.ReadModel` module documentation for full options.
   """
   defmacro from_every(opts) do
+    Validation.reject_duplicate_properties!("from_every", opts, __CALLER__.module, __CALLER__)
+
     quote do
       @chronicle_projection_from_every unquote(opts)
     end
@@ -354,7 +442,9 @@ defmodule Chronicle.ReadModels.ReadModel do
     end
   end
 
-  defmacro __before_compile__(_env) do
+  defmacro __before_compile__(env) do
+    validate_struct_fields!(env)
+
     quote do
       @doc false
       def __chronicle_read_model__(:id), do: @chronicle_read_model_id
@@ -367,6 +457,9 @@ defmodule Chronicle.ReadModels.ReadModel do
 
       def __chronicle_read_model__(:removed_with),
         do: @chronicle_projection_removed_with |> Enum.reverse()
+
+      def __chronicle_read_model__(:removed_with_join),
+        do: @chronicle_projection_removed_with_join |> Enum.reverse()
 
       def __chronicle_read_model__(:children),
         do: @chronicle_projection_children |> Enum.reverse()
@@ -407,5 +500,38 @@ defmodule Chronicle.ReadModels.ReadModel do
       @doc false
       def __chronicle_encrypted__, do: Enum.reverse(@chronicle_encrypted)
     end
+  end
+
+  # Validates, while the read model module is still compiling, that every `from`/`join` property
+  # target and every `children` collection name names a real struct field. By `__before_compile__`
+  # time `defstruct` has already run, so `Macro.struct!/2` can resolve the field list without the
+  # module being fully loaded yet.
+  defp validate_struct_fields!(env) do
+    struct_fields =
+      env.module
+      |> Macro.struct!(env)
+      |> Map.keys()
+      |> List.delete(:__struct__)
+
+    from = Module.get_attribute(env.module, :chronicle_projection_from) || []
+    join = Module.get_attribute(env.module, :chronicle_projection_join) || []
+    children = Module.get_attribute(env.module, :chronicle_projection_children) || []
+
+    for {_event, opts} <- from ++ join,
+        field <- Validation.property_targets(opts) do
+      Validation.require_struct_field!(field, struct_fields, env.module, env, "target property")
+    end
+
+    for {name, _opts, _decls} <- children do
+      Validation.require_struct_field!(
+        name,
+        struct_fields,
+        env.module,
+        env,
+        "children collection"
+      )
+    end
+
+    :ok
   end
 end

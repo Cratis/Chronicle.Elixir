@@ -54,6 +54,34 @@ end
 Chronicle.ReadModels.unwatch(watcher)
 ```
 
+## Shared subscriptions
+
+`Chronicle.ReadModels.subscribe/2` is a shared alternative to `watch/2`: every caller that
+subscribes to the same read model (same client, namespace, and event sequence) is served by one
+kernel stream instead of each caller opening its own. Read model reactors use it, so a reactor and
+an ad-hoc subscriber for the same read model share a stream automatically.
+
+```elixir
+{:ok, watcher} = Chronicle.ReadModels.subscribe(MyApp.ReadModels.AccountInfo)
+
+receive do
+  {:chronicle_read_model_changed, MyApp.ReadModels.AccountInfo, changeset} ->
+    IO.inspect(changeset.read_model)
+end
+
+Chronicle.ReadModels.unsubscribe(watcher)
+```
+
+On top of `watch/2`'s messages, a subscriber also gets:
+
+- `{:chronicle_read_model_watch_ended, model_module, reason}` — the shared stream failed. Every
+  subscriber gets this once; the watcher reconnects on its own with exponential backoff (500 ms,
+  doubling up to 30 s).
+- `{:chronicle_read_model_watch_resumed, model_module}` — the stream reconnected.
+
+**Changes made while the stream is down are not replayed.** The shared watcher closes its stream
+once its last subscriber unsubscribes, or exits.
+
 ## Dehydrating a session
 
 A read-model session (created implicitly whenever you read with a `:session_id`) normally
@@ -112,6 +140,17 @@ Chronicle.ReadModels.unobserve(observer)
 An error arrives as `{:chronicle_read_model_observe_error, model, reason}` and ends the observation;
 call `observe/2` again to resume. `watch/2` remains the tool for the changes of one instance.
 
+Pass `:filter`/`:sort` to keep and order only matching instances in each delivered page — same shape
+as [`query/2`'s filter and sort](#filtering-and-sorting). `total_count` then counts the matches
+within that page, not the whole read model. `observe_stream/2` wraps `observe/2` as an Elixir
+`Stream` of `%Chronicle.ReadModels.QueryResult{}`:
+
+```elixir
+MyApp.ReadModels.AccountInfo
+|> Chronicle.ReadModels.observe_stream(page_size: 25)
+|> Enum.each(fn result -> IO.inspect(result.instances) end)
+```
+
 ## Read model reactors
 
 A `Chronicle.ReadModels.Reactor` reacts to *changes of a read model* rather than to events:
@@ -130,8 +169,16 @@ end
 {Chronicle.Client, read_model_reactors: [MyApp.Reactors.BalanceWatcher], ...}
 ```
 
-`on_added/2`, `on_modified/2` and `on_removed/2` are all optional. The reactor receives changes that
-happen while it runs and re-establishes its watch after a reconnect.
+`on_added/2`, `on_modified/2` and `on_removed/2` are all optional. The reactor subscribes through
+`Chronicle.ReadModels.subscribe/2`, so it shares its kernel stream with any other subscriber of the
+same read model, receives changes that happen while it runs, and re-establishes its subscription
+after a reconnect.
+
+## Decision reads and the Dynamic Consistency Boundary
+
+`Chronicle.ReadModels.DecisionReads` folds a read model at a key and carries forward the exact
+log position the fold stopped at, so a subsequent append can be guarded against anything else
+changing that read model first. See [Dynamic Consistency Boundary](./dynamic-consistency-boundary.md).
 
 ## Map fields and nested structs
 

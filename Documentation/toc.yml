@@ -20,11 +20,23 @@
   href: webhooks.md
 - name: External Services
   href: external-services.md
+- name: Captures
+  href: captures.md
 - name: Failed Partitions
   href: failed-partitions.md
 - name: Sinks
   href: sinks.md
 - name: Seeding
   href: seeding.md
+- name: Dynamic Consistency Boundary
+  href: dynamic-consistency-boundary.md
+- name: Behavior Patterns
+  href: patterns.md
+- name: Discovery and Identity Drift
+  href: discovery.md
+- name: Observability
+  href: observability.md
+- name: Testing
+  href: testing.md
 - name: Limits and Gaps
   href: limits-and-gaps.md

@@ -38,7 +38,9 @@ defmodule Chronicle.Reactors.Reactor do
 
     * `:id` — a stable string identifier for this reactor. Defaults to the
       module's full name. Changing this value causes Chronicle to treat this as
-      a different reactor and will reset its observation position.
+      a different reactor and will reset its observation position. A defaulted id
+      (pin it explicitly to silence this) emits a one-time warning when discovered —
+      see `Chronicle.Discovery.DefaultedIdWarning`.
     * `:middleware` — modules implementing `Chronicle.Middleware` that wrap every `handle/2`
       call of this reactor (in addition to application-wide `config :cratis_chronicle, middleware:`)
     * `:once_only` — controls replay (mirrors .NET's `[OnceOnly]`). Reactors are replayable by
@@ -46,6 +48,26 @@ defmodule Chronicle.Reactors.Reactor do
       (`IsNotReplayable: true`), so the kernel never replays it - use it for side effects such as
       sending an email. `once_only: [MyApp.Events.OrderShipped]` keeps the reactor replayable but
       skips the handlers of the listed events while replaying.
+    * `:generation_delivery` — `:compatibility` (default) or `:pinned`. See
+      "Pinned generation delivery" below.
+
+  ## Pinned generation delivery
+
+  By default (`:compatibility`), Chronicle upgrades every event to the handled module's own
+  generation before delivery, so `handle/2` always sees that generation's shape regardless of
+  which generation was actually appended. Set `generation_delivery: :pinned` to receive each
+  event exactly as its own generation was appended instead - useful when a handler is written
+  against an older generation and must see its original content rather than the upgraded one.
+  `context.appended_generation` then tells you which generation was actually appended (`0`
+  means unknown - an older kernel, or an event appended outside a registered event source).
+
+  A client-wide default applies to every reactor that doesn't set `:generation_delivery`
+  itself: pass `event_generation_delivery: :pinned` to `Chronicle.Client`. A reactor's own
+  `:generation_delivery` option always wins over the client default.
+
+  With `:pinned`, a reactor that handles two generations of the same event type id has no
+  single generation to pin to and raises
+  `Chronicle.Observers.MultipleGenerationsOfEventTypeInObserver` on start.
 
   ## Replay
 
@@ -154,8 +176,12 @@ defmodule Chronicle.Reactors.Reactor do
       Module.register_attribute(__MODULE__, :handles, accumulate: true)
 
       @chronicle_reactor_id Keyword.get(opts, :id, __MODULE__ |> to_string())
+      @chronicle_reactor_id_source if Keyword.has_key?(opts, :id),
+                                     do: :explicit,
+                                     else: :module_name
       @chronicle_reactor_once_only Keyword.get(opts, :once_only, false)
       @chronicle_reactor_middleware Keyword.get(opts, :middleware, [])
+      @chronicle_reactor_generation_delivery Keyword.get(opts, :generation_delivery)
 
       @before_compile Chronicle.Reactors.Reactor
     end
@@ -165,9 +191,13 @@ defmodule Chronicle.Reactors.Reactor do
     quote do
       @doc false
       def __chronicle_reactor__(:id), do: @chronicle_reactor_id
+      def __chronicle_reactor__(:id_source), do: @chronicle_reactor_id_source
       def __chronicle_reactor__(:handles), do: @handles |> Enum.reverse()
       def __chronicle_reactor__(:once_only), do: @chronicle_reactor_once_only
       def __chronicle_reactor__(:middleware), do: @chronicle_reactor_middleware
+
+      def __chronicle_reactor__(:generation_delivery),
+        do: @chronicle_reactor_generation_delivery
     end
   end
 end

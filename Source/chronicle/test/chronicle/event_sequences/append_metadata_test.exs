@@ -190,9 +190,31 @@ defmodule Chronicle.EventSequences.AppendMetadataTest do
            )
   end
 
-  test "rich scope map omits unchecked sources and first declared scope wins", %{opts: opts} do
+  test "rich scope map omits unchecked sources and collapses equal duplicate scopes", %{
+    opts: opts
+  } do
     events = [
       %EventForEventSourceId{event_source_id: "unchecked", event: %Event{}},
+      %EventForEventSourceId{
+        event_source_id: "checked",
+        event: %Event{},
+        concurrency_scope: ConcurrencyScope.new(2)
+      },
+      %EventForEventSourceId{
+        event_source_id: "checked",
+        event: %Event{},
+        concurrency_scope: ConcurrencyScope.new(2)
+      }
+    ]
+
+    assert :ok = EventLog.append_many_for_event_sources(events, opts)
+
+    assert [%{EventSourceId: "checked", Scope: %{SequenceNumber: 2}}] =
+             take_request()."ConcurrencyScopes"
+  end
+
+  test "unequal duplicate explicit scopes for the same event source are rejected", %{opts: opts} do
+    events = [
       %EventForEventSourceId{
         event_source_id: "checked",
         event: %Event{},
@@ -205,10 +227,8 @@ defmodule Chronicle.EventSequences.AppendMetadataTest do
       }
     ]
 
-    assert :ok = EventLog.append_many_for_event_sources(events, opts)
-
-    assert [%{EventSourceId: "checked", Scope: %{SequenceNumber: 18_446_744_073_709_551_615}}] =
-             take_request()."ConcurrencyScopes"
+    assert {:error, {:duplicate_concurrency_scope, "checked"}} =
+             EventLog.append_many_for_event_sources(events, opts)
   end
 
   test "rich entry routing and identity win while explicit batch causation is retained", %{

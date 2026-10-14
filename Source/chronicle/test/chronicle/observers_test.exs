@@ -107,6 +107,62 @@ defmodule Chronicle.ObserversTest do
                  Observers.decode_observer_information(wire)
       end
     end
+
+    for {wire_owner, client_owner} <- [
+          {:None, :none},
+          {:Client, :client},
+          {:Kernel, :kernel}
+        ] do
+      test "decodes observer owner #{wire_owner} as #{client_owner}" do
+        wire = %{
+          Id: "an-observer",
+          EventSequenceId: "event-log",
+          Type: :Reactor,
+          Owner: unquote(wire_owner),
+          RunningState: :Active
+        }
+
+        assert %ObserverInformation{owner: unquote(client_owner)} =
+                 Observers.decode_observer_information(wire)
+      end
+    end
+
+    test "decodes an unrecognized owner as unknown" do
+      wire = %{
+        Id: "an-observer",
+        EventSequenceId: "event-log",
+        Type: :Reactor,
+        Owner: :bogus,
+        RunningState: :Active
+      }
+
+      assert %ObserverInformation{owner: :unknown} = Observers.decode_observer_information(wire)
+    end
+
+    test "decodes the handled event types" do
+      wire = %{
+        Id: "an-observer",
+        EventSequenceId: "event-log",
+        Type: :Reactor,
+        RunningState: :Active,
+        EventTypes: [%{Id: "account-opened", Generation: 1, Tombstone: false}]
+      }
+
+      assert %ObserverInformation{event_types: [%{Id: "account-opened", Generation: 1}]} =
+               Observers.decode_observer_information(wire)
+    end
+
+    test "defaults owner and event_types when absent from the wire message" do
+      wire = %{
+        Id: "an-observer",
+        EventSequenceId: "event-log",
+        Type: :Reactor,
+        RunningState: :Active
+      }
+
+      assert %ObserverInformation{owner: :unknown, event_types: []} =
+               Observers.decode_observer_information(wire)
+    end
   end
 
   describe "decode_removal_result/1" do

@@ -2,6 +2,8 @@
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 defmodule Chronicle do
+  @behaviour Chronicle.Behaviour
+
   @moduledoc """
   Idiomatic Elixir client for the Chronicle event-sourcing platform.
 
@@ -222,6 +224,17 @@ defmodule Chronicle do
   """
   @spec with_unit_of_work((Chronicle.Transactions.UnitOfWork.t() -> any()), keyword()) :: any()
   defdelegate with_unit_of_work(fun, opts \\ []), to: Chronicle.Transactions.UnitOfWork
+
+  @doc """
+  Runs a function inside a unit of work and commits it, returning `{:ok, result}` on success or
+  `{:error, %Chronicle.ReadModels.DecisionConflict{}}` when a decision read enrolled in it
+  (`Chronicle.ReadModels.DecisionReads.get/3`) conflicted with a concurrent append. See
+  `Chronicle.Transactions.UnitOfWork.decide/2`.
+  """
+  @spec decide((Chronicle.Transactions.UnitOfWork.t() -> result), keyword()) ::
+          {:ok, result} | {:error, term()}
+        when result: any()
+  defdelegate decide(fun, opts \\ []), to: Chronicle.Transactions.UnitOfWork
 
   @doc """
   Fetches a read model instance by its key (typically an event source ID).

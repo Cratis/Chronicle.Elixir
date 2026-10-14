@@ -17,6 +17,7 @@ defmodule Chronicle.Artifacts do
     * `__chronicle_event_store_subscription__/1`
     * `__chronicle_migration__/1`
     * `__chronicle_global_handler__/1`
+    * `__chronicle_constraint__/1`
 
   The returned map can be fed directly into `Chronicle.Client` options.
   """
@@ -31,8 +32,10 @@ defmodule Chronicle.Artifacts do
           seeders: [module()],
           webhooks: [module()],
           event_store_subscriptions: [module()],
+          captures: [module()],
           migrations: [module()],
-          global_handlers: [module()]
+          global_handlers: [module()],
+          constraints: [module()]
         }
 
   @doc """
@@ -61,7 +64,9 @@ defmodule Chronicle.Artifacts do
         webhooks: [],
         event_store_subscriptions: [],
         migrations: [],
-        global_handlers: []
+        global_handlers: [],
+        constraints: [],
+        captures: []
       },
       fn module, acc ->
         if Code.ensure_loaded?(module) do
@@ -105,6 +110,12 @@ defmodule Chronicle.Artifacts do
             module,
             function_exported?(module, :__chronicle_global_handler__, 1)
           )
+          |> maybe_put(
+            :constraints,
+            module,
+            function_exported?(module, :__chronicle_constraint__, 1)
+          )
+          |> maybe_put(:captures, module, function_exported?(module, :__chronicle_capture__, 1))
         else
           acc
         end
@@ -138,7 +149,9 @@ defmodule Chronicle.Artifacts do
         webhooks: [],
         event_store_subscriptions: [],
         migrations: [],
-        global_handlers: []
+        global_handlers: [],
+        constraints: [],
+        captures: []
       },
       fn module, acc ->
         acc
@@ -181,10 +194,31 @@ defmodule Chronicle.Artifacts do
           module,
           function_exported?(module, :__chronicle_global_handler__, 1)
         )
+        |> maybe_put(
+          :constraints,
+          module,
+          function_exported?(module, :__chronicle_constraint__, 1)
+        )
+        |> maybe_put(:captures, module, function_exported?(module, :__chronicle_capture__, 1))
       end
     )
     |> Enum.map(fn {key, value} -> {key, Enum.reverse(value)} end)
     |> Map.new()
+  end
+
+  @doc """
+  Builds a `Chronicle.Discovery.Report` from the artifacts discovered in an OTP application.
+
+  Additive alongside `discover/1`, which keeps returning its plain map unchanged so existing
+  callers are unaffected. `opts` accepts `:warn_defaulted_ids` (default `true`); see
+  `Chronicle.Discovery.Report.build/1`.
+  """
+  @spec report(atom(), keyword()) :: Chronicle.Discovery.Report.t()
+  def report(otp_app, opts \\ []) when is_atom(otp_app) do
+    otp_app
+    |> discover()
+    |> Map.put(:warn_defaulted_ids, Keyword.get(opts, :warn_defaulted_ids, true))
+    |> Chronicle.Discovery.Report.build()
   end
 
   defp maybe_put(acc, _key, _module, false), do: acc

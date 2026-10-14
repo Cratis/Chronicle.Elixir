@@ -28,6 +28,9 @@ defmodule Chronicle.Events.Migrators do
 
   @doc """
   Creates a migrator registry from migration modules.
+
+  Does not validate the set; use `validate/1` to detect more than one migration module
+  bridging the same pair of generations for the same event type.
   """
   @spec new([migration_module()]) :: t()
   def new(migration_modules \\ []) when is_list(migration_modules) do
@@ -39,6 +42,43 @@ defmodule Chronicle.Events.Migrators do
     %__MODULE__{
       all: modules,
       by_event_type: Enum.group_by(modules, & &1.__chronicle_migration__(:event_type_id))
+    }
+  end
+
+  @doc """
+  Checks that at most one migration module bridges each pair of generations of an event type.
+
+  Returns `:ok`, or `{:error, exception}` with a
+  `Chronicle.Events.MultipleMigratorsForSameEventTypeGeneration` struct (not raised).
+  """
+  @spec validate([migration_module()]) :: :ok | {:error, Exception.t()}
+  def validate(migration_modules \\ []) when is_list(migration_modules) do
+    duplicate =
+      migration_modules
+      |> Enum.uniq()
+      |> Enum.group_by(&bridge_key/1)
+      |> Enum.find(fn {_key, bridge_modules} -> length(bridge_modules) > 1 end)
+
+    case duplicate do
+      nil ->
+        :ok
+
+      {{event_type_id, from_generation, to_generation}, bridge_modules} ->
+        {:error,
+         Chronicle.Events.MultipleMigratorsForSameEventTypeGeneration.exception(
+           event_type_id: event_type_id,
+           from_generation: from_generation,
+           to_generation: to_generation,
+           modules: bridge_modules
+         )}
+    end
+  end
+
+  defp bridge_key(migration_module) do
+    {
+      migration_module.__chronicle_migration__(:event_type_id),
+      migration_module.__chronicle_migration__(:from_generation),
+      migration_module.__chronicle_migration__(:to_generation)
     }
   end
 

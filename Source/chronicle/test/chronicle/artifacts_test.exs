@@ -42,6 +42,21 @@ defmodule Chronicle.ArtifactsTest do
     def seed(builder), do: builder
   end
 
+  defmodule DiscoveredCaptureEvent do
+    use Chronicle.Events.EventType, id: "DiscoveredCaptureEvent"
+    defstruct [:value]
+  end
+
+  defmodule DiscoveredCapture do
+    use Chronicle.Captures.Capture, name: "DiscoveredCapture"
+    webhook_source("/discovered")
+    key("id")
+
+    append DiscoveredCaptureEvent, when: :added do
+      set(:value, "$.value")
+    end
+  end
+
   describe "discover_loaded/0" do
     test "categorizes loaded artifacts by their introspection functions" do
       discovered = Artifacts.discover_loaded()
@@ -51,6 +66,7 @@ defmodule Chronicle.ArtifactsTest do
       assert DiscoveredReducer in discovered.reducers
       assert DiscoveredReadModel in discovered.read_models
       assert DiscoveredSeeder in discovered.seeders
+      assert DiscoveredCapture in discovered.captures
     end
 
     test "returns a map with every artifact category" do
@@ -58,6 +74,8 @@ defmodule Chronicle.ArtifactsTest do
 
       assert Map.keys(discovered) |> Enum.sort() ==
                [
+                 :captures,
+                 :constraints,
                  :event_sources,
                  :event_store_subscriptions,
                  :event_types,
@@ -81,6 +99,16 @@ defmodule Chronicle.ArtifactsTest do
       assert discovered.reactors == []
       assert discovered.reducers == []
       assert discovered.seeders == []
+      assert discovered.captures == []
+    end
+  end
+
+  describe "report/1" do
+    test "builds a Chronicle.Discovery.Report, leaving discover/1's map shape untouched" do
+      report = Artifacts.report(:nonexistent_app)
+
+      assert %Chronicle.Discovery.Report{has_run: true, artifacts: []} = report
+      assert is_map(Artifacts.discover(:nonexistent_app))
     end
   end
 end

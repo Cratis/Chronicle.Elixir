@@ -31,6 +31,9 @@ BODY_SNIPPETS = {
     "tutorial/reacting/explicit-append": [
         "",
     ],
+    "tutorial/reacting/once-only": [
+        "",
+    ],
     "tutorial/reacting/reading-state": [
         "",
     ],
@@ -121,6 +124,21 @@ BODY_SNIPPETS = {
         """
         order_id = "order-123"
         """,
+    ],
+    "projections/projection-declaration-language/adhoc-querying/basic": [
+        "",
+    ],
+    "projections/projection-declaration-language/adhoc-querying/custom-sequence": [
+        "",
+    ],
+    "projections/projection-declaration-language/adhoc-querying/error-handling": [
+        "",
+    ],
+    "projections/projection-declaration-language/adhoc-querying/inferred-vs-explicit": [
+        "",
+    ],
+    "projections/projection-declaration-language/adhoc-querying/type-mismatch": [
+        "",
     ],
 }
 

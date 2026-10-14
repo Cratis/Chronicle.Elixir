@@ -38,6 +38,15 @@ defmodule Chronicle.ReducerTest do
     def reduce(%MyEvent{} = event, nil, _context), do: %MyReadModel{total: event.amount}
   end
 
+  defmodule PinnedReducer do
+    use Chronicle.Reducers.Reducer, model: MyReadModel, generation_delivery: :pinned
+
+    @handles MyEvent
+
+    @impl true
+    def reduce(%MyEvent{} = event, nil, _context), do: %MyReadModel{total: event.amount}
+  end
+
   describe "use Chronicle.Reducers.Reducer" do
     test "exposes the model module" do
       assert TestReducer.__chronicle_reducer__(:model) == MyReadModel
@@ -57,6 +66,14 @@ defmodule Chronicle.ReducerTest do
 
     test "supports an explicit active: false for a passive reducer" do
       assert PassiveReducer.__chronicle_reducer__(:active) == false
+    end
+
+    test "defaults generation_delivery to unset (client default applies)" do
+      assert TestReducer.__chronicle_reducer__(:generation_delivery) == nil
+    end
+
+    test "supports an explicit generation_delivery option" do
+      assert PinnedReducer.__chronicle_reducer__(:generation_delivery) == :pinned
     end
 
     test "reduce/3 builds initial model" do
