@@ -85,6 +85,9 @@ builder
 
 If you don't select any event types, the webhook uses the event types the client was given in `:event_types` or discovered in your application. When that list is empty, for example with `discover: false` and no `:event_types`, it falls back to every event type module loaded in the VM. Select event types explicitly to control exactly what the webhook receives.
 
+`not_replayable()` and `not_active()` need Chronicle kernel 19.33.0 or later. An older kernel ignores
+these flags and treats the webhook as replayable and active regardless.
+
 ## Query and remove webhooks
 
 ```elixir
