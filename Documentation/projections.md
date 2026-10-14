@@ -78,6 +78,21 @@ without `:identified_by`, a root `join/2` without `:on`, the same target propert
 by one event's mapping, and a `from`/`join` target or `children` name that is not a field of the
 read model's struct.
 
+## Pinning the id
+
+`use Chronicle.Projections.Projection` defaults a declarative projection's id to the last
+segment of its module name. Renaming or moving the module then changes that id, and Chronicle
+treats it as a *different* projection — its observation position resets. Pin the id explicitly so
+the module can be renamed or moved freely:
+
+```elixir
+use Chronicle.Projections.Projection, id: "account-summary", model: MyApp.ReadModels.AccountSummary
+```
+
+A projection relying on the module-name default gets a one-time warning (per module, for the life
+of the BEAM node) from [discovery](./discovery.md), naming the module and showing this fix. See
+[Discovery and artifact identity drift](./discovery.md).
+
 ## Ad-hoc querying with `Chronicle.Projections`
 
 `Chronicle.Projections.query/2` sends a Projection Declaration Language (PDL) string straight to

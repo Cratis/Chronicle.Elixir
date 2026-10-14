@@ -34,6 +34,21 @@ defmodule MyApp.Reducers.AccountReducer do
 end
 ```
 
+## Pinning the id
+
+`use Chronicle.Reducers.Reducer` defaults the reducer's id to its full module name. Renaming
+or moving the module then changes that id, and Chronicle treats it as a *different* reducer —
+its read model observation position resets. Pin the id explicitly so the module can be renamed
+or moved freely:
+
+```elixir
+use Chronicle.Reducers.Reducer, id: "account-reducer", model: MyApp.ReadModels.AccountInfo
+```
+
+A reducer relying on the module-name default gets a one-time warning (per module, for the life
+of the BEAM node) from [discovery](./discovery.md), naming the module and showing this fix. See
+[Discovery and artifact identity drift](./discovery.md).
+
 ## Replay lifecycle hooks
 
 Reducers support the same optional `on_replay_begin/0`, `on_replay_end/0`,

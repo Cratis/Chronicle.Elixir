@@ -134,6 +134,22 @@ A reactor's own option always wins over the client default. With `:pinned`, a re
 generations of the same event type id has no single generation to pin to and raises
 `Chronicle.Observers.MultipleGenerationsOfEventTypeInObserver` on start.
 
+## Pinning the id
+
+`use Chronicle.Reactors.Reactor` defaults the reactor's id to its full module name. Renaming
+or moving the module then changes that id, and Chronicle treats it as a *different* reactor —
+its observation position resets, replaying events the previous name had already handled.
+Pin the id explicitly so the module can be renamed or moved freely:
+
+```elixir
+use Chronicle.Reactors.Reactor, id: "order-notifier"
+```
+
+A reactor relying on the module-name default gets a one-time warning (per module, for the life
+of the BEAM node) from [discovery](./discovery.md), naming the module and showing this fix. Pass
+`warn_defaulted_ids: false` to `Chronicle.Client` to suppress it. See
+[Discovery and artifact identity drift](./discovery.md).
+
 ## Delivery identity
 
 Every reactor invocation context carries `delivery_id`: a stable identity of *this delivery of this
