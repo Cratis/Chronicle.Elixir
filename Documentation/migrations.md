@@ -62,7 +62,7 @@ being retried:
   `Chronicle.Events.MultipleMigratorsForSameEventTypeGeneration` - exactly one migrator may bridge
   a pair of generations.
 - A migration whose `:from` and `:to` resolve to different event type ids raises
-  `Chronicle.Events.MigrationGenerationsMustShareEventTypeId` - mark the previous generation with
+  `ArgumentError` (as in earlier releases, now with a longer message) - mark the previous generation with
   `generation_for:` instead of giving it a separate `:id`.
 - A non-adjacent generation gap (for example `from: generation: 1` to `to: generation: 3`) raises
   `Chronicle.Events.InvalidMigrationGenerationGap`.

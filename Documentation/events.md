@@ -68,7 +68,7 @@ fails immediately instead of being retried by the registration coordinator:
 - `Chronicle.Events.MultipleMigratorsForSameEventTypeGeneration` - more than one
   `Chronicle.Events.Migration` module bridges the same pair of generations for an event type.
   Exactly one migrator may bridge a pair of generations.
-- `Chronicle.Events.MigrationGenerationsMustShareEventTypeId` - a migration's `:from` and `:to`
+- `ArgumentError` - a migration's `:from` and `:to`
   resolve to different event type ids. Mark the previous generation with `generation_for:`
   instead of giving it a separate `:id`.
 - `Chronicle.Events.EventTypeGenerationForCannotBeCombinedWithEventType` - a module gives both

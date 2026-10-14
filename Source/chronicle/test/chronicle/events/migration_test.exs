@@ -69,8 +69,8 @@ defmodule Chronicle.MigrationTest do
     end
 
     test "raises when event type ids differ" do
-      assert_raise Chronicle.Events.MigrationGenerationsMustShareEventTypeId,
-                   ~r/bridges two different event types/,
+      assert_raise ArgumentError,
+                   ~r/bridges two different event types.*must have the same ID/s,
                    fn ->
                      compile_invalid_migration(
                        "MismatchedIdsMigration",
