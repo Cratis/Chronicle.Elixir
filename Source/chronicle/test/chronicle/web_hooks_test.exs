@@ -4,7 +4,7 @@
 defmodule Chronicle.WebHooksTest do
   use ExUnit.Case, async: true
 
-  alias Chronicle.WebHooks.{DefinitionBuilder, Webhook}
+  alias Chronicle.WebHooks.{Definition, DefinitionBuilder, Webhook}
 
   defmodule AccountOpened do
     use Chronicle.Events.EventType, id: "account-opened-v1"
@@ -74,6 +74,35 @@ defmodule Chronicle.WebHooksTest do
                "account-opened-v1",
                "funds-deposited-v1"
              ]
+    end
+  end
+
+  describe "Definition.to_proto/1" do
+    test "sends IsNotReplayable alongside IsReplayable when not replayable" do
+      proto =
+        %Definition{id: "webhook", replayable?: false}
+        |> Definition.to_proto()
+
+      assert proto."IsReplayable" == false
+      assert proto."IsNotReplayable" == true
+    end
+
+    test "sends IsInactive alongside IsActive when not active" do
+      proto =
+        %Definition{id: "webhook", active?: false}
+        |> Definition.to_proto()
+
+      assert proto."IsActive" == false
+      assert proto."IsInactive" == true
+    end
+
+    test "leaves both companion fields false by default" do
+      proto = Definition.to_proto(%Definition{id: "webhook"})
+
+      assert proto."IsReplayable" == true
+      assert proto."IsActive" == true
+      assert proto."IsNotReplayable" == false
+      assert proto."IsInactive" == false
     end
   end
 
