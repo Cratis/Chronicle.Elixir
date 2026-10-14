@@ -73,6 +73,7 @@ defmodule Chronicle.Connections.Connection do
     ResponseCrashRedaction,
     Status,
     TokenProvider,
+    TracePropagationInterceptor,
     Transport
   }
 
@@ -712,6 +713,7 @@ defmodule Chronicle.Connections.Connection do
       |> Keyword.merge(grpc_options)
       |> disable_server_push()
       |> add_auth_interceptor(token_provider)
+      |> add_trace_propagation_interceptor()
       |> add_transport_failure_interceptor()
 
     cond do
@@ -914,6 +916,18 @@ defmodule Chronicle.Connections.Connection do
           Process.exit(provider, :kill)
       end
     end
+  end
+
+  # Always installed (unlike the auth interceptor, which only applies when credentials are
+  # configured) — it is a no-op without an OpenTelemetry SDK, per the shared convention's
+  # instrumentation-is-always-on default.
+  defp add_trace_propagation_interceptor(options) do
+    Keyword.update(
+      options,
+      :interceptors,
+      [TracePropagationInterceptor],
+      &(&1 ++ [TracePropagationInterceptor])
+    )
   end
 
   # Appended, so grpc-elixir runs it outermost around every other interceptor and the transport.

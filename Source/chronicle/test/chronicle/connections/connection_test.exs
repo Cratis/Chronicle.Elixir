@@ -418,6 +418,7 @@ defmodule Chronicle.Connections.ConnectionTest do
       # header, where its expiry would silently invalidate the channel.
       assert [
                {Chronicle.Connections.AuthInterceptor, provider: provider},
+               Chronicle.Connections.TracePropagationInterceptor,
                Chronicle.Connections.TransportFailureInterceptor
              ] = opts[:interceptors]
 
@@ -442,7 +443,11 @@ defmodule Chronicle.Connections.ConnectionTest do
       assert Connection.connect(conn, 1_000) == :ok
       assert_receive {:opts, opts}
       assert opts[:headers] == [{"api-key", "abc"}]
-      assert opts[:interceptors] == [Chronicle.Connections.TransportFailureInterceptor]
+
+      assert opts[:interceptors] == [
+               Chronicle.Connections.TracePropagationInterceptor,
+               Chronicle.Connections.TransportFailureInterceptor
+             ]
     end
 
     test "adds no auth at all without credentials" do
@@ -461,7 +466,12 @@ defmodule Chronicle.Connections.ConnectionTest do
       assert Connection.connect(conn, 1_000) == :ok
       assert_receive {:opts, opts}
       assert opts[:headers] == []
-      assert opts[:interceptors] == [Chronicle.Connections.TransportFailureInterceptor]
+
+      assert opts[:interceptors] == [
+               Chronicle.Connections.TracePropagationInterceptor,
+               Chronicle.Connections.TransportFailureInterceptor
+             ]
+
       assert opts[:adapter] == GRPC.Client.Adapters.Mint
 
       assert Keyword.equal?(opts[:adapter_opts][:client_settings],
