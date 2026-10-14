@@ -16,7 +16,11 @@ Event sourcing for Elixir — the idiomatic client for [Cratis Chronicle](https:
 - **`use Chronicle.Reactors.Reactor`** — react to events with side effects
 - **`use Chronicle.Reducers.Reducer`** — fold events into read models in your own process
 - **`use Chronicle.Seeding.Seeder`** — seed event stores with baseline events at startup
-- **Model-bound constraints** — unique and unique-event-type constraints on event types
+- **Constraints** — unique and unique-event-type constraints on event types, or in standalone `use Chronicle.Events.Constraint` modules
+- **Decision reads** — guard a unit of work against concurrent appends (the dynamic consistency boundary)
+- **`use Chronicle.Captures.Capture`** — declare captures that turn external input into events
+- **`Chronicle.Testing`** — an in-memory kernel and assertions for specs that don't need a running kernel
+- **Observability** — OpenTelemetry spans, `:telemetry` events and W3C trace propagation
 - **Context-aware appends** — process-scoped identity, correlation, and causation metadata
 - **Optimistic concurrency** — guard appends with scoped tail-sequence checks
 - **Transactions** — buffer and commit multi-event units of work

@@ -15,7 +15,7 @@ Shared Chronicle concepts and workflows live in the main Chronicle docs and show
 |---|---|
 | Package | [`cratis_chronicle`](https://hex.pm/packages/cratis_chronicle) on Hex. |
 | Elixir | 1.18 or later. CI uses Elixir 1.19.5 on Erlang/OTP 28.5. |
-| Dependencies | `grpc ~> 1.0`, Mint 1.11 or later, and `cratis_chronicle_contracts ~> 19.19`. |
+| Dependencies | `grpc ~> 1.0`, Mint 1.11 or later, `opentelemetry_api ~> 1.4`, and `cratis_chronicle_contracts ~> 19.56`. |
 | Kernel | A kernel whose gRPC contracts match the `cratis_chronicle_contracts` version in your `mix.lock`. A mismatch returns `{:error, {:incompatible_server, ...}}`; see [Get started](get-started.md#troubleshooting). |
 | API reference | [HexDocs](https://hexdocs.pm/cratis_chronicle) |
 
@@ -57,3 +57,9 @@ See [Limits and gaps](limits-and-gaps.md) for the kernel limits, the consistency
 - [External services](external-services.md): registering HTTP and database external services
 - [Failed partitions](failed-partitions.md): inspecting observers whose partitions have failed
 - [Observers](observers.md): listing observers and removing one whose declaring code is gone
+- [Captures](captures.md): declaring captures that turn external input into events
+- [Dynamic Consistency Boundary](dynamic-consistency-boundary.md): decision reads that guard a unit of work against concurrent appends
+- [Behavior patterns](patterns.md): asking what a scope usually does at a given moment
+- [Discovery and identity drift](discovery.md): the discovery report, identity drift policies and `mix chronicle.discover`
+- [Observability](observability.md): OpenTelemetry spans, `:telemetry` events and trace propagation
+- [Testing](testing.md): the in-memory kernel, assertions and isolated integration helpers

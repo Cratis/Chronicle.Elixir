@@ -25,11 +25,14 @@ description: Kernel limits to size your data against, the consistency guarantees
 
 ## Not supported yet
 
-- Patterns queries (`Chronicle.Patterns`) are tracked in the repository's issues.
-- Distributed tracing and metrics beyond the observer lag event: OpenTelemetry instrumentation is tracked in the issues.
-- Captures (declarative capture of external input into events) have no Elixir DSL yet.
-- Decision reads and unit-of-work-guarded reads (the dynamic consistency boundary) are not available through the client; use a history fold and concurrency scopes (`expecting_no_matching_event/1`).
-- An in-memory Chronicle for tests: specs run against a kernel.
 - The filter of `query/2` is evaluated by the client, not the kernel.
+- `Chronicle.Testing.InMemoryKernel` models appends, reads, concurrency scopes and `unique`/`unique_event_type` constraints, but not `closes_stream` constraints or the read model and projection query surface. Use `Chronicle.Testing.Integration` against a running kernel for those, and note that the kernel has no way to delete the event stores those specs create.
+- A shared read model subscription that reconnects does not replay the changes made while it was down, because the kernel's watch request cannot resume from a sequence number. Query again after `{:chronicle_read_model_watch_resumed, model}`.
+- `Chronicle.Projections.preview/2` runs a registered projection's declaration over a stored event sequence; previewing a projection over events you supply is not possible.
+- Webhook sources in captures cannot carry authentication, and the kernel engine currently runs only `api` and `events` sources.
+- Event metadata carries no content hash or size; the hash of an event is on its `EventContext`.
+- Projections have no `min`/`max` operations, because the kernel has no such expressions.
+- Constraint drift is not detected, because the kernel cannot list registered constraints.
+- Trace context is not stored on events by the kernel, so observer spans are not linked to the append that caused them.
 
 See the repository's open issues for the current list.
