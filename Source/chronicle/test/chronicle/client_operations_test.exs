@@ -48,4 +48,14 @@ defmodule Chronicle.ClientOperationsTest do
     assert state in [:pending, :registering]
     assert Chronicle.Client.await_registration(name, 50) == {:error, :timeout}
   end
+
+  test "discovery_report/1 is available as soon as the client starts", %{name: name} do
+    report = Chronicle.Client.discovery_report(name)
+    assert report.has_run
+    assert Chronicle.Discovery.Report.of_kind(report, :read_model) == []
+  end
+
+  test "identity_drift/1 is empty while the kernel is unreachable", %{name: name} do
+    assert Chronicle.Client.identity_drift(name) == []
+  end
 end
