@@ -47,6 +47,14 @@ end
 take the options they take on the read model. `key` identifies the child an event applies to and
 `parent_key` the parent it belongs to.
 
+:::caution[Give nested children identifiers that are unique across read models]
+In a nested `children/3`, `parent_key` names a child of the collection one level up, not the
+root. The kernel finds that child by its identifier across every instance of the read model.
+If two instances both have an entry `"e-1"`, a note for `"e-1"` can land in the wrong one.
+Use globally unique identifiers, such as UUIDs, for child collections that have children of
+their own.
+:::
+
 A collection that only ever grows from a single event does not need a `do` block:
 
 ```elixir
