@@ -81,4 +81,55 @@ defmodule Chronicle.EventSequences.StreamsTest do
     assert metadata.tags == ["t"]
     assert metadata.occurred == "2024-01-01T00:00:00Z"
   end
+
+  test "metadata decodes initiator type" do
+    assert Streams.decode_metadata(%{InitiatorType: :User}).initiator_type == :user
+    assert Streams.decode_metadata(%{InitiatorType: :Agent}).initiator_type == :agent
+
+    assert Streams.decode_metadata(%{InitiatorType: :INITIATOR_TYPE_System}).initiator_type ==
+             :system
+
+    assert Streams.decode_metadata(%{}).initiator_type == :unknown
+  end
+
+  test "metadata decodes the resolved identity, including resolution and on-behalf-of" do
+    metadata =
+      Streams.decode_metadata(%{
+        CausedBy: %{
+          Subject: "agent-1",
+          Name: "Agent",
+          UserName: "agent",
+          Resolution: :Resolved,
+          OnBehalfOf: %{
+            Subject: "u1",
+            Name: "Ada",
+            UserName: "ada",
+            Resolution: :Missing
+          }
+        }
+      })
+
+    assert metadata.caused_by.name == "Agent"
+    assert metadata.caused_by.on_behalf_of.name == "Ada"
+
+    assert metadata.resolved_caused_by == %Chronicle.EventSequences.ResolvedIdentity{
+             subject: "agent-1",
+             name: "Agent",
+             user_name: "agent",
+             resolution: :resolved,
+             on_behalf_of: %Chronicle.EventSequences.ResolvedIdentity{
+               subject: "u1",
+               name: "Ada",
+               user_name: "ada",
+               resolution: :missing,
+               on_behalf_of: nil
+             }
+           }
+  end
+
+  test "metadata resolution falls back to :not_set for an unrecognized value" do
+    metadata = Streams.decode_metadata(%{CausedBy: %{Subject: "s", Name: "n"}})
+    assert metadata.resolved_caused_by.resolution == :not_set
+    assert metadata.caused_by.subject == "s"
+  end
 end
