@@ -1,9 +1,13 @@
 ```elixir
 defmodule MyApp.Events.TaggedMoneyWithdrawn do
+  use Chronicle.Events.EventType, id: "tagged-money-withdrawn"
+
   defstruct [:amount]
 end
 
 defmodule MyApp.Events.TaggedWithdrawalFeeCharged do
+  use Chronicle.Events.EventType, id: "tagged-withdrawal-fee-charged"
+
   defstruct [:amount]
 end
 

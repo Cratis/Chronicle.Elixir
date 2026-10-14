@@ -128,6 +128,10 @@ defmodule Chronicle.Client do
       check itself cannot complete, `:warn` logs and continues and `:fail` stops — an
       indeterminate result is never treated as clean. See `Chronicle.Discovery.DriftDetector`
       and `Chronicle.Client.identity_drift/1`.
+    * `:strict_validation` — defaults to `false`. When two modules represent the same generation
+      of an event type, or more than one migrator bridges the same pair of generations, the
+      client logs the full error at startup and continues. Set to `true` to raise at startup
+      instead, before anything connects. See `Chronicle.Events.EventTypes.validate/2`.
     * `:warn_defaulted_ids` — defaults to `true`. A reactor, reducer or declarative
       projection with no explicit `:id` defaults it to the module name — renaming or moving
       the module then silently resets its observation position. Discovery logs a one-time
@@ -292,9 +296,9 @@ defmodule Chronicle.Client do
     # Rejects duplicate event source names before anything connects.
     Chronicle.EventSources.describe!(event_sources)
     migrations = Enum.uniq(Keyword.get(opts, :migrations, []) ++ discovered.migrations)
-    # Rejects a duplicate event type generation or an ambiguous migrator bridge before
-    # anything connects, so a bad set fails immediately instead of being retried.
-    Chronicle.Events.EventTypes.validate!(event_types, migrations)
+    # A duplicate event type generation or an ambiguous migrator bridge is logged; with
+    # `strict_validation: true` it raises before anything connects instead.
+    validate_event_types(event_types, migrations, Keyword.get(opts, :strict_validation, false))
     reactors = Enum.uniq(Keyword.get(opts, :reactors, []) ++ discovered.reactors)
     reducers = Enum.uniq(Keyword.get(opts, :reducers, []) ++ discovered.reducers)
     read_models = Enum.uniq(Keyword.get(opts, :read_models, []) ++ discovered.read_models)
@@ -337,7 +341,7 @@ defmodule Chronicle.Client do
       })
 
     Logger.info("Chronicle discovery: #{Chronicle.Discovery.Report.summary(discovery_report)}")
-    Logger.debug(Chronicle.Discovery.Report.format(discovery_report))
+    Logger.debug(fn -> Chronicle.Discovery.Report.format(discovery_report) end)
 
     :persistent_term.put({__MODULE__, name}, %{
       connection: conn_name,
@@ -520,6 +524,19 @@ defmodule Chronicle.Client do
              normalize_opts(watchdog_opts)
            )}
         ]
+    end
+  end
+
+  defp validate_event_types(event_types, migrations, strict?) do
+    case Chronicle.Events.EventTypes.validate(event_types, migrations) do
+      :ok ->
+        :ok
+
+      {:error, exception} when strict? ->
+        raise exception
+
+      {:error, exception} ->
+        Logger.error(Exception.message(exception))
     end
   end
 

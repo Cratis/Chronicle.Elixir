@@ -20,16 +20,22 @@ defmodule Chronicle.EventSequences.ConcurrencyStrategy do
   `config`'s `:concurrency` option (`default: :none | :optimistic`, `check_first_append: boolean`).
   `tail_fun` is called as `tail_fun.(event_source_id, narrowing_opts)` and returns the raw
   (un-normalized) tail sequence number.
+
+  `:guarded_event_sources` (default `[]`) lists event source ids that already carry a guard in
+  this unit of work - an enrolled decision read. They get no default scope: the decision read
+  is their guard, and the wire carries one scope per event source id.
   """
-  @spec apply_default([EventForEventSourceId.t()], map(), function()) ::
+  @spec apply_default([EventForEventSourceId.t()], map(), function(), keyword()) ::
           {:ok, [EventForEventSourceId.t()]} | {:error, term()}
-  def apply_default(events, config, tail_fun) do
+  def apply_default(events, config, tail_fun, opts \\ []) do
     case strategy(config) do
       :none ->
         {:ok, events}
 
       {:optimistic, check_first_append?} ->
-        apply_optimistic(events, check_first_append?, tail_fun)
+        guarded = Keyword.get(opts, :guarded_event_sources, [])
+
+        apply_optimistic(events, check_first_append?, tail_fun, guarded)
     end
   end
 
@@ -42,10 +48,10 @@ defmodule Chronicle.EventSequences.ConcurrencyStrategy do
     end
   end
 
-  defp apply_optimistic(events, check_first_append?, tail_fun) do
+  defp apply_optimistic(events, check_first_append?, tail_fun, guarded) do
     events
     |> Enum.reduce_while({:ok, []}, fn event, {:ok, acc} ->
-      case derive(event, check_first_append?, tail_fun) do
+      case derive_unless_guarded(event, check_first_append?, tail_fun, guarded) do
         {:ok, resolved} -> {:cont, {:ok, [resolved | acc]}}
         {:error, _} = error -> {:halt, error}
       end
@@ -53,6 +59,14 @@ defmodule Chronicle.EventSequences.ConcurrencyStrategy do
     |> case do
       {:ok, result} -> {:ok, Enum.reverse(result)}
       error -> error
+    end
+  end
+
+  defp derive_unless_guarded(event, check_first_append?, tail_fun, guarded) do
+    if event.event_source_id in guarded do
+      {:ok, event}
+    else
+      derive(event, check_first_append?, tail_fun)
     end
   end
 

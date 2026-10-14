@@ -182,7 +182,7 @@ defmodule Chronicle.Discovery.Report do
 
   defp observer_artifacts(kind, modules, introspection_fun, warn?) do
     Enum.map(modules, fn module ->
-      id_source = apply(module, introspection_fun, [:id_source])
+      id_source = id_source_of(module, introspection_fun)
 
       if id_source == :module_name do
         DefaultedIdWarning.warn_once(module, kind, warn?)
@@ -195,6 +195,13 @@ defmodule Chronicle.Discovery.Report do
         id_source: id_source
       }
     end)
+  end
+
+  # A module compiled against an older client has no `:id_source` clause.
+  defp id_source_of(module, introspection_fun) do
+    apply(module, introspection_fun, [:id_source])
+  rescue
+    FunctionClauseError -> :explicit
   end
 
   defp simple_artifacts(kind, modules, introspection_fun, id_key) do

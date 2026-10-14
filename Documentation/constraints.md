@@ -49,7 +49,7 @@ Without `:scope`, uniqueness is checked globally, as before.
 | `:scope` | both | narrows uniqueness checking to values observed at append time along one or more dimensions (`:per_event_source_type`, `:per_event_stream_type`, `:per_event_stream_id`), mirroring the C# client's `IConstraintBuilder.PerEventSourceType()`/`PerEventStreamType()`/`PerEventStreamId()`. Defaults to unscoped (checked globally) |
 | `:event_sequences` | both | restrict the declaration to specific event sequences (default: all) |
 
-An unknown option, an invalid `:mode`, or an invalid `:scope` value is a compile-time error.
+An unknown option, an invalid `:mode`, or an invalid `:scope` value emits a compile warning naming the module and the option. The declaration still compiles: an unknown `:mode` raises `ArgumentError` when the constraint definition is built, and an unknown option or invalid `:scope` is ignored, as in earlier releases.
 
 ## Unique modes
 

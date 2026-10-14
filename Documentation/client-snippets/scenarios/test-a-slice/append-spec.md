@@ -3,28 +3,30 @@ defmodule MyApp.Events.TestSliceAppendBookAdded do
   use Chronicle.Events.EventType, id: "test-slice-append-book-added"
 
   defstruct [:title, :isbn]
-
-  unique(:isbn, name: "TestSliceAppendUniqueIsbn")
 end
 
 defmodule MyApp.TestSliceAppendTest do
-  # Exercises the real client SDK against a running Chronicle event store,
-  # so it's skipped here; remove the tag to run it against a live store.
-  use ExUnit.Case, async: true
-  @moduletag :skip
+  # Runs against an in-memory kernel, so it needs no Chronicle server.
+  use Chronicle.Testing.Case, event_types: [MyApp.Events.TestSliceAppendBookAdded]
 
+  import Chronicle.Testing.Assertions
+
+  alias Chronicle.EventSequences.EventLog
   alias MyApp.Events.TestSliceAppendBookAdded
 
-  test "adding a book succeeds" do
-    book_id = Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+  test "adding a book appends a BookAdded event", %{chronicle: client} do
+    book_id = "book-#{System.unique_integer([:positive])}"
 
     result =
-      Chronicle.append(book_id, %TestSliceAppendBookAdded{
-        title: "The Pragmatic Programmer",
-        isbn: "978-0135957059"
-      })
+      EventLog.append(
+        book_id,
+        %TestSliceAppendBookAdded{title: "The Pragmatic Programmer", isbn: "978-0135957059"},
+        client: client
+      )
 
     assert result == :ok
+
+    assert_appended(client, TestSliceAppendBookAdded, event_source_id: book_id)
   end
 end
 ```

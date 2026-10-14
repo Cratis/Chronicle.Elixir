@@ -16,37 +16,44 @@ defmodule MyApp.ReadModels.TestSliceReadModelBook do
 
   alias MyApp.Events.{TestSliceReadModelBookAdded, TestSliceReadModelBookBorrowed}
 
-  defstruct id: nil, title: nil, on_loan: false, borrowed_by: nil
+  defstruct id: nil, title: nil, borrowed_by: nil
 
   from TestSliceReadModelBookAdded,
-    set: [id: :event_source_id, title: :title, on_loan: false]
+    set: [id: :event_source_id, title: :title]
 
   from TestSliceReadModelBookBorrowed,
-    set: [on_loan: true, borrowed_by: :borrowed_by]
+    set: [borrowed_by: :borrowed_by]
 end
 
 defmodule MyApp.TestSliceReadModelTest do
-  # Exercises the real client SDK against a running Chronicle event store,
-  # so it's skipped here; remove the tag to run it against a live store.
+  # Evaluates the read model's `from/2` declarations in memory, so it needs no Chronicle server.
   use ExUnit.Case, async: true
-  @moduletag :skip
 
+  alias Chronicle.Testing.Projections
   alias MyApp.Events.{TestSliceReadModelBookAdded, TestSliceReadModelBookBorrowed}
   alias MyApp.ReadModels.TestSliceReadModelBook
 
-  test "borrowing a book marks it on loan" do
-    book_id = Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+  test "borrowing a book records who has it" do
+    book_id = "book-#{System.unique_integer([:positive])}"
 
-    Chronicle.append(book_id, %TestSliceReadModelBookAdded{
-      title: "The Pragmatic Programmer",
-      isbn: "978-0135957059"
-    })
+    {:ok, book} =
+      Projections.apply_event(
+        TestSliceReadModelBook,
+        nil,
+        %TestSliceReadModelBookAdded{title: "The Pragmatic Programmer", isbn: "978-0135957059"},
+        book_id
+      )
 
-    Chronicle.append(book_id, %TestSliceReadModelBookBorrowed{borrowed_by: "Ada Lovelace"})
+    assert book.borrowed_by == nil
 
-    book = Chronicle.read_model(TestSliceReadModelBook, book_id)
+    {:ok, book} =
+      Projections.apply_event(
+        TestSliceReadModelBook,
+        book,
+        %TestSliceReadModelBookBorrowed{borrowed_by: "Ada Lovelace"},
+        book_id
+      )
 
-    assert book.on_loan
     assert book.borrowed_by == "Ada Lovelace"
   end
 end

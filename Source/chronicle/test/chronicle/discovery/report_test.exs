@@ -34,6 +34,12 @@ defmodule Chronicle.Discovery.ReportTest do
     def handle(%SomeEvent{}, _context), do: :ok
   end
 
+  defmodule LegacyReactor do
+    # Shaped like a module compiled by an older client: no :id_source introspection clause.
+    def __chronicle_reactor__(:id), do: "legacy-reactor"
+    def __chronicle_reactor__(:handles), do: []
+  end
+
   defmodule NamedReducer do
     use Chronicle.Reducers.Reducer, id: "named-reducer", model: SomeReadModel
 
@@ -79,6 +85,13 @@ defmodule Chronicle.Discovery.ReportTest do
       assert [artifact] = Report.of_kind(report, :reactor)
       assert artifact.id == to_string(DefaultedReactor)
       assert artifact.id_source == :module_name
+    end
+
+    test "falls back to :explicit for a module compiled without an :id_source clause" do
+      report = Report.build(%{reactors: [LegacyReactor], warn_defaulted_ids: false})
+      assert [artifact] = Report.of_kind(report, :reactor)
+      assert artifact.id == "legacy-reactor"
+      assert artifact.id_source == :explicit
     end
 
     test "builds reducer artifacts, tagging an explicit id_source" do

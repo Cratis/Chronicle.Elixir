@@ -164,11 +164,13 @@ defmodule Chronicle.Events.Migration do
       to_id = @chronicle_migration_to_module.__chronicle_event_type__(:id)
 
       if from_id != to_id do
-        raise Chronicle.Events.MigrationGenerationsMustShareEventTypeId,
-          from_module: @chronicle_migration_from_module,
-          to_module: @chronicle_migration_to_module,
-          from_id: from_id,
-          to_id: to_id
+        raise ArgumentError,
+              "Migration from #{inspect(@chronicle_migration_from_module)} (event type " <>
+                "#{inspect(from_id)}) to #{inspect(@chronicle_migration_to_module)} " <>
+                "(event type #{inspect(to_id)}) bridges two different event types: " <>
+                "migration from and to event types must have the same ID. Mark the previous " <>
+                "generation with generation_for: #{inspect(@chronicle_migration_to_module)} " <>
+                "instead of a separate :id."
       end
     end
   end
