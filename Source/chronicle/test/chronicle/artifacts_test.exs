@@ -102,4 +102,13 @@ defmodule Chronicle.ArtifactsTest do
       assert discovered.captures == []
     end
   end
+
+  describe "report/1" do
+    test "builds a Chronicle.Discovery.Report, leaving discover/1's map shape untouched" do
+      report = Artifacts.report(:nonexistent_app)
+
+      assert %Chronicle.Discovery.Report{has_run: true, artifacts: []} = report
+      assert is_map(Artifacts.discover(:nonexistent_app))
+    end
+  end
 end

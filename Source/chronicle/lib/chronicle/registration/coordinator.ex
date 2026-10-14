@@ -57,7 +57,10 @@ defmodule Chronicle.Registration.Coordinator do
 
   alias Bcl.Guid, as: BclGuid
 
+  alias Chronicle.Discovery.{DriftDetector, Report}
   alias Chronicle.Registration.RetryPolicy
+
+  @drift_findings_key :chronicle_drift_findings
 
   def start_link(opts) do
     case Keyword.get(opts, :client) do
@@ -79,6 +82,13 @@ defmodule Chronicle.Registration.Coordinator do
   `:next_retry_in` (milliseconds, or `nil`).
   """
   def status(server), do: GenServer.call(server, :status)
+
+  @doc """
+  The most recent artifact identity drift findings computed before registration.
+
+  Empty before the first attempt, when `drift_policy: :ignore`, or when none were found.
+  """
+  def identity_drift(server), do: GenServer.call(server, :identity_drift)
 
   @doc """
   Waits until registration succeeds (`:ok`) or fails for good (`{:error, {:failed, status}}`).
@@ -103,6 +113,7 @@ defmodule Chronicle.Registration.Coordinator do
       event_sources: Keyword.get(opts, :event_sources, []),
       migrations: Keyword.get(opts, :migrations, []),
       read_models: Keyword.get(opts, :read_models, []),
+      reactors: Keyword.get(opts, :reactors, []),
       reducers: Keyword.get(opts, :reducers, []),
       projections: Keyword.get(opts, :projections, []),
       global_handlers: Keyword.get(opts, :global_handlers, []),
@@ -110,6 +121,7 @@ defmodule Chronicle.Registration.Coordinator do
       default_sink_type_id: Keyword.get(opts, :default_sink_type_id, "MongoDB"),
       register_fun: Keyword.get(opts, :register_fun, &default_register/1),
       policy: RetryPolicy.new(Keyword.get(opts, :registration)),
+      drift_policy: Keyword.get(opts, :drift_policy, :warn),
       random: Keyword.get(opts, :random, &:rand.uniform/0),
       retry_timer: nil,
       registered_done?: false,
@@ -117,6 +129,7 @@ defmodule Chronicle.Registration.Coordinator do
       attempts: 0,
       error: nil,
       next_retry_in: nil,
+      drift_findings: [],
       waiters: []
     }
 
@@ -132,6 +145,8 @@ defmodule Chronicle.Registration.Coordinator do
 
   @impl true
   def handle_call(:status, _from, state), do: {:reply, status_of(state), state}
+
+  def handle_call(:identity_drift, _from, state), do: {:reply, state.drift_findings, state}
 
   def handle_call(:await, from, state) do
     case state.status do
@@ -171,6 +186,11 @@ defmodule Chronicle.Registration.Coordinator do
 
   def handle_info(:register, state) do
     state = %{state | status: :registering, next_retry_in: nil}
+    # Drift findings computed by `check_drift/3` (called from `register_all/2`, running in
+    # this same process) are stashed in the process dictionary rather than threaded through
+    # `register_fun`'s `:ok | {:error, _}` contract, which stays unchanged for test overrides
+    # that bypass real registration (and therefore never compute drift) entirely.
+    Process.delete(@drift_findings_key)
 
     case state.register_fun.(state) do
       :ok ->
@@ -178,13 +198,21 @@ defmodule Chronicle.Registration.Coordinator do
 
         state =
           reply_waiters(
-            %{state | registered_done?: true, retry_timer: nil, status: :registered, error: nil},
+            %{
+              state
+              | registered_done?: true,
+                retry_timer: nil,
+                status: :registered,
+                error: nil,
+                drift_findings: Process.get(@drift_findings_key, state.drift_findings)
+            },
             :ok
           )
 
         {:noreply, state}
 
       {:error, reason} ->
+        state = %{state | drift_findings: Process.get(@drift_findings_key, state.drift_findings)}
         failed = state.attempts + 1
 
         if RetryPolicy.retry?(state.policy, failed, reason) do
@@ -269,6 +297,7 @@ defmodule Chronicle.Registration.Coordinator do
 
     with :ok <- ensure_event_store(channel, state.event_store),
          :ok <- ensure_namespace(channel, state.event_store, state.namespace),
+         :ok <- check_drift(channel, state, all_event_types),
          :ok <-
            EventTypes.register(channel, state.event_store, all_event_types, state.migrations),
          :ok <- EventSources.register(channel, state.event_store, state.event_sources),
@@ -277,6 +306,83 @@ defmodule Chronicle.Registration.Coordinator do
          :ok <- register_projections(channel, state) do
       :ok
     end
+  end
+
+  # Compares the about-to-be-registered artifacts with what the kernel already has before
+  # anything is (re)registered. Stashes findings in the process dictionary (read back in
+  # `handle_info(:register, state)`, which runs in this same process) rather than changing
+  # `register_fun`'s `:ok | {:error, reason}` contract.
+  defp check_drift(_channel, %{drift_policy: :ignore}, _event_type_modules) do
+    Process.put(@drift_findings_key, [])
+    :ok
+  end
+
+  defp check_drift(channel, state, event_type_modules) do
+    report =
+      Report.build(%{
+        event_types: event_type_modules,
+        reactors: state.reactors,
+        reducers: state.reducers,
+        projections: state.projections,
+        read_models: state.read_models,
+        # The drift check itself is not where a defaulted id should be warned about again —
+        # client startup already did that when it built its own discovery report.
+        warn_defaulted_ids: false
+      })
+
+    case DriftDetector.detect(channel, report,
+           event_store: state.event_store,
+           namespace: state.namespace
+         ) do
+      {:ok, findings} ->
+        Process.put(@drift_findings_key, findings)
+        Enum.each(findings, &log_drift(&1, state))
+        apply_drift_policy(findings, state.drift_policy)
+
+      {:error, reason} ->
+        Process.put(@drift_findings_key, [])
+
+        case state.drift_policy do
+          :fail ->
+            {:error, {:artifact_identity_drift_check_failed, reason}}
+
+          _ ->
+            Logger.warning(
+              "Chronicle artifact identity drift check failed for #{state.event_store}/#{state.namespace}: " <>
+                inspect(reason)
+            )
+
+            :ok
+        end
+    end
+  end
+
+  @doc """
+  Decides whether a set of drift findings should block registration under a policy.
+
+  `:fail` blocks when a `:warning`-severity finding exists (an event type or reactor
+  finding); a `:reducer`/`:projection` (`:info`-severity) finding never blocks under any
+  policy. `:ignore` and `:warn` never block — `:ignore` never even reaches here, since
+  `check_drift/3` skips the kernel calls entirely for it. Exposed (not `@doc false`) so it
+  can be exercised directly against fixture findings, under every policy, without a kernel.
+  """
+  @spec apply_drift_policy([Chronicle.Discovery.Drift.t()], :ignore | :warn | :fail) ::
+          :ok | {:error, {:artifact_identity_drift, [Chronicle.Discovery.Drift.t()]}}
+  def apply_drift_policy(findings, :fail) do
+    if Enum.any?(findings, &(&1.severity == :warning)) do
+      {:error, {:artifact_identity_drift, findings}}
+    else
+      :ok
+    end
+  end
+
+  def apply_drift_policy(_findings, _policy), do: :ok
+
+  defp log_drift(drift, state) do
+    Logger.warning(
+      "Chronicle artifact identity drift (#{state.event_store}/#{state.namespace}): " <>
+        "[#{drift.severity}] #{drift.kind} #{drift.id} — #{drift.reason}"
+    )
   end
 
   defp ensure_event_store(channel, event_store) do

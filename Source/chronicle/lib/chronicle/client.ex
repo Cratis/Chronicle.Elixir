@@ -117,6 +117,22 @@ defmodule Chronicle.Client do
       projections and reducers. Accepts an atom (`:mongodb`, `:sql`,
       `:in_memory`, `:none`) or a raw sink type string. Defaults to
       `:mongodb`. See `Chronicle.Sinks.WellKnownSinkTypes`.
+    * `:drift_policy` — `:ignore`, `:warn` (default) or `:fail`. Controls what happens when
+      the artifacts about to be registered look like they've drifted from what the kernel
+      already has — an event type generation whose schema changed without a bumped
+      `:generation`, a registered reactor/reducer/projection missing from the current code,
+      or one whose handled event types changed. `:ignore` skips the check and its kernel
+      calls. `:warn` logs any findings and registers anyway. `:fail` logs findings and
+      refuses to register when a `:warning`-severity finding exists (an event type or
+      reactor finding); a reducer or projection finding is `:info` and never blocks. If the
+      check itself cannot complete, `:warn` logs and continues and `:fail` stops — an
+      indeterminate result is never treated as clean. See `Chronicle.Discovery.DriftDetector`
+      and `Chronicle.Client.identity_drift/1`.
+    * `:warn_defaulted_ids` — defaults to `true`. A reactor, reducer or declarative
+      projection with no explicit `:id` defaults it to the module name — renaming or moving
+      the module then silently resets its observation position. Discovery logs a one-time
+      warning (per module, for the life of the BEAM node) naming the module and how to pin
+      its id; set to `false` to suppress it. See `Chronicle.Discovery.DefaultedIdWarning`.
     * `:event_generation_delivery` — the default generation delivery
       (`:compatibility` or `:pinned`) for every reactor and reducer that
       doesn't set its own `:generation_delivery`. Defaults to `:compatibility`.
@@ -152,6 +168,8 @@ defmodule Chronicle.Client do
   """
 
   use Supervisor
+
+  require Logger
 
   alias Chronicle.Artifacts
   alias Chronicle.Connections.Connection
@@ -207,6 +225,30 @@ defmodule Chronicle.Client do
   @spec config(atom() | pid()) :: map()
   def config(client \\ __MODULE__) do
     :persistent_term.get({__MODULE__, client})
+  end
+
+  @doc """
+  Returns the artifact discovery report built when this client started.
+
+  See `Chronicle.Discovery.Report`. Logged at `:info` (summary) and `:debug` (full report)
+  during `init/1`; this is how to get at it afterwards.
+  """
+  @spec discovery_report(atom()) :: Chronicle.Discovery.Report.t()
+  def discovery_report(client \\ __MODULE__) do
+    Map.get(config(client), :discovery_report, Chronicle.Discovery.Report.not_run())
+  end
+
+  @doc """
+  Returns the most recent artifact identity drift findings computed before registration.
+
+  Empty before the first registration attempt, when `drift_policy: :ignore`, or when none
+  were found. See `Chronicle.Discovery.Drift` and the `:drift_policy` client option.
+  """
+  @spec identity_drift(atom()) :: [Chronicle.Discovery.Drift.t()]
+  def identity_drift(client \\ __MODULE__) do
+    Chronicle.Registration.Coordinator.identity_drift(
+      Chronicle.Registration.Coordinator.name_for(client)
+    )
   end
 
   @impl true
@@ -276,6 +318,27 @@ defmodule Chronicle.Client do
 
     lifecycle_name = Chronicle.Connections.Lifecycle.name_for(name)
 
+    discovery_report =
+      Chronicle.Discovery.Report.build(%{
+        event_types: event_types,
+        event_sources: event_sources,
+        reactors: reactors,
+        reducers: reducers,
+        read_models: read_models,
+        projections: projections,
+        constraints: constraints,
+        webhooks: webhooks,
+        event_store_subscriptions: event_store_subscriptions,
+        seeders: seeders,
+        migrations: migrations,
+        global_handlers: global_handlers,
+        captures: captures,
+        warn_defaulted_ids: Keyword.get(opts, :warn_defaulted_ids, true)
+      })
+
+    Logger.info("Chronicle discovery: #{Chronicle.Discovery.Report.summary(discovery_report)}")
+    Logger.debug(Chronicle.Discovery.Report.format(discovery_report))
+
     :persistent_term.put({__MODULE__, name}, %{
       connection: conn_name,
       lifecycle: lifecycle_name,
@@ -289,7 +352,8 @@ defmodule Chronicle.Client do
       captures: captures,
       event_store_subscriptions: event_store_subscriptions,
       constraints: constraints,
-      concurrency: Keyword.get(opts, :concurrency, [])
+      concurrency: Keyword.get(opts, :concurrency, []),
+      discovery_report: discovery_report
     })
 
     connection_opts =
@@ -396,10 +460,12 @@ defmodule Chronicle.Client do
            event_sources: event_sources,
            migrations: migrations,
            read_models: read_models,
+           reactors: reactors,
            reducers: reducers,
            projections: projections,
            global_handlers: global_handlers,
-           constraints: constraints
+           constraints: constraints,
+           drift_policy: Keyword.get(opts, :drift_policy, :warn)
          )}
       ] ++
         reactor_children ++

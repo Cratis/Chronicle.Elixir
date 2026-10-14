@@ -206,6 +206,21 @@ defmodule Chronicle.Artifacts do
     |> Map.new()
   end
 
+  @doc """
+  Builds a `Chronicle.Discovery.Report` from the artifacts discovered in an OTP application.
+
+  Additive alongside `discover/1`, which keeps returning its plain map unchanged so existing
+  callers are unaffected. `opts` accepts `:warn_defaulted_ids` (default `true`); see
+  `Chronicle.Discovery.Report.build/1`.
+  """
+  @spec report(atom(), keyword()) :: Chronicle.Discovery.Report.t()
+  def report(otp_app, opts \\ []) when is_atom(otp_app) do
+    otp_app
+    |> discover()
+    |> Map.put(:warn_defaulted_ids, Keyword.get(opts, :warn_defaulted_ids, true))
+    |> Chronicle.Discovery.Report.build()
+  end
+
   defp maybe_put(acc, _key, _module, false), do: acc
   defp maybe_put(acc, key, module, true), do: Map.update!(acc, key, &[module | &1])
 end

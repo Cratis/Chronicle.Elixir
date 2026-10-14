@@ -138,4 +138,48 @@ defmodule Chronicle.Registration.CoordinatorTest do
       assert %{state: :registering, error: :down, next_retry_in: 5_000} = Coordinator.status(pid)
     end
   end
+
+  describe "identity_drift/1" do
+    test "is empty before any registration attempt" do
+      {:ok, lifecycle} = Lifecycle.start_link([])
+      pid = start_coordinator(lifecycle, fn _ -> :ok end)
+
+      assert Coordinator.identity_drift(pid) == []
+    end
+  end
+
+  describe "apply_drift_policy/2" do
+    @warning_finding %Chronicle.Discovery.Drift{
+      kind: :reactor,
+      id: "some-reactor",
+      reason: :observer_missing_from_code,
+      severity: :warning
+    }
+
+    @info_finding %Chronicle.Discovery.Drift{
+      kind: :reducer,
+      id: "some-reducer",
+      reason: :observer_missing_from_code,
+      severity: :info
+    }
+
+    test ":ignore and :warn never block, regardless of findings" do
+      assert Coordinator.apply_drift_policy([@warning_finding], :ignore) == :ok
+      assert Coordinator.apply_drift_policy([@warning_finding], :warn) == :ok
+      assert Coordinator.apply_drift_policy([], :warn) == :ok
+    end
+
+    test ":fail blocks on a :warning-severity finding" do
+      assert {:error, {:artifact_identity_drift, [@warning_finding]}} =
+               Coordinator.apply_drift_policy([@warning_finding], :fail)
+    end
+
+    test ":fail never blocks on an :info-severity finding alone" do
+      assert Coordinator.apply_drift_policy([@info_finding], :fail) == :ok
+    end
+
+    test ":fail with no findings is clean" do
+      assert Coordinator.apply_drift_policy([], :fail) == :ok
+    end
+  end
 end
