@@ -112,6 +112,11 @@ defmodule Chronicle.Client do
       projections and reducers. Accepts an atom (`:mongodb`, `:sql`,
       `:in_memory`, `:none`) or a raw sink type string. Defaults to
       `:mongodb`. See `Chronicle.Sinks.WellKnownSinkTypes`.
+    * `:event_generation_delivery` — the default generation delivery
+      (`:compatibility` or `:pinned`) for every reactor and reducer that
+      doesn't set its own `:generation_delivery`. Defaults to `:compatibility`.
+      See "Pinned generation delivery" on `Chronicle.Reactors.Reactor` and
+      `Chronicle.Reducers.Reducer`.
     * `:skip_tls_validation` — overrides the connection string's
       `skipTlsValidation` query option. See `Chronicle.Connections.Connection`.
     * `:load_balancer` — overrides the connection string's `loadBalancer`
@@ -282,7 +287,8 @@ defmodule Chronicle.Client do
       lifecycle: lifecycle_name,
       event_store: event_store,
       namespace: namespace,
-      default_sink_type_id: default_sink_type_id
+      default_sink_type_id: default_sink_type_id,
+      event_generation_delivery: Keyword.get(opts, :event_generation_delivery, :compatibility)
     ]
 
     reactor_children =
