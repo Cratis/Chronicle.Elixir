@@ -60,6 +60,7 @@ defmodule Chronicle.EventSequences.EventLog do
 
   alias Chronicle.Auditing.{CausationEntry, CausationManager, CausationType}
   alias Chronicle.Correlation.{CorrelationId, CorrelationIdManager}
+  alias Chronicle.Diagnostics.Tracing
   alias Chronicle.EventSequences.{ConcurrencyStrategy, DefinitionRouting, EventForEventSourceId}
   alias Chronicle.Identity.IdentityProvider
   alias Chronicle.WireResult
@@ -436,30 +437,42 @@ defmodule Chronicle.EventSequences.EventLog do
 
   def commit_transaction(%{event_sequence_id: event_sequence_id, events: events} = state) do
     client = Map.get(state, :client, Chronicle.Client)
+    correlation_id = Map.fetch!(state, :correlation_id)
 
-    with {:ok, channel, config} <- resolve_append_channel(client: client) do
-      namespace = Map.get(state, :namespace) || config.namespace
-      correlation_id = Map.fetch!(state, :correlation_id)
+    attributes =
+      append_span_attributes(client, event_sequence_id, nil, correlation_id: correlation_id)
+      |> Map.put("cratis.event.count", length(events))
 
-      with {:ok, events} <-
-             prepare_events(events, config, namespace, event_sequence_id,
-               client: client,
-               namespace: namespace
-             ) do
-        request =
-          build_append_many_for_event_sources_request(
-            config,
-            namespace,
-            event_sequence_id,
-            events,
-            correlation_id: correlation_id,
-            causation: batch_causation(events),
-            identity: batch_identity(events)
-          )
+    Tracing.with_telemetry_span(
+      [:cratis, :chronicle, :client, :append],
+      %{event_sequence_id: event_sequence_id, event_count: length(events)},
+      "cratis.chronicle.client.event_sequence.append_many",
+      Map.put(attributes, :kind, :client),
+      fn ->
+        with {:ok, channel, config} <- resolve_append_channel(client: client) do
+          namespace = Map.get(state, :namespace) || config.namespace
 
-        commit_request(channel, request, config)
+          with {:ok, events} <-
+                 prepare_events(events, config, namespace, event_sequence_id,
+                   client: client,
+                   namespace: namespace
+                 ) do
+            request =
+              build_append_many_for_event_sources_request(
+                config,
+                namespace,
+                event_sequence_id,
+                events,
+                correlation_id: correlation_id,
+                causation: batch_causation(events),
+                identity: batch_identity(events)
+              )
+
+            commit_request(channel, request, config)
+          end
+        end
       end
-    end
+    )
   end
 
   defp commit_request(channel, request, config) do
@@ -951,13 +964,76 @@ defmodule Chronicle.EventSequences.EventLog do
   end
 
   defp raw_append_event(event_sequence_id, event_to_append, opts) do
-    with {:ok, channel, config} <- resolve_append_channel(opts) do
-      namespace = Keyword.get(opts, :namespace, config.namespace)
+    client = Keyword.get(opts, :client, Chronicle.Client)
 
-      with {:ok, [event_to_append]} <-
-             prepare_events([event_to_append], config, namespace, event_sequence_id, opts) do
-        send_append(channel, config, namespace, event_sequence_id, event_to_append, opts)
+    attributes =
+      append_span_attributes(client, event_sequence_id, event_to_append.event_source_id, opts)
+      |> Map.put("cratis.event_type.id", event_type_id(event_to_append.event))
+
+    Tracing.with_telemetry_span(
+      [:cratis, :chronicle, :client, :append],
+      %{event_sequence_id: event_sequence_id, event_count: 1},
+      "cratis.chronicle.client.event_sequence.append",
+      Map.put(attributes, :kind, :client),
+      fn ->
+        with {:ok, channel, config} <- resolve_append_channel(opts) do
+          namespace = Keyword.get(opts, :namespace, config.namespace)
+
+          with {:ok, [event_to_append]} <-
+                 prepare_events([event_to_append], config, namespace, event_sequence_id, opts) do
+            send_append(channel, config, namespace, event_sequence_id, event_to_append, opts)
+          end
+        end
       end
+    )
+  end
+
+  # Attributes common to every event-sequence span, per the shared Cratis
+  # OpenTelemetry convention (Cratis/Architecture#33). `cratis.event_source.id`
+  # is only added when `Chronicle.Diagnostics.Tracing.trace_event_source_id?/0`
+  # is on, since an event source id can itself be sensitive (D7).
+  defp append_span_attributes(client, event_sequence_id, event_source_id, opts) do
+    config = Chronicle.Client.config(client)
+
+    base = %{
+      "cratis.event_sequence.id" => event_sequence_id,
+      "cratis.correlation_id" => correlation_id_attribute(opts)
+    }
+
+    base =
+      if is_map(config) do
+        base
+        |> Map.put("cratis.event_store.name", config.event_store)
+        |> Map.put(
+          "cratis.event_store.namespace",
+          Keyword.get(opts, :namespace, config.namespace)
+        )
+      else
+        base
+      end
+
+    if event_source_id != nil and Tracing.trace_event_source_id?() do
+      Map.put(base, "cratis.event_source.id", to_string(event_source_id))
+    else
+      base
+    end
+  end
+
+  defp correlation_id_attribute(opts) do
+    case Keyword.get(opts, :correlation_id) do
+      %CorrelationId{value: value} -> value
+      id when is_binary(id) -> id
+      _ -> CorrelationIdManager.current().value
+    end
+  end
+
+  defp event_type_id(event) do
+    module = event.__struct__
+
+    if function_exported?(module, :__chronicle_event_type__, 1) do
+      module.__chronicle_event_type__(:id)
+    else
+      ""
     end
   end
 
@@ -1099,36 +1175,50 @@ defmodule Chronicle.EventSequences.EventLog do
   end
 
   defp do_append_many(event_sequence_id, event_source_id, events, opts) do
-    with {:ok, channel, config} <- resolve_append_channel(opts) do
-      namespace = Keyword.get(opts, :namespace, config.namespace)
+    client = Keyword.get(opts, :client, Chronicle.Client)
 
-      events_to_append =
-        Enum.map(events, fn event ->
-          build_event_for_event_source_id(event_source_id, event, opts, :append_many)
-        end)
+    attributes =
+      append_span_attributes(client, event_sequence_id, event_source_id, opts)
+      |> Map.put("cratis.event.count", length(events))
 
-      with {:ok, events_to_append} <-
-             prepare_events(events_to_append, config, namespace, event_sequence_id, opts) do
-        request =
-          build_append_many_for_event_sources_request(
-            config,
-            namespace,
-            event_sequence_id,
-            events_to_append,
-            opts
-          )
+    Tracing.with_telemetry_span(
+      [:cratis, :chronicle, :client, :append],
+      %{event_sequence_id: event_sequence_id, event_count: length(events)},
+      "cratis.chronicle.client.event_sequence.append_many",
+      Map.put(attributes, :kind, :client),
+      fn ->
+        with {:ok, channel, config} <- resolve_append_channel(opts) do
+          namespace = Keyword.get(opts, :namespace, config.namespace)
 
-        case EventSequences.Stub.append_many_for_event_sources(channel, request) do
-          {:ok, envelope} ->
-            with {:ok, response} <- unwrap_append_response(envelope, config) do
-              normalize_response(response)
+          events_to_append =
+            Enum.map(events, fn event ->
+              build_event_for_event_source_id(event_source_id, event, opts, :append_many)
+            end)
+
+          with {:ok, events_to_append} <-
+                 prepare_events(events_to_append, config, namespace, event_sequence_id, opts) do
+            request =
+              build_append_many_for_event_sources_request(
+                config,
+                namespace,
+                event_sequence_id,
+                events_to_append,
+                opts
+              )
+
+            case EventSequences.Stub.append_many_for_event_sources(channel, request) do
+              {:ok, envelope} ->
+                with {:ok, response} <- unwrap_append_response(envelope, config) do
+                  normalize_response(response)
+                end
+
+              {:error, reason} ->
+                {:error, reason}
             end
-
-          {:error, reason} ->
-            {:error, reason}
+          end
         end
       end
-    end
+    )
   end
 
   defp build_append_many_for_event_sources_request(

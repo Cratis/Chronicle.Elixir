@@ -46,6 +46,7 @@ defmodule Chronicle.MixProject do
       {:grpc, "~> 1.0"},
       {:mint, "~> 1.11"},
       {:telemetry, "~> 1.0"},
+      {:opentelemetry_api, "~> 1.4"},
       {:jason, "~> 1.4"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]
