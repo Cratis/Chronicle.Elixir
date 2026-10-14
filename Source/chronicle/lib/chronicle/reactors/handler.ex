@@ -16,6 +16,7 @@ defmodule Chronicle.Reactors.Handler do
   require Logger
 
   alias Chronicle.Connections.{Connection, Lifecycle, Status}
+  alias Chronicle.Diagnostics.Tracing
   alias Chronicle.EventSequences.{EventForEventSourceId, EventLog}
 
   alias Cratis.Chronicle.Contracts.Observation.Reactors.{
@@ -286,21 +287,38 @@ defmodule Chronicle.Reactors.Handler do
 
         case decode_event(event_module, content) do
           {:ok, event} ->
-            try do
-              middleware = Chronicle.Middleware.for_module(state.module, :reactor)
+            Tracing.with_telemetry_span(
+              [:cratis, :chronicle, :client, :reactor, :handle],
+              %{
+                reactor_id: state.module.__chronicle_reactor__(:id),
+                event_type_id: event_type_id
+              },
+              "cratis.chronicle.client.reactor.handle",
+              %{
+                "cratis.event_sequence.id" => "event-log",
+                "cratis.event_type.id" => event_type_id,
+                "cratis.observer.id" => state.module.__chronicle_reactor__(:id),
+                "cratis.correlation_id" => ctx.correlation_id,
+                kind: :consumer
+              },
+              fn ->
+                try do
+                  middleware = Chronicle.Middleware.for_module(state.module, :reactor)
 
-              middleware
-              |> Chronicle.Middleware.run(event, ctx, fn event, ctx ->
-                case replay_action(state.module, event_module, ctx) do
-                  :skip -> :ok
-                  :handle_replay -> state.module.handle_replay(event, ctx)
-                  :handle -> state.module.handle(event, ctx)
+                  middleware
+                  |> Chronicle.Middleware.run(event, ctx, fn event, ctx ->
+                    case replay_action(state.module, event_module, ctx) do
+                      :skip -> :ok
+                      :handle_replay -> state.module.handle_replay(event, ctx)
+                      :handle -> state.module.handle(event, ctx)
+                    end
+                  end)
+                  |> handle_result(state, ctx.event_source_id)
+                rescue
+                  e -> {:error, e}
                 end
-              end)
-              |> handle_result(state, ctx.event_source_id)
-            rescue
-              e -> {:error, e}
-            end
+              end
+            )
 
           {:error, reason} ->
             Logger.warning("Failed to decode event #{event_type_id}: #{inspect(reason)}")

@@ -15,6 +15,7 @@ defmodule Chronicle.Reducers.Handler do
   require Logger
 
   alias Chronicle.Connections.{Connection, Lifecycle, Status}
+  alias Chronicle.Diagnostics.Tracing
 
   alias Cratis.Chronicle.Contracts.Observation.Reducers.{
     Reducers,
@@ -317,16 +318,33 @@ defmodule Chronicle.Reducers.Handler do
 
         case decode_event(event_module, content) do
           {:ok, event} ->
-            try do
-              middleware = Chronicle.Middleware.for_module(state.module, :reducer)
+            Tracing.with_telemetry_span(
+              [:cratis, :chronicle, :client, :reducer, :reduce],
+              %{
+                reducer_id: state.module.__chronicle_reducer__(:id),
+                event_type_id: event_type_id
+              },
+              "cratis.chronicle.client.reducer.reduce",
+              %{
+                "cratis.event_sequence.id" => "event-log",
+                "cratis.event_type.id" => event_type_id,
+                "cratis.observer.id" => state.module.__chronicle_reducer__(:id),
+                "cratis.correlation_id" => ctx.correlation_id,
+                kind: :consumer
+              },
+              fn ->
+                try do
+                  middleware = Chronicle.Middleware.for_module(state.module, :reducer)
 
-              {:ok,
-               Chronicle.Middleware.run(middleware, event, ctx, fn event, ctx ->
-                 state.module.reduce(event, model, ctx)
-               end)}
-            rescue
-              e -> {:error, e}
-            end
+                  {:ok,
+                   Chronicle.Middleware.run(middleware, event, ctx, fn event, ctx ->
+                     state.module.reduce(event, model, ctx)
+                   end)}
+                rescue
+                  e -> {:error, e}
+                end
+              end
+            )
 
           {:error, reason} ->
             Logger.warning("Failed to decode event #{event_type_id}: #{inspect(reason)}")
