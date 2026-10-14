@@ -37,10 +37,12 @@ defmodule Chronicle.Registration.Coordinator do
     FromDefinition,
     JoinDefinition,
     RemovedWithDefinition,
+    RemovedWithJoinDefinition,
     FromEveryDefinition,
     KeyValuePair_EventType_FromDefinition,
     KeyValuePair_EventType_JoinDefinition,
-    KeyValuePair_EventType_RemovedWithDefinition
+    KeyValuePair_EventType_RemovedWithDefinition,
+    KeyValuePair_EventType_RemovedWithJoinDefinition
   }
 
   alias Cratis.Chronicle.Contracts.Projections.EventType, as: ProtoEventType
@@ -237,7 +239,8 @@ defmodule Chronicle.Registration.Coordinator do
       |> Enum.flat_map(fn rm ->
         (rm.__chronicle_read_model__(:from) |> Enum.map(&elem(&1, 0))) ++
           (rm.__chronicle_read_model__(:join) |> Enum.map(&elem(&1, 0))) ++
-          (rm.__chronicle_read_model__(:removed_with) |> Enum.map(&elem(&1, 0)))
+          (rm.__chronicle_read_model__(:removed_with) |> Enum.map(&elem(&1, 0))) ++
+          (rm.__chronicle_read_model__(:removed_with_join) |> Enum.map(&elem(&1, 0)))
       end)
 
     # Also collect event types from reducers
@@ -251,7 +254,8 @@ defmodule Chronicle.Registration.Coordinator do
       |> Enum.flat_map(fn proj ->
         (proj.__chronicle_projection__(:from) |> Enum.map(&elem(&1, 0))) ++
           (proj.__chronicle_projection__(:join) |> Enum.map(&elem(&1, 0))) ++
-          (proj.__chronicle_projection__(:removed_with) |> Enum.map(&elem(&1, 0)))
+          (proj.__chronicle_projection__(:removed_with) |> Enum.map(&elem(&1, 0))) ++
+          (proj.__chronicle_projection__(:removed_with_join) |> Enum.map(&elem(&1, 0)))
       end)
 
     all_event_types =
@@ -563,6 +567,18 @@ defmodule Chronicle.Registration.Coordinator do
         )
       end)
 
+    removed_with_join_entries =
+      read_model_module.__chronicle_read_model__(:removed_with_join)
+      |> Enum.map(fn {event_module, opts} ->
+        key =
+          opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression(read_model_module)
+
+        struct(KeyValuePair_EventType_RemovedWithJoinDefinition,
+          Key: proto_event_type(event_module),
+          Value: struct(RemovedWithJoinDefinition, Key: key)
+        )
+      end)
+
     from_every =
       case read_model_module.__chronicle_read_model__(:from_every) do
         [] ->
@@ -590,6 +606,7 @@ defmodule Chronicle.Registration.Coordinator do
       From: from_entries,
       Join: join_entries,
       RemovedWith: removed_with_entries,
+      RemovedWithJoin: removed_with_join_entries,
       Children:
         Chronicle.Projections.Children.build_map(
           read_model_module.__chronicle_read_model__(:children),
@@ -677,6 +694,17 @@ defmodule Chronicle.Registration.Coordinator do
         )
       end)
 
+    removed_with_join_entries =
+      projection_module.__chronicle_projection__(:removed_with_join)
+      |> Enum.map(fn {event_module, opts} ->
+        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression(model_module)
+
+        struct(KeyValuePair_EventType_RemovedWithJoinDefinition,
+          Key: proto_event_type(event_module),
+          Value: struct(RemovedWithJoinDefinition, Key: key)
+        )
+      end)
+
     from_every =
       case projection_module.__chronicle_projection__(:from_every) do
         [] ->
@@ -701,6 +729,7 @@ defmodule Chronicle.Registration.Coordinator do
       From: from_entries,
       Join: join_entries,
       RemovedWith: removed_with_entries,
+      RemovedWithJoin: removed_with_join_entries,
       Children:
         Chronicle.Projections.Children.build_map(
           projection_module.__chronicle_projection__(:children),

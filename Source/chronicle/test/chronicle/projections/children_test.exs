@@ -96,17 +96,17 @@ defmodule Chronicle.Projections.ChildrenTest do
   end
 
   test "identified_by is required" do
-    defmodule NoIdentity do
-      use Chronicle.ReadModels.ReadModel
-      defstruct items: []
+    assert_raise CompileError, ~r/requires :identified_by/, fn ->
+      Code.eval_string("""
+      defmodule Chronicle.Projections.ChildrenTest.NoIdentity do
+        use Chronicle.ReadModels.ReadModel
+        defstruct items: []
 
-      children :items do
-        from(ItemAdded, set: [name: :name])
+        children :items do
+          from(Chronicle.Projections.ChildrenTest.ItemAdded, set: [name: :name])
+        end
       end
-    end
-
-    assert_raise ArgumentError, ~r/requires :identified_by/, fn ->
-      Coordinator.build_projection_definition(NoIdentity)
+      """)
     end
   end
 

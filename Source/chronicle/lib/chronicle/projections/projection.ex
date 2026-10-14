@@ -2,6 +2,8 @@
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 defmodule Chronicle.Projections.Projection do
+  alias Chronicle.Projections.Validation
+
   @moduledoc """
   Macro for defining Chronicle declarative projections.
 
@@ -49,6 +51,9 @@ defmodule Chronicle.Projections.Projection do
   - `from/1`, `from/2` — maps properties from an event onto the read model.
   - `join/2` — joins a secondary event onto the model by a matching field.
   - `removed_with/1`, `removed_with/2` — removes the model instance when the given event occurs.
+  - `removed_with_join/1`, `removed_with_join/2` — removes the model instance when a secondary
+    event matches it by a property instead of by its own key.
+  - `clear_with/2`, `clear_with/3` — sets a field back to no value; sugar for `from event, clear: [...]`.
   - `from_every/1` — applies property mappings on every event, regardless of type.
   - `variant_of/2` — declares this projection to be one of several mutually exclusive
     representations of the same logical entity. See `Chronicle.ReadModels.ReadModel`.
@@ -79,6 +84,11 @@ defmodule Chronicle.Projections.Projection do
       Module.register_attribute(__MODULE__, :chronicle_projection_from, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_join, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_removed_with, accumulate: true)
+
+      Module.register_attribute(__MODULE__, :chronicle_projection_removed_with_join,
+        accumulate: true
+      )
+
       Module.register_attribute(__MODULE__, :chronicle_projection_from_every, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_no_auto_map, accumulate: true)
       Module.register_attribute(__MODULE__, :chronicle_projection_children, accumulate: true)
@@ -100,6 +110,10 @@ defmodule Chronicle.Projections.Projection do
           from: 2,
           join: 2,
           removed_with: 2,
+          removed_with_join: 1,
+          removed_with_join: 2,
+          clear_with: 2,
+          clear_with: 3,
           from_every: 1,
           variant_of: 2,
           enters_on: 1,
@@ -119,6 +133,13 @@ defmodule Chronicle.Projections.Projection do
   See `Chronicle.ReadModels.ReadModel` for full options documentation.
   """
   defmacro from(event_module, opts \\ []) do
+    Validation.reject_duplicate_properties!(
+      Macro.to_string(event_module),
+      opts,
+      __CALLER__.module,
+      __CALLER__
+    )
+
     quote do
       @chronicle_projection_from {unquote(event_module), unquote(opts)}
     end
@@ -130,6 +151,15 @@ defmodule Chronicle.Projections.Projection do
   See `Chronicle.ReadModels.ReadModel` for full options documentation.
   """
   defmacro join(event_module, opts) do
+    Validation.require_on!(Macro.to_string(event_module), opts, __CALLER__.module, __CALLER__)
+
+    Validation.reject_duplicate_properties!(
+      Macro.to_string(event_module),
+      opts,
+      __CALLER__.module,
+      __CALLER__
+    )
+
     quote do
       @chronicle_projection_join {unquote(event_module), unquote(opts)}
     end
@@ -147,6 +177,38 @@ defmodule Chronicle.Projections.Projection do
   end
 
   @doc """
+  Declares that the read model instance is removed when a secondary event matches it by a
+  property, instead of by its own key.
+
+  See `Chronicle.ReadModels.ReadModel` for full options documentation.
+  """
+  defmacro removed_with_join(event_module, opts \\ []) do
+    quote do
+      @chronicle_projection_removed_with_join {unquote(event_module), unquote(opts)}
+    end
+  end
+
+  @doc """
+  Sets a field back to no value when the given event occurs. Sugar for `from event, clear: [...]`.
+
+  See `Chronicle.ReadModels.ReadModel` for full options documentation.
+  """
+  defmacro clear_with(event_module, fields, opts \\ []) do
+    merged = Keyword.put(opts, :clear, fields)
+
+    Validation.reject_duplicate_properties!(
+      Macro.to_string(event_module),
+      merged,
+      __CALLER__.module,
+      __CALLER__
+    )
+
+    quote do
+      @chronicle_projection_from {unquote(event_module), unquote(merged)}
+    end
+  end
+
+  @doc """
   Applies property mappings on every event, regardless of type.
 
   Supports dictionary fields keyed by event context values:
@@ -156,6 +218,8 @@ defmodule Chronicle.Projections.Projection do
   See `Chronicle.ReadModels.ReadModel` for full options documentation.
   """
   defmacro from_every(opts) do
+    Validation.reject_duplicate_properties!("from_every", opts, __CALLER__.module, __CALLER__)
+
     quote do
       @chronicle_projection_from_every unquote(opts)
     end
@@ -208,6 +272,9 @@ defmodule Chronicle.Projections.Projection do
 
       def __chronicle_projection__(:removed_with),
         do: @chronicle_projection_removed_with |> Enum.reverse()
+
+      def __chronicle_projection__(:removed_with_join),
+        do: @chronicle_projection_removed_with_join |> Enum.reverse()
 
       def __chronicle_projection__(:children),
         do: @chronicle_projection_children |> Enum.reverse()

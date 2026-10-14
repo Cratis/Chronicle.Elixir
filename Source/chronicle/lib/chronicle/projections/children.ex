@@ -31,55 +31,128 @@ defmodule Chronicle.Projections.Children do
       end
 
   `identified_by` names the property of a child that identifies it. Inside the block `from/2`,
-  `join/2`, `removed_with/2`, `from_every/1` and a nested `children/3` take the same options as
-  on the read model itself. `key` is the expression that identifies the child an event applies to
-  and `parent_key` identifies the parent it belongs to (both default to the event source id).
+  `join/2`, `removed_with/2`, `removed_with_join/2`, `clear_with/2`, `from_every/1` and a nested
+  `children/3` take the same options as on the read model itself. `key` is the expression that
+  identifies the child an event applies to and `parent_key` identifies the parent it belongs to
+  (both default to the event source id).
+
+  ## One-line form
+
+  A child collection that only ever grows from a single event does not need a `do` block:
+
+      children :entries, from: MyApp.Events.EntryAdded,
+        identified_by: :entry_id,
+        key: :entry_id,
+        set: [entry_id: :entry_id, name: :name]
+
+  This is sugar for a block with exactly one `from` statement built from the same options (minus
+  `:from` and `:identified_by`, which the one-line form consumes itself).
+
+  ## Join `on:` inside children
+
+  Unlike a root `join/2`, a join inside a `children` block does not require `:on` — it defaults
+  to the collection's `identified_by`, because a child is always joined by its own identifying
+  property. Passing an `:on` that disagrees with `identified_by` is accepted but produces a
+  compile-time warning rather than an error, since the kernel still joins by `identified_by`.
   """
 
+  alias Chronicle.Projections.Validation
+
   @doc """
-  Declares a child collection. See the module documentation.
+  Declares a child collection: either a one-line form (`children name, from: Event,
+  identified_by: ...`) or a `do` block of `from`/`join`/`removed_with`/etc statements, with or
+  without options such as `:identified_by`. See the module documentation.
   """
-  defmacro children(name, opts \\ [], do: block) do
-    declarations = block |> block_statements() |> Enum.map(&declaration/1)
+  defmacro children(name, do: block) do
+    build_block(name, [], block, __CALLER__)
+  end
+
+  defmacro children(name, opts) do
+    build_one_line(name, opts, __CALLER__)
+  end
+
+  defmacro children(name, opts, do: block) do
+    build_block(name, opts, block, __CALLER__)
+  end
+
+  defp build_block(name, opts, block, env) do
+    Validation.require_identified_by!(name, opts, env.module, env)
+    declarations = block |> block_statements() |> Enum.map(&declaration(&1, env))
 
     quote do
       @chronicle_projection_children {unquote(name), unquote(opts), unquote(declarations)}
     end
   end
 
-  @allowed [:from, :join, :removed_with, :from_every, :children]
+  defp build_one_line(name, opts, env) do
+    Validation.require_identified_by!(name, opts, env.module, env)
+    {from_event, from_opts} = Keyword.pop!(opts, :from)
+    from_opts = Keyword.delete(from_opts, :identified_by)
+
+    Validation.reject_duplicate_properties!(
+      Macro.to_string(from_event),
+      from_opts,
+      env.module,
+      env
+    )
+
+    identified_by = Keyword.fetch!(opts, :identified_by)
+
+    quote do
+      @chronicle_projection_children {unquote(name), [identified_by: unquote(identified_by)],
+                                      [{:from, unquote(from_event), unquote(from_opts)}]}
+    end
+  end
+
+  @allowed [:from, :join, :removed_with, :removed_with_join, :clear_with, :from_every, :children]
 
   defp block_statements({:__block__, _, statements}), do: statements
   defp block_statements(nil), do: []
   defp block_statements(statement), do: [statement]
 
-  defp declaration({:from_every, _, [opts]}) do
+  defp declaration({:from_every, _, [opts]}, env) do
+    Validation.reject_duplicate_properties!("from_every", opts, env.module, env)
     quote do: {:from_every, unquote(opts)}
   end
 
-  defp declaration({:children, _, [name, [do: block]]}),
-    do: declaration({:children, [], [name, [], [do: block]]})
+  defp declaration({:children, _, [name, [do: block]]}, env),
+    do: declaration({:children, [], [name, [], [do: block]]}, env)
 
-  defp declaration({:children, _, [name, opts, [do: block]]}) do
-    nested = block |> block_statements() |> Enum.map(&declaration/1)
+  defp declaration({:children, _, [name, opts, [do: block]]}, env) do
+    Validation.require_identified_by!(name, opts, env.module, env)
+    nested = block |> block_statements() |> Enum.map(&declaration(&1, env))
     quote do: {:children, unquote(name), unquote(opts), unquote(nested)}
   end
 
-  defp declaration({kind, _, [event]}) when kind in [:from, :removed_with] do
-    quote do: {unquote(kind), unquote(event), []}
+  defp declaration({:clear_with, _, [event, fields]}, env),
+    do: declaration({:clear_with, [], [event, fields, []]}, env)
+
+  defp declaration({:clear_with, _, [event, fields, opts]}, env) do
+    merged = Keyword.put(opts, :clear, fields)
+    Validation.reject_duplicate_properties!(Macro.to_string(event), merged, env.module, env)
+    quote do: {:from, unquote(event), unquote(merged)}
   end
 
-  defp declaration({kind, _, [event, opts]}) when kind in @allowed do
+  defp declaration({kind, _, [event]}, env)
+       when kind in [:from, :removed_with, :removed_with_join] do
+    declaration({kind, [], [event, []]}, env)
+  end
+
+  defp declaration({kind, _, [event, opts]}, env) when kind in @allowed do
+    if kind in [:from, :join] do
+      Validation.reject_duplicate_properties!(Macro.to_string(event), opts, env.module, env)
+    end
+
     quote do: {unquote(kind), unquote(event), unquote(opts)}
   end
 
-  defp declaration({kind, _, _} = statement) do
+  defp declaration({kind, _, _} = statement, _env) do
     raise ArgumentError,
           "unsupported statement #{inspect(kind)} in a children block: #{Macro.to_string(statement)}; " <>
             "expected one of #{inspect(@allowed)}"
   end
 
-  defp declaration(other) do
+  defp declaration(other, _env) do
     raise ArgumentError, "unsupported children block statement: #{Macro.to_string(other)}"
   end
 
@@ -93,7 +166,9 @@ defmodule Chronicle.Projections.Children do
     KeyValuePair_EventType_FromDefinition,
     KeyValuePair_EventType_JoinDefinition,
     KeyValuePair_EventType_RemovedWithDefinition,
-    RemovedWithDefinition
+    KeyValuePair_EventType_RemovedWithJoinDefinition,
+    RemovedWithDefinition,
+    RemovedWithJoinDefinition
   }
 
   @doc false
@@ -119,11 +194,18 @@ defmodule Chronicle.Projections.Children do
       end
 
     from = for {:from, event, o} <- declarations, do: from_entry(event, o, model_module)
-    join = for {:join, event, o} <- declarations, do: join_entry(event, o, model_module)
+
+    join =
+      for {:join, event, o} <- declarations,
+          do: join_entry(event, o, identified_by, model_module)
 
     removed_with =
       for {:removed_with, event, o} <- declarations,
           do: removed_with_entry(event, o, model_module)
+
+    removed_with_join =
+      for {:removed_with_join, event, o} <- declarations,
+          do: removed_with_join_entry(event, o, model_module)
 
     nested = for {:children, n, o, d} <- declarations, do: {n, o, d}
 
@@ -147,6 +229,7 @@ defmodule Chronicle.Projections.Children do
       From: from,
       Join: join,
       RemovedWith: removed_with,
+      RemovedWithJoin: removed_with_join,
       Children: build_map(nested, model_module),
       All: all
     )
@@ -164,12 +247,20 @@ defmodule Chronicle.Projections.Children do
     )
   end
 
-  defp join_entry(event, opts, model_module) do
+  defp join_entry(event, opts, identified_by, model_module) do
+    on =
+      Validation.resolve_child_join_on(
+        opts,
+        identified_by,
+        model_module,
+        event.__chronicle_event_type__(:id)
+      )
+
     struct(KeyValuePair_EventType_JoinDefinition,
       Key: Coordinator.proto_event_type(event),
       Value:
         struct(JoinDefinition,
-          On: opts |> Keyword.fetch!(:on) |> to_string(),
+          On: on,
           Key: key(opts, model_module),
           Properties: Coordinator.build_properties(opts)
         )
@@ -184,6 +275,13 @@ defmodule Chronicle.Projections.Children do
           Key: key(opts, model_module),
           ParentKey: parent_key(opts)
         )
+    )
+  end
+
+  defp removed_with_join_entry(event, opts, model_module) do
+    struct(KeyValuePair_EventType_RemovedWithJoinDefinition,
+      Key: Coordinator.proto_event_type(event),
+      Value: struct(RemovedWithJoinDefinition, Key: key(opts, model_module))
     )
   end
 
