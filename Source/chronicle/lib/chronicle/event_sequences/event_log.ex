@@ -465,7 +465,8 @@ defmodule Chronicle.EventSequences.EventLog do
                 events,
                 correlation_id: correlation_id,
                 causation: batch_causation(events),
-                identity: batch_identity(events)
+                identity: batch_identity(events),
+                decision_read_scopes: decision_read_scope_entries(state)
               )
 
             commit_request(channel, request, config)
@@ -1249,7 +1250,26 @@ defmodule Chronicle.EventSequences.EventLog do
     |> maybe_put_identity(
       batch_identity(normalized_events) || Keyword.get(opts, :identity) || build_identity(opts)
     )
-    |> maybe_put(:ConcurrencyScopes, build_concurrency_scope_entries(normalized_events))
+    |> maybe_put(
+      :ConcurrencyScopes,
+      Keyword.get(opts, :decision_read_scopes, []) ++
+        build_concurrency_scope_entries(normalized_events)
+    )
+  end
+
+  # A decision read (Chronicle.ReadModels.DecisionReads) guards an event source whether or not
+  # the unit of work appends anything to it directly - unlike an event's own concurrency scope,
+  # which only exists because that event is in the batch. Chronicle.Transactions.UnitOfWork
+  # refuses to enroll both for the same event source, so these two sets never collide.
+  defp decision_read_scope_entries(state) do
+    state
+    |> Map.get(:decision_reads, %{})
+    |> Enum.map(fn {event_source_id, scope} ->
+      struct(EventSourceConcurrencyScope,
+        EventSourceId: event_source_id,
+        Scope: build_concurrency_scope(scope)
+      )
+    end)
   end
 
   # Routing omission stays on the wire; only the kernel chooses routing defaults.
@@ -1571,8 +1591,12 @@ defmodule Chronicle.EventSequences.EventLog do
 
   # Fetches the tail sequence number without collapsing the "unavailable" sentinel,
   # so callers that need to distinguish "no tail" from "tail at 0" (like
-  # get_next_sequence_number/2) can do so.
-  defp raw_tail_sequence_number(event_source_id, opts) do
+  # get_next_sequence_number/2, and Chronicle.ReadModels.DecisionReads's probe/boundary
+  # comparison) can do so. Public (but @doc false) for that cross-module use.
+  @doc false
+  @spec raw_tail_sequence_number(String.t() | nil, keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def raw_tail_sequence_number(event_source_id, opts) do
     with {:ok, channel, config} <- resolve_channel(opts) do
       namespace = Keyword.get(opts, :namespace, config.namespace)
       event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
