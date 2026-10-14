@@ -126,7 +126,7 @@ defmodule Chronicle.ConstraintsTest do
                %{
                  type: :unique_event_type,
                  name: "account-opened-v1",
-                 event_type_id: "account-opened-v1"
+                 event_type_ids: ["account-opened-v1"]
                }
              ]
     end
@@ -152,7 +152,7 @@ defmodule Chronicle.ConstraintsTest do
                %{
                  type: :unique_event_type,
                  name: "one-subscription-per-account",
-                 event_type_id: "subscription-started-v1",
+                 event_type_ids: ["subscription-started-v1"],
                  message: "Already subscribed"
                }
              ]
@@ -311,6 +311,169 @@ defmodule Chronicle.ConstraintsTest do
 
       assert name == "owner_email"
       assert [%{Properties: ["ownerEmail"]}] = definition."Value0"."EventDefinitions"
+    end
+  end
+
+  describe "unique_event_type on the wire" do
+    alias Chronicle.Events.Constraints
+    alias Cratis.Chronicle.Contracts.Events.Constraints.Constraint
+
+    defmodule WireLoanCheckedOut do
+      use Chronicle.Events.EventType, id: "constraints-wire-loan-checked-out"
+      defstruct []
+      unique_event_type(name: "WireOneOpenLoan", scope: :per_event_stream_id)
+    end
+
+    defmodule WireLoanReturned do
+      use Chronicle.Events.EventType, id: "constraints-wire-loan-returned"
+      defstruct []
+      remove_constraint("WireOneOpenLoan")
+    end
+
+    test "sends every event type id as the repeated EventTypeIds field, not the dropped singular EventTypeId" do
+      [definition] = Constraints.from_event_types([WireLoanCheckedOut])
+
+      {%Constraint{Definition: definition}, _message} = Constraints.build_constraint(definition)
+
+      assert definition."Value1"."EventTypeIds" == ["constraints-wire-loan-checked-out"]
+    end
+
+    test "sets the scoped dimension on the wire ConstraintScope" do
+      [definition] = Constraints.from_event_types([WireLoanCheckedOut])
+
+      {%Constraint{Scope: scope}, _message} = Constraints.build_constraint(definition)
+
+      assert Map.get(scope, :EventStreamId) == "_scoped_"
+    end
+
+    test "carries the releasing event type in RemovedWith" do
+      [definition] = Constraints.from_event_types([WireLoanCheckedOut, WireLoanReturned])
+
+      {%Constraint{RemovedWith: removed_with}, _message} =
+        Constraints.build_constraint(definition)
+
+      assert removed_with == ["constraints-wire-loan-returned"]
+    end
+
+    defmodule WirePersonAliasedTo do
+      use Chronicle.Events.EventType, id: "constraints-wire-person-aliased-to"
+      defstruct []
+      unique_event_type(name: "WirePersonTerminal")
+    end
+
+    defmodule WirePersonErased do
+      use Chronicle.Events.EventType, id: "constraints-wire-person-erased"
+      defstruct []
+      unique_event_type(name: "WirePersonTerminal")
+    end
+
+    test "merges unique_event_type declarations sharing a name into one constraint with every event type id" do
+      constraints = Constraints.from_event_types([WirePersonAliasedTo, WirePersonErased])
+
+      assert [%{type: :unique_event_type, name: "WirePersonTerminal"} = definition] = constraints
+
+      assert Enum.sort(definition.event_type_ids) ==
+               Enum.sort(["constraints-wire-person-aliased-to", "constraints-wire-person-erased"])
+    end
+  end
+
+  describe "unique_event_type event_sequences" do
+    alias Chronicle.Events.Constraints
+    alias Cratis.Chronicle.Contracts.Events.Constraints.Constraint
+
+    defmodule EventSequencedUniqueEventType do
+      use Chronicle.Events.EventType, id: "constraints-event-sequenced-unique-event-type"
+      defstruct []
+      unique_event_type(name: "SequencedOneOpen", event_sequences: "outbox")
+    end
+
+    test "restricts the declaration to the declared event sequences" do
+      [definition] = Constraints.from_event_types([EventSequencedUniqueEventType])
+      assert definition.event_sequences == ["outbox"]
+
+      {%Constraint{EventSequences: event_sequences}, _message} =
+        Constraints.build_constraint(definition)
+
+      assert event_sequences == ["outbox"]
+    end
+  end
+
+  describe "removal event definitions (per-value removal properties)" do
+    alias Chronicle.Events.Constraints
+    alias Cratis.Chronicle.Contracts.Events.Constraints.Constraint
+
+    defmodule MappingVersionRegistered do
+      use Chronicle.Events.EventType, id: "constraints-mapping-version-registered"
+      defstruct version_id: ""
+      unique(:version_id, name: "UniqueMappingVersionId", mode: :per_value)
+    end
+
+    defmodule MappingVersionRemoved do
+      use Chronicle.Events.EventType, id: "constraints-mapping-version-removed"
+      defstruct version_id: ""
+      remove_constraint("UniqueMappingVersionId", properties: [:version_id])
+    end
+
+    defmodule MappingVersionsRemoved do
+      use Chronicle.Events.EventType, id: "constraints-mapping-versions-removed"
+      defstruct []
+      remove_constraint("UniqueMappingVersionId")
+    end
+
+    test "carries the releasing event's properties as a RemovalEventDefinition" do
+      [definition] =
+        Constraints.from_event_types([
+          MappingVersionRegistered,
+          MappingVersionRemoved,
+          MappingVersionsRemoved
+        ])
+
+      assert definition.removal_event_definitions == [
+               %{event_type: MappingVersionRemoved, on: ["version_id"]}
+             ]
+
+      assert Enum.sort(definition.removed_with_event_types) ==
+               Enum.sort([MappingVersionRemoved, MappingVersionsRemoved])
+
+      {%Constraint{Definition: wire_definition}, _message} =
+        Constraints.build_constraint(definition)
+
+      assert [%{Properties: ["versionId"]}] = wire_definition."Value0"."RemovalEventDefinitions"
+    end
+
+    test "a bare remove_constraint/1 contributes no RemovalEventDefinitions" do
+      [definition] =
+        Constraints.from_event_types([MappingVersionRegistered, MappingVersionsRemoved])
+
+      refute Map.has_key?(definition, :removal_event_definitions)
+    end
+  end
+
+  describe "message callback" do
+    alias Chronicle.Events.Constraints
+
+    defmodule MessageCallbackChecker do
+      def message_for(_violation), do: "computed"
+    end
+
+    defmodule CallbackMessageProjectCreated do
+      use Chronicle.Events.EventType, id: "constraints-callback-message-project-created"
+      defstruct name: ""
+
+      unique(:name,
+        name: "CallbackMessageProjectName",
+        message: {Chronicle.ConstraintsTest.MessageCallbackChecker, :message_for}
+      )
+    end
+
+    test "keeps a {Module, :function} message callback intact through from_event_types and build_constraint" do
+      [definition] = Constraints.from_event_types([CallbackMessageProjectCreated])
+
+      assert definition.message ==
+               {Chronicle.ConstraintsTest.MessageCallbackChecker, :message_for}
+
+      assert {_wire_constraint, {Chronicle.ConstraintsTest.MessageCallbackChecker, :message_for}} =
+               Constraints.build_constraint(definition)
     end
   end
 end
