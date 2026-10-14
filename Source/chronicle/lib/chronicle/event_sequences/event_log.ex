@@ -455,7 +455,8 @@ defmodule Chronicle.EventSequences.EventLog do
           with {:ok, events} <-
                  prepare_events(events, config, namespace, event_sequence_id,
                    client: client,
-                   namespace: namespace
+                   namespace: namespace,
+                   guarded_event_sources: state |> Map.get(:decision_reads, %{}) |> Map.keys()
                  ) do
             request =
               build_append_many_for_event_sources_request(
@@ -1156,9 +1157,12 @@ defmodule Chronicle.EventSequences.EventLog do
     tail_opts = [client: client, namespace: namespace, event_sequence_id: event_sequence_id]
 
     with {:ok, events} <- resolve_definition_routed_concurrency(events, config, tail_opts) do
-      ConcurrencyStrategy.apply_default(events, config, fn event_source_id, narrowing ->
-        raw_tail_sequence_number(event_source_id, tail_opts ++ narrowing)
-      end)
+      ConcurrencyStrategy.apply_default(
+        events,
+        config,
+        fn event_source_id, narrowing ->
+          raw_tail_sequence_number(event_source_id, tail_opts ++ narrowing)
+        end, guarded_event_sources: Keyword.get(opts, :guarded_event_sources, []))
     end
   end
 
