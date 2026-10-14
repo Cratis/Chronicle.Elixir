@@ -48,4 +48,26 @@ defmodule Chronicle.EventTypeTest do
              }
     end
   end
+
+  defmodule NotAnEventType do
+    defstruct [:value]
+  end
+
+  describe "event_type?/1" do
+    test "is true for a module that uses Chronicle.Events.EventType" do
+      assert Chronicle.Events.EventType.event_type?(TestEvent)
+    end
+
+    test "is false for an ordinary struct module" do
+      refute Chronicle.Events.EventType.event_type?(NotAnEventType)
+    end
+
+    test "is false for a module that does not exist" do
+      refute Chronicle.Events.EventType.event_type?(NotALoadedModule)
+    end
+
+    test "is false for a non-module value" do
+      refute Chronicle.Events.EventType.event_type?("not-a-module")
+    end
+  end
 end
