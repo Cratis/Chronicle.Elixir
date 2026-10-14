@@ -201,7 +201,7 @@ defmodule Chronicle.Testing.InMemoryKernel do
       state.sequences
       |> Map.get({es, ns, seq_id}, [])
       |> Enum.filter(&matches_read_filters?(&1, filters))
-      |> Enum.map(& &1.wire)
+      |> Enum.map(&to_response/1)
 
     {:reply, events, state}
   end
@@ -212,7 +212,7 @@ defmodule Chronicle.Testing.InMemoryKernel do
       |> Map.get({es, ns, seq_id}, [])
       |> Enum.filter(&(&1.sequence_number >= from))
       |> Enum.filter(&matches_read_filters?(&1, filters))
-      |> Enum.map(& &1.wire)
+      |> Enum.map(&to_response/1)
 
     {:reply, events, state}
   end
@@ -239,6 +239,21 @@ defmodule Chronicle.Testing.InMemoryKernel do
       |> Enum.any?(&(&1.event_source_id == event_source_id))
 
     {:reply, has_events?, state}
+  end
+
+  # The stored wire event stays a plain map (it is what `wire_events_for/2`, `all_wire_events/1`
+  # and the subscriber notifications hand out). Read responses are encoded by protobuf, which
+  # warns about plain maps, so they are built from the contract structs instead.
+  defp to_response(%{wire: %{Context: context, Content: content}}) do
+    event_type = struct(Wire.EventType, Map.take(context[:EventType], [:Id, :Generation]))
+
+    context =
+      Wire.EventContext
+      |> struct(Map.drop(context, [:EventType, :CorrelationId, :ObservationState]))
+      |> Map.put(:EventType, event_type)
+      |> Map.update!(:EventSource, &(&1 || ""))
+
+    struct(Wire.AppendedEventResponse, Context: context, Content: content)
   end
 
   defp put_record(state, key, record) do
