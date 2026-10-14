@@ -5,7 +5,7 @@ description: Register HTTP and database external service definitions with Chroni
 
 `Chronicle.ExternalServices` provides an idiomatic Elixir API for registering external service definitions with Chronicle.
 
-External services let the Chronicle kernel talk to systems outside the event store — an HTTP API or a MsSql/PostgreSql database — under a name other kernel features (such as captures) can reference. They are usually configured in the Workbench, but the Elixir client also exposes a programmatic API.
+External services let the Chronicle kernel talk to systems outside the event store — an HTTP API or a MsSql/PostgreSql database — under a name other kernel features (such as [captures](captures.md)) can reference. They are usually configured in the Workbench, but the Elixir client also exposes a programmatic API.
 
 ## Registering an HTTP service
 

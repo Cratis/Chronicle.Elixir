@@ -107,6 +107,8 @@ defmodule Chronicle.Client do
       populate the event store with initial events during client startup.
     * `:webhooks` — list of discoverable webhook modules (each
       `use Chronicle.WebHooks.Webhook`). These are registered on startup.
+    * `:captures` — list of discoverable capture modules (each `use Chronicle.Captures.Capture`).
+      These are registered on startup (see `Chronicle.Captures.register_discovered/1`).
     * `:event_store_subscriptions` — list of discoverable event store
       subscription modules (each
       `use Chronicle.EventStoreSubscriptions.Subscription`). These are
@@ -238,7 +240,8 @@ defmodule Chronicle.Client do
           webhooks: [],
           event_store_subscriptions: [],
           global_handlers: [],
-          constraints: []
+          constraints: [],
+          captures: []
         }
       end
 
@@ -263,6 +266,7 @@ defmodule Chronicle.Client do
     read_model_reactors = Enum.uniq(Keyword.get(opts, :read_model_reactors, []))
     seeders = Enum.uniq(Keyword.get(opts, :seeders, []) ++ discovered.seeders)
     webhooks = Enum.uniq(Keyword.get(opts, :webhooks, []) ++ discovered.webhooks)
+    captures = Enum.uniq(Keyword.get(opts, :captures, []) ++ discovered.captures)
 
     event_store_subscriptions =
       Enum.uniq(
@@ -282,6 +286,7 @@ defmodule Chronicle.Client do
       reducers: reducers,
       seeders: seeders,
       webhooks: webhooks,
+      captures: captures,
       event_store_subscriptions: event_store_subscriptions,
       constraints: constraints,
       concurrency: Keyword.get(opts, :concurrency, [])
@@ -342,6 +347,13 @@ defmodule Chronicle.Client do
         [{Chronicle.WebHooks.Registrar, client: name, lifecycle: lifecycle_name}]
       end
 
+    capture_children =
+      if Enum.empty?(captures) do
+        []
+      else
+        [{Chronicle.Captures.Registrar, client: name, lifecycle: lifecycle_name}]
+      end
+
     event_store_subscription_children =
       if Enum.empty?(event_store_subscriptions) do
         []
@@ -396,6 +408,7 @@ defmodule Chronicle.Client do
         operations_children ++
         seeder_children ++
         webhook_children ++
+        capture_children ++
         event_store_subscription_children
 
     # rest_for_one: the lifecycle hub is the root dependency — if it restarts,
