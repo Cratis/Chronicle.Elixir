@@ -54,8 +54,19 @@ defmodule Chronicle.Events.EventType do
 
   ## Options
 
-    * `:id` — the stable event type identifier (required)
-    * `:generation` — the generation number (default `1`)
+    * `:id` — the stable event type identifier (required, unless `:generation_for` is given)
+    * `:generation` — the generation number (default `1`; required when `:generation_for` is
+      given)
+    * `:generation_for` — marks this module as a **previous generation** of the event type
+      module it names, instead of giving it its own `:id`. The event type id is resolved from
+      the target module, so the two generations can never drift apart by a hand-typed,
+      mismatched id string. Cannot be combined with `:id`; the target module must itself `use
+      Chronicle.Events.EventType`.
+
+          defmodule MyApp.Events.AccountOpenedV1 do
+            use Chronicle.Events.EventType, generation_for: MyApp.Events.AccountOpened, generation: 1
+            defstruct account_id: "", owner_name: ""
+          end
     * `:subject` — the field holding the event's data subject, the person whose PII the event
       carries (`subject: :customer_id`). It is resolved on append unless an explicit `:subject`
       option is given, and decides whose erasure key protects the event's PII. Without it the
@@ -121,6 +132,7 @@ defmodule Chronicle.Events.EventType do
               key ::
                 :id
                 | :generation
+                | :generation_for
                 | :constraints
                 | :pii
                 | :encrypted
@@ -132,7 +144,25 @@ defmodule Chronicle.Events.EventType do
             ) :: term()
 
   defmacro __using__(opts) do
-    event_type_id = Keyword.fetch!(opts, :id)
+    generation_for = Keyword.get(opts, :generation_for)
+    explicit_id = Keyword.get(opts, :id)
+
+    if generation_for && explicit_id do
+      raise Chronicle.Events.EventTypeGenerationForCannotBeCombinedWithEventType,
+        module: __CALLER__.module
+    end
+
+    if generation_for && !Keyword.has_key?(opts, :generation) do
+      raise ArgumentError,
+            "#{inspect(__CALLER__.module)}: generation_for: requires an explicit :generation " <>
+              "(the generation this module represents)"
+    end
+
+    unless generation_for || explicit_id do
+      # Preserve the original KeyError shape for the plain, non-generation_for case.
+      Keyword.fetch!(opts, :id)
+    end
+
     generation = Keyword.get(opts, :generation, 1)
     field_types = Keyword.get(opts, :types, [])
     subject = Keyword.get(opts, :subject)
@@ -165,7 +195,8 @@ defmodule Chronicle.Events.EventType do
       import Chronicle.Compliance, only: [pii: 1, pii: 2]
       import Chronicle.Confidentiality, only: [encrypted: 1, encrypted: 2, encrypted: 3]
 
-      @chronicle_event_type_id unquote(event_type_id)
+      @chronicle_event_type_explicit_id unquote(explicit_id)
+      @chronicle_event_type_generation_for unquote(generation_for)
       @chronicle_event_type_generation unquote(generation)
       @chronicle_field_types unquote(field_types)
       @chronicle_event_subject unquote(subject)
@@ -188,9 +219,30 @@ defmodule Chronicle.Events.EventType do
   # them inline in `__using__` would always see empty lists.
   defmacro __before_compile__(_env) do
     quote do
+      @chronicle_event_type_id (case @chronicle_event_type_generation_for do
+                                  nil ->
+                                    @chronicle_event_type_explicit_id
+
+                                  target_module ->
+                                    Code.ensure_compiled!(target_module)
+
+                                    unless function_exported?(
+                                             target_module,
+                                             :__chronicle_event_type__,
+                                             1
+                                           ) do
+                                      raise Chronicle.Events.EventTypeGenerationReferencesNonEventType,
+                                        module: __MODULE__,
+                                        referenced_module: target_module
+                                    end
+
+                                    target_module.__chronicle_event_type__(:id)
+                                end)
+
       @impl Chronicle.Events.EventType
       def __chronicle_event_type__(:id), do: @chronicle_event_type_id
       def __chronicle_event_type__(:generation), do: @chronicle_event_type_generation
+      def __chronicle_event_type__(:generation_for), do: @chronicle_event_type_generation_for
 
       def __chronicle_event_type__(:constraints) do
         constraints = %{
