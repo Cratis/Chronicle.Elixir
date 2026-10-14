@@ -33,6 +33,8 @@ defmodule Chronicle.Reactors.Handler do
   alias Cratis.Chronicle.Contracts.Observation.Reactors.OneOf_RegisterReactor_ReactorResult,
     as: OneOf
 
+  alias Chronicle.Observers.GenerationDeliveryValidation
+
   # Stream-level reconnect delay (matches the C# client's per-stream retry).
   @stream_reconnect_delay 2_000
 
@@ -45,6 +47,14 @@ defmodule Chronicle.Reactors.Handler do
     module = Keyword.fetch!(opts, :module)
     client = Keyword.get(opts, :client, Chronicle.Client)
     event_type_modules = module.__chronicle_reactor__(:handles)
+
+    generation_delivery =
+      module.__chronicle_reactor__(:generation_delivery) ||
+        Keyword.get(opts, :event_generation_delivery, :compatibility)
+
+    if generation_delivery == :pinned do
+      GenerationDeliveryValidation.validate!(event_type_modules)
+    end
 
     event_type_map =
       Map.new(event_type_modules, fn et_module ->
@@ -59,6 +69,7 @@ defmodule Chronicle.Reactors.Handler do
       event_store: Keyword.fetch!(opts, :event_store),
       namespace: Keyword.fetch!(opts, :namespace),
       event_type_map: event_type_map,
+      generation_delivery: generation_delivery,
       establish_fun: Keyword.get(opts, :establish_fun, &default_establish/2),
       append_fun:
         Keyword.get(opts, :append_fun, fn operation -> default_append(operation, client) end),
@@ -222,7 +233,8 @@ defmodule Chronicle.Reactors.Handler do
                   IsReplayable: not once_only_class?(state.module),
                   IsNotReplayable: once_only_class?(state.module),
                   Tags: [],
-                  Filters: struct(ObserverFilters)
+                  Filters: struct(ObserverFilters),
+                  GenerationDelivery: encode_generation_delivery(state.generation_delivery)
                 )
             )
         )
@@ -403,6 +415,10 @@ defmodule Chronicle.Reactors.Handler do
         {:error, reason}
     end
   end
+
+  # EventGenerationDelivery enum: Compatibility = 0, Pinned = 1.
+  defp encode_generation_delivery(:pinned), do: :Pinned
+  defp encode_generation_delivery(_compatibility), do: :Compatibility
 
   # An unset or empty wire value means the event was not appended through a
   # registered event source; no name is invented for it.

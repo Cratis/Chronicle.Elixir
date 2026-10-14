@@ -17,6 +17,11 @@ defmodule Chronicle.Reducers.HandlerTest do
     defstruct [:total]
   end
 
+  defmodule MyEventV2 do
+    use Chronicle.Events.EventType, id: "my-event", generation: 2
+    defstruct [:amount]
+  end
+
   defmodule TestReducer do
     use Chronicle.Reducers.Reducer, model: MyReadModel
 
@@ -27,6 +32,34 @@ defmodule Chronicle.Reducers.HandlerTest do
 
     def reduce(%MyEvent{} = event, model, _context),
       do: %{model | total: model.total + event.amount}
+  end
+
+  defmodule PinnedReducer do
+    use Chronicle.Reducers.Reducer, model: MyReadModel, generation_delivery: :pinned
+
+    @handles MyEvent
+
+    @impl true
+    def reduce(%MyEvent{} = event, nil, _context), do: %MyReadModel{total: event.amount}
+  end
+
+  defmodule DefaultDeliveryReducer do
+    use Chronicle.Reducers.Reducer, model: MyReadModel
+
+    @handles MyEvent
+
+    @impl true
+    def reduce(%MyEvent{} = event, nil, _context), do: %MyReadModel{total: event.amount}
+  end
+
+  defmodule AmbiguousPinReducer do
+    use Chronicle.Reducers.Reducer, model: MyReadModel, generation_delivery: :pinned
+
+    @handles MyEvent
+    @handles MyEventV2
+
+    @impl true
+    def reduce(_event, model, _context), do: model
   end
 
   defmodule ReplayAwareReducer do
@@ -210,6 +243,125 @@ defmodule Chronicle.Reducers.HandlerTest do
     end
   end
 
+  describe "generation delivery" do
+    test "sends Compatibility by default" do
+      {:ok, lifecycle} = Lifecycle.start_link([])
+      establish_fun = fn _state, _connection_id -> {:ok, :fake_stream, nil} end
+
+      {:ok, handler} =
+        Handler.start_link(
+          module: TestReducer,
+          connection: :unused,
+          event_store: "test",
+          namespace: "Default",
+          lifecycle: lifecycle,
+          establish_fun: establish_fun
+        )
+
+      assert :sys.get_state(handler).generation_delivery == :compatibility
+    end
+
+    test "sends Pinned when the reducer opts in" do
+      {:ok, lifecycle} = Lifecycle.start_link([])
+      establish_fun = fn _state, _connection_id -> {:ok, :fake_stream, nil} end
+
+      {:ok, handler} =
+        Handler.start_link(
+          module: PinnedReducer,
+          connection: :unused,
+          event_store: "test",
+          namespace: "Default",
+          lifecycle: lifecycle,
+          establish_fun: establish_fun
+        )
+
+      assert :sys.get_state(handler).generation_delivery == :pinned
+    end
+
+    test "applies the client-wide default when the reducer doesn't set its own" do
+      {:ok, lifecycle} = Lifecycle.start_link([])
+      establish_fun = fn _state, _connection_id -> {:ok, :fake_stream, nil} end
+
+      {:ok, handler} =
+        Handler.start_link(
+          module: DefaultDeliveryReducer,
+          connection: :unused,
+          event_store: "test",
+          namespace: "Default",
+          lifecycle: lifecycle,
+          establish_fun: establish_fun,
+          event_generation_delivery: :pinned
+        )
+
+      assert :sys.get_state(handler).generation_delivery == :pinned
+    end
+
+    test "the reducer's own option wins over the client-wide default" do
+      {:ok, lifecycle} = Lifecycle.start_link([])
+      establish_fun = fn _state, _connection_id -> {:ok, :fake_stream, nil} end
+
+      {:ok, handler} =
+        Handler.start_link(
+          module: PinnedReducer,
+          connection: :unused,
+          event_store: "test",
+          namespace: "Default",
+          lifecycle: lifecycle,
+          establish_fun: establish_fun,
+          event_generation_delivery: :compatibility
+        )
+
+      assert :sys.get_state(handler).generation_delivery == :pinned
+    end
+
+    test "a pinned reducer handling two generations of one event type id raises on start" do
+      Process.flag(:trap_exit, true)
+
+      assert {:error,
+              {%Chronicle.Observers.MultipleGenerationsOfEventTypeInObserver{
+                 event_type_id: "my-event"
+               }, _stack}} =
+               Handler.start_link(
+                 module: AmbiguousPinReducer,
+                 connection: :unused,
+                 event_store: "test",
+                 namespace: "Default"
+               )
+    end
+
+    test "build_registration/2 encodes Pinned" do
+      state = %{
+        module: PinnedReducer,
+        model_module: MyReadModel,
+        event_type_map: %{"my-event" => MyEvent},
+        event_store: "store",
+        namespace: "Default",
+        default_sink_type_id: "MongoDB",
+        generation_delivery: :pinned
+      }
+
+      message = Handler.build_registration(state, "connection-1")
+      reducer = message."Content"."Value0"."Reducer"
+      assert reducer."GenerationDelivery" == :Pinned
+    end
+
+    test "build_registration/2 encodes Compatibility" do
+      state = %{
+        module: TestReducer,
+        model_module: MyReadModel,
+        event_type_map: %{"my-event" => MyEvent},
+        event_store: "store",
+        namespace: "Default",
+        default_sink_type_id: "MongoDB",
+        generation_delivery: :compatibility
+      }
+
+      message = Handler.build_registration(state, "connection-1")
+      reducer = message."Content"."Value0"."Reducer"
+      assert reducer."GenerationDelivery" == :Compatibility
+    end
+  end
+
   describe "build_registration/2" do
     setup do
       state = %{
@@ -218,7 +370,8 @@ defmodule Chronicle.Reducers.HandlerTest do
         event_type_map: %{"my-event" => MyEvent},
         event_store: "store",
         namespace: "Default",
-        default_sink_type_id: "MongoDB"
+        default_sink_type_id: "MongoDB",
+        generation_delivery: :compatibility
       }
 
       %{message: Handler.build_registration(state, "connection-1")}

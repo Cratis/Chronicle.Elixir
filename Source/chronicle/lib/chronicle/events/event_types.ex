@@ -53,29 +53,81 @@ defmodule Chronicle.Events.EventTypes do
 
   def register(channel, event_store, event_type_modules, migration_modules)
       when is_list(event_type_modules) and is_list(migration_modules) do
-    migrators = Migrators.new(migration_modules)
+    case duplicate_event_type(event_type_modules) do
+      nil ->
+        migrators = Migrators.new(migration_modules)
 
-    registrations =
+        registrations =
+          event_type_modules
+          |> Enum.uniq()
+          |> Enum.group_by(& &1.__chronicle_event_type__(:id))
+          |> Enum.map(fn {_event_type_id, modules} ->
+            build_registration(modules, event_store, migrators)
+          end)
+
+        request =
+          struct(RegisterEventTypesRequest,
+            EventStore: event_store,
+            Types: registrations,
+            DisableValidation: false
+          )
+
+        case EventTypes.Stub.register_event_types(channel, request) do
+          {:ok, envelope} ->
+            with {:ok, _} <- WireResult.unwrap(envelope), do: :ok
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      exception ->
+        {:error, exception}
+    end
+  end
+
+  @doc """
+  Validates a set of event type and migration modules before the client connects.
+
+  Raises `Chronicle.Events.MultipleEventTypesWithSameIdFound` when several modules represent
+  the same generation of the same event type id, and
+  `Chronicle.Events.MultipleMigratorsForSameEventTypeGeneration` (via `Chronicle.Events.Migrators.new/1`)
+  when more than one migrator bridges the same pair of generations. Called once at client
+  startup, before the first connection attempt, so a bad set fails immediately instead of
+  being retried indefinitely by the registration coordinator.
+  """
+  @spec validate!([module()], [module()]) :: :ok
+  def validate!(event_type_modules, migration_modules \\ []) do
+    case duplicate_event_type(event_type_modules) do
+      nil -> :ok
+      exception -> raise exception
+    end
+
+    Migrators.new(migration_modules)
+    :ok
+  end
+
+  # Each generation of an event type must be represented by exactly one module. Returns the
+  # exception struct (not raised) so both `register/4` (which reports it as `{:error, _}`) and
+  # `validate!/2` (which raises it) can share the same check.
+  defp duplicate_event_type(event_type_modules) do
+    duplicate =
       event_type_modules
       |> Enum.uniq()
-      |> Enum.group_by(& &1.__chronicle_event_type__(:id))
-      |> Enum.map(fn {_event_type_id, modules} ->
-        build_registration(modules, event_store, migrators)
+      |> Enum.group_by(fn module ->
+        {module.__chronicle_event_type__(:id), module.__chronicle_event_type__(:generation)}
       end)
+      |> Enum.find(fn {_key, modules} -> length(modules) > 1 end)
 
-    request =
-      struct(RegisterEventTypesRequest,
-        EventStore: event_store,
-        Types: registrations,
-        DisableValidation: false
-      )
+    case duplicate do
+      nil ->
+        nil
 
-    case EventTypes.Stub.register_event_types(channel, request) do
-      {:ok, envelope} ->
-        with {:ok, _} <- WireResult.unwrap(envelope), do: :ok
-
-      {:error, reason} ->
-        {:error, reason}
+      {{event_type_id, generation}, modules} ->
+        Chronicle.Events.MultipleEventTypesWithSameIdFound.exception(
+          event_type_id: event_type_id,
+          generation: generation,
+          modules: modules
+        )
     end
   end
 

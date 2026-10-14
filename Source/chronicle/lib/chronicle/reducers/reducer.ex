@@ -49,6 +49,26 @@ defmodule Chronicle.Reducers.Reducer do
       `Chronicle.ReadModels.get/3`) and is not kept warm in the background —
       useful for a reducer whose only purpose is a command-side decision
       that's read rarely, where continuous observation would be wasted work.
+    * `:generation_delivery` — `:compatibility` (default) or `:pinned`. See
+      "Pinned generation delivery" below.
+
+  ## Pinned generation delivery
+
+  By default (`:compatibility`), Chronicle upgrades every event to the handled module's own
+  generation before delivery, so `reduce/3` always sees that generation's shape regardless of
+  which generation was actually appended. Set `generation_delivery: :pinned` to receive each
+  event exactly as its own generation was appended instead - useful when a reducer is written
+  against an older generation and must see its original content rather than the upgraded one.
+  `context.appended_generation` then tells you which generation was actually appended (`0`
+  means unknown - an older kernel, or an event appended outside a registered event source).
+
+  A client-wide default applies to every reducer that doesn't set `:generation_delivery`
+  itself: pass `event_generation_delivery: :pinned` to `Chronicle.Client`. A reducer's own
+  `:generation_delivery` option always wins over the client default.
+
+  With `:pinned`, a reducer that handles two generations of the same event type id has no
+  single generation to pin to and raises
+  `Chronicle.Observers.MultipleGenerationsOfEventTypeInObserver` on start.
 
   ## Registering with Chronicle.Client
 
@@ -125,6 +145,7 @@ defmodule Chronicle.Reducers.Reducer do
       @chronicle_reducer_id Keyword.get(opts, :id, __MODULE__ |> to_string())
       @chronicle_reducer_active Keyword.get(opts, :active, true)
       @chronicle_reducer_middleware Keyword.get(opts, :middleware, [])
+      @chronicle_reducer_generation_delivery Keyword.get(opts, :generation_delivery)
 
       @before_compile Chronicle.Reducers.Reducer
     end
@@ -138,6 +159,9 @@ defmodule Chronicle.Reducers.Reducer do
       def __chronicle_reducer__(:handles), do: @handles |> Enum.reverse()
       def __chronicle_reducer__(:active), do: @chronicle_reducer_active
       def __chronicle_reducer__(:middleware), do: @chronicle_reducer_middleware
+
+      def __chronicle_reducer__(:generation_delivery),
+        do: @chronicle_reducer_generation_delivery
     end
   end
 end

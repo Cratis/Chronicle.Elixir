@@ -1,20 +1,24 @@
 ```elixir
-defmodule MyApp.Events.MigrationsDotnetClientMultiGenPersonRegisteredV1 do
-  use Chronicle.Events.EventType, id: "dotnet-client-multi-gen-person-registered", generation: 1
-
-  defstruct [:email_address, :name]
-end
-
-defmodule MyApp.Events.MigrationsDotnetClientMultiGenPersonRegisteredV2 do
-  use Chronicle.Events.EventType, id: "dotnet-client-multi-gen-person-registered", generation: 2
-
-  defstruct [:email, :name]
-end
-
 defmodule MyApp.Events.MigrationsDotnetClientMultiGenPersonRegistered do
   use Chronicle.Events.EventType, id: "dotnet-client-multi-gen-person-registered", generation: 3
 
   defstruct [:email, :first_name, :last_name]
+end
+
+defmodule MyApp.Events.MigrationsDotnetClientMultiGenPersonRegisteredV2 do
+  use Chronicle.Events.EventType,
+    generation_for: MyApp.Events.MigrationsDotnetClientMultiGenPersonRegistered,
+    generation: 2
+
+  defstruct [:email, :name]
+end
+
+defmodule MyApp.Events.MigrationsDotnetClientMultiGenPersonRegisteredV1 do
+  use Chronicle.Events.EventType,
+    generation_for: MyApp.Events.MigrationsDotnetClientMultiGenPersonRegistered,
+    generation: 1
+
+  defstruct [:email_address, :name]
 end
 
 # Generation 1 -> 2: rename email_address to email

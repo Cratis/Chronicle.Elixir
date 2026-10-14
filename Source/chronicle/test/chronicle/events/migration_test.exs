@@ -35,6 +35,18 @@ defmodule Chronicle.MigrationTest do
     end
   end
 
+  defmodule DuplicateAccountOpenedV2Migration do
+    use Chronicle.Events.Migration,
+      from: {AccountOpenedV1, generation: 1},
+      to: {AccountOpened, generation: 2}
+
+    @impl true
+    def upcast(builder), do: builder
+
+    @impl true
+    def downcast(builder), do: builder
+  end
+
   describe "use Chronicle.Events.Migration" do
     test "exposes migration metadata" do
       assert AccountOpenedV2Migration.__chronicle_migration__(:from_module) == AccountOpenedV1
@@ -57,8 +69,8 @@ defmodule Chronicle.MigrationTest do
     end
 
     test "raises when event type ids differ" do
-      assert_raise ArgumentError,
-                   ~r/Migration from and to event types must have the same ID/,
+      assert_raise Chronicle.Events.MigrationGenerationsMustShareEventTypeId,
+                   ~r/bridges two different event types/,
                    fn ->
                      compile_invalid_migration(
                        "MismatchedIdsMigration",
@@ -137,6 +149,12 @@ defmodule Chronicle.MigrationTest do
       assert Migrators.for_event_type(migrators, AccountOpened) == [AccountOpenedV2Migration]
       assert Migrators.for_event_type(migrators, "account-opened") == [AccountOpenedV2Migration]
       assert Migrators.generations_for(migrators, AccountOpened) == [1, 2]
+    end
+
+    test "raises when more than one migrator bridges the same pair of generations" do
+      assert_raise Chronicle.Events.MultipleMigratorsForSameEventTypeGeneration, fn ->
+        Migrators.new([AccountOpenedV2Migration, DuplicateAccountOpenedV2Migration])
+      end
     end
 
     test "materializes migration definitions" do

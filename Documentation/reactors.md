@@ -105,6 +105,35 @@ def handle_replay(%OrderPlaced{} = event, _context), do: update_projection_cache
 Excluding replays is not exactly-once delivery: recovering a failed partition can deliver an event
 again as an ordinary observation. Guard side effects with the delivery id below.
 
+## Pinned generation delivery
+
+By default (`:compatibility`), Chronicle upgrades every event to the handled module's own
+generation before delivery, so `handle/2` always sees that generation's shape regardless of which
+generation was actually appended. That is the right default when the handler is written against
+the current generation.
+
+Set `generation_delivery: :pinned` when the handler is written against an **older** generation and
+must see events exactly as that generation was appended, instead of upgraded to the current one:
+
+```elixir
+use Chronicle.Reactors.Reactor, generation_delivery: :pinned
+```
+
+`context.appended_generation` then tells you which generation was actually appended (`0` means
+unknown — an older kernel, or an event appended outside a registered event source).
+
+A client-wide default applies to every reactor that doesn't set its own `:generation_delivery`:
+
+```elixir
+{Chronicle.Client,
+  ...
+  event_generation_delivery: :pinned}
+```
+
+A reactor's own option always wins over the client default. With `:pinned`, a reactor handling two
+generations of the same event type id has no single generation to pin to and raises
+`Chronicle.Observers.MultipleGenerationsOfEventTypeInObserver` on start.
+
 ## Delivery identity
 
 Every reactor invocation context carries `delivery_id`: a stable identity of *this delivery of this

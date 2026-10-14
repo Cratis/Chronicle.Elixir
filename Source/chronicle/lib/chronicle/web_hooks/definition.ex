@@ -43,7 +43,9 @@ defmodule Chronicle.WebHooks.Definition do
       EventTypes: Enum.map(definition.event_types, &event_type_to_proto/1),
       Target: target_to_proto(definition.target),
       IsReplayable: definition.replayable?,
-      IsActive: definition.active?
+      IsActive: definition.active?,
+      IsNotReplayable: not definition.replayable?,
+      IsInactive: not definition.active?
     )
   end
 

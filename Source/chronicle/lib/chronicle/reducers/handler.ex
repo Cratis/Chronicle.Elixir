@@ -31,6 +31,8 @@ defmodule Chronicle.Reducers.Handler do
   alias Cratis.Chronicle.Contracts.Observation.Reducers.OneOf_RegisterReducer_ReducerResult,
     as: OneOf
 
+  alias Chronicle.Observers.GenerationDeliveryValidation
+
   # Stream-level reconnect delay (matches the C# client's per-stream retry).
   @stream_reconnect_delay 2_000
 
@@ -42,6 +44,14 @@ defmodule Chronicle.Reducers.Handler do
   def init(opts) do
     module = Keyword.fetch!(opts, :module)
     event_type_modules = module.__chronicle_reducer__(:handles)
+
+    generation_delivery =
+      module.__chronicle_reducer__(:generation_delivery) ||
+        Keyword.get(opts, :event_generation_delivery, :compatibility)
+
+    if generation_delivery == :pinned do
+      GenerationDeliveryValidation.validate!(event_type_modules)
+    end
 
     event_type_map =
       Map.new(event_type_modules, fn et_module ->
@@ -55,6 +65,7 @@ defmodule Chronicle.Reducers.Handler do
       event_store: Keyword.fetch!(opts, :event_store),
       namespace: Keyword.fetch!(opts, :namespace),
       event_type_map: event_type_map,
+      generation_delivery: generation_delivery,
       model_module: module.__chronicle_reducer__(:model),
       default_sink_type_id: Keyword.get(opts, :default_sink_type_id, "MongoDB"),
       establish_fun: Keyword.get(opts, :establish_fun, &default_establish/2),
@@ -225,7 +236,8 @@ defmodule Chronicle.Reducers.Handler do
                   ReadModel: model_id,
                   IsActive: state.module.__chronicle_reducer__(:active),
                   Tags: [],
-                  Filters: struct(ObserverFilters)
+                  Filters: struct(ObserverFilters),
+                  GenerationDelivery: encode_generation_delivery(state.generation_delivery)
                 )
             )
         )
@@ -356,6 +368,10 @@ defmodule Chronicle.Reducers.Handler do
         {:error, reason}
     end
   end
+
+  # EventGenerationDelivery enum: Compatibility = 0, Pinned = 1.
+  defp encode_generation_delivery(:pinned), do: :Pinned
+  defp encode_generation_delivery(_compatibility), do: :Compatibility
 
   # An unset or empty wire value means the event was not appended through a
   # registered event source; no name is invented for it.

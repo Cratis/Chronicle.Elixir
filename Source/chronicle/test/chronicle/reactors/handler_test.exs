@@ -23,6 +23,39 @@ defmodule Chronicle.Reactors.HandlerTest do
     defstruct [:value]
   end
 
+  defmodule SomeEventV2 do
+    use Chronicle.Events.EventType, id: "some-event", generation: 2
+    defstruct [:value]
+  end
+
+  defmodule PinnedReactor do
+    use Chronicle.Reactors.Reactor, generation_delivery: :pinned
+
+    @handles SomeEvent
+
+    @impl true
+    def handle(%SomeEvent{}, _context), do: :ok
+  end
+
+  defmodule DefaultDeliveryReactor do
+    use Chronicle.Reactors.Reactor
+
+    @handles SomeEvent
+
+    @impl true
+    def handle(%SomeEvent{}, _context), do: :ok
+  end
+
+  defmodule AmbiguousPinReactor do
+    use Chronicle.Reactors.Reactor, generation_delivery: :pinned
+
+    @handles SomeEvent
+    @handles SomeEventV2
+
+    @impl true
+    def handle(_event, _context), do: :ok
+  end
+
   defmodule TestReactor do
     use Chronicle.Reactors.Reactor
 
@@ -273,6 +306,121 @@ defmodule Chronicle.Reactors.HandlerTest do
 
       assert {:error, :append_failed} =
                Handler.handle_result({:ok, %SideEffectEvent{value: 1}}, state, "triggering-id")
+    end
+  end
+
+  describe "generation delivery" do
+    test "sends Compatibility by default" do
+      {:ok, lifecycle} = Lifecycle.start_link([])
+      establish_fun = fn _state, _connection_id -> {:ok, :fake_stream, nil} end
+
+      {:ok, handler} =
+        Handler.start_link(
+          module: TestReactor,
+          connection: :unused,
+          event_store: "test",
+          namespace: "Default",
+          lifecycle: lifecycle,
+          establish_fun: establish_fun
+        )
+
+      assert :sys.get_state(handler).generation_delivery == :compatibility
+    end
+
+    test "sends Pinned when the reactor opts in" do
+      {:ok, lifecycle} = Lifecycle.start_link([])
+      establish_fun = fn _state, _connection_id -> {:ok, :fake_stream, nil} end
+
+      {:ok, handler} =
+        Handler.start_link(
+          module: PinnedReactor,
+          connection: :unused,
+          event_store: "test",
+          namespace: "Default",
+          lifecycle: lifecycle,
+          establish_fun: establish_fun
+        )
+
+      assert :sys.get_state(handler).generation_delivery == :pinned
+    end
+
+    test "applies the client-wide default when the reactor doesn't set its own" do
+      {:ok, lifecycle} = Lifecycle.start_link([])
+      establish_fun = fn _state, _connection_id -> {:ok, :fake_stream, nil} end
+
+      {:ok, handler} =
+        Handler.start_link(
+          module: DefaultDeliveryReactor,
+          connection: :unused,
+          event_store: "test",
+          namespace: "Default",
+          lifecycle: lifecycle,
+          establish_fun: establish_fun,
+          event_generation_delivery: :pinned
+        )
+
+      assert :sys.get_state(handler).generation_delivery == :pinned
+    end
+
+    test "the reactor's own option wins over the client-wide default" do
+      {:ok, lifecycle} = Lifecycle.start_link([])
+      establish_fun = fn _state, _connection_id -> {:ok, :fake_stream, nil} end
+
+      {:ok, handler} =
+        Handler.start_link(
+          module: PinnedReactor,
+          connection: :unused,
+          event_store: "test",
+          namespace: "Default",
+          lifecycle: lifecycle,
+          establish_fun: establish_fun,
+          event_generation_delivery: :compatibility
+        )
+
+      assert :sys.get_state(handler).generation_delivery == :pinned
+    end
+
+    test "a pinned reactor handling two generations of one event type id raises on start" do
+      Process.flag(:trap_exit, true)
+
+      assert {:error,
+              {%Chronicle.Observers.MultipleGenerationsOfEventTypeInObserver{
+                 event_type_id: "some-event"
+               }, _stack}} =
+               Handler.start_link(
+                 module: AmbiguousPinReactor,
+                 connection: :unused,
+                 event_store: "test",
+                 namespace: "Default"
+               )
+    end
+
+    test "build_registration/2 encodes Pinned" do
+      state = %{
+        module: PinnedReactor,
+        event_store: "store",
+        namespace: "ns",
+        event_type_map: %{"some-event" => SomeEvent},
+        generation_delivery: :pinned
+      }
+
+      message = Handler.build_registration(state, "connection-1")
+      reactor = message."Content"."Value0"."Reactor"
+      assert reactor."GenerationDelivery" == :Pinned
+    end
+
+    test "build_registration/2 encodes Compatibility" do
+      state = %{
+        module: TestReactor,
+        event_store: "store",
+        namespace: "ns",
+        event_type_map: %{"some-event" => SomeEvent},
+        generation_delivery: :compatibility
+      }
+
+      message = Handler.build_registration(state, "connection-1")
+      reactor = message."Content"."Value0"."Reactor"
+      assert reactor."GenerationDelivery" == :Compatibility
     end
   end
 

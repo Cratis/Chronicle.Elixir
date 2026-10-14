@@ -52,7 +52,8 @@ defmodule Chronicle.Reactors.ReplayTest do
       module: module,
       event_store: "store",
       namespace: "ns",
-      event_type_map: %{"replay-charged" => Charged}
+      event_type_map: %{"replay-charged" => Charged},
+      generation_delivery: :compatibility
     }
   end
 

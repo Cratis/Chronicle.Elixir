@@ -20,7 +20,10 @@ defmodule Chronicle.Events.EventContext do
     * `:caused_by` — `Chronicle.Identity` (including `on_behalf_of`), or `nil`
     * `:causation` — list of `Chronicle.Auditing.CausationEntry`
     * `:tags` — list of tag strings; `:named_tags` — map of name to value
-    * `:hash`, `:subject`, `:appended_generation`
+    * `:hash`, `:subject`
+    * `:appended_generation` — the generation that was actually appended, regardless of
+      which generation the handler is written against. `0` means unknown: an older kernel
+      that doesn't send this field, or an event appended outside a registered event source.
     * `:observation_state` — the observation state; `:replaying?` is `true` while the observer is replaying
     * `:delivery_id` — reactors only; see `delivery_id/1`
   """

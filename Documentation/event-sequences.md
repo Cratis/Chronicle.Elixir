@@ -227,8 +227,10 @@ lists of structs and maps decode as described in `Chronicle.Serialization`.
 Reactors, reducers and `decode: true` reads all give you a `Chronicle.Events.EventContext`:
 the event type and source, sequence number, `occurred`, event store and namespace,
 `correlation_id`, the identity that caused the event (`caused_by`, with `on_behalf_of`), the
-`causation` chain, `tags`, `hash` and `subject`. See [Context management](context.md) for how to
-set the correlation id, identity and causation on the way in.
+`causation` chain, `tags`, `hash`, `subject` and `appended_generation` (the generation that was
+actually appended, regardless of which generation a reactor or reducer is written against; `0`
+means unknown). See [Context management](context.md) for how to set the correlation id, identity
+and causation on the way in.
 
 ## Creation-only guards
 

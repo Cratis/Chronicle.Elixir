@@ -34,6 +34,15 @@ defmodule Chronicle.ReactorTest do
     def handle(%SomeEvent{}, _context), do: :ok
   end
 
+  defmodule PinnedReactor do
+    use Chronicle.Reactors.Reactor, generation_delivery: :pinned
+
+    @handles SomeEvent
+
+    @impl true
+    def handle(%SomeEvent{}, _context), do: :ok
+  end
+
   describe "use Chronicle.Reactors.Reactor" do
     test "accumulates @handles event types" do
       handles = TestReactor.__chronicle_reactor__(:handles)
@@ -51,6 +60,14 @@ defmodule Chronicle.ReactorTest do
 
     test "implements Chronicle.Reactors.Reactor behaviour" do
       assert function_exported?(TestReactor, :handle, 2)
+    end
+
+    test "defaults generation_delivery to unset (client default applies)" do
+      assert TestReactor.__chronicle_reactor__(:generation_delivery) == nil
+    end
+
+    test "supports an explicit generation_delivery option" do
+      assert PinnedReactor.__chronicle_reactor__(:generation_delivery) == :pinned
     end
   end
 end
