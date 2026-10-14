@@ -1162,7 +1162,9 @@ defmodule Chronicle.EventSequences.EventLog do
         config,
         fn event_source_id, narrowing ->
           raw_tail_sequence_number(event_source_id, tail_opts ++ narrowing)
-        end, guarded_event_sources: Keyword.get(opts, :guarded_event_sources, []))
+        end,
+        guarded_event_sources: Keyword.get(opts, :guarded_event_sources, [])
+      )
     end
   end
 
