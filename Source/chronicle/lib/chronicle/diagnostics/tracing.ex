@@ -36,11 +36,13 @@ defmodule Chronicle.Diagnostics.Tracing do
   `:kind` is an optional key in `attributes` giving the `t:span_kind/0`
   (default `:internal`); it is not itself set as a span attribute.
 
-  An exception raised by `fun` is recorded on the span, the span status is set
-  to error, and the exception is re-raised — this never swallows a failure.
-  A `fun` that returns `{:error, _}` sets the span status to error without
-  raising, since that is this client's ordinary tagged-tuple failure shape,
-  not an exception.
+  An exception raised by `fun` is recorded on the span as an `exception` event
+  carrying only `exception.type` (the module), the span status is set to error
+  with the module name as description, and the exception is re-raised — this
+  never swallows a failure. A `fun` that returns `{:error, _}` sets the span
+  status to error without raising, with the first atom of the error tuple as
+  description. Messages, reasons and stacktraces are never recorded because
+  they can carry event payloads or unique values.
   """
   @spec with_span(String.t(), attributes(), (-> result)) :: result when result: var
   def with_span(name, attributes \\ %{}, fun) when is_function(fun, 0) do
@@ -53,7 +55,7 @@ defmodule Chronicle.Diagnostics.Tracing do
       try do
         case fun.() do
           {:error, reason} = error ->
-            Span.set_status(span_ctx, OpenTelemetry.status(:error, error_message(reason)))
+            Span.set_status(span_ctx, OpenTelemetry.status(:error, classify(reason)))
             error
 
           other ->
@@ -61,12 +63,9 @@ defmodule Chronicle.Diagnostics.Tracing do
         end
       rescue
         exception ->
-          Span.record_exception(span_ctx, exception, __STACKTRACE__)
-
-          Span.set_status(
-            span_ctx,
-            OpenTelemetry.status(:error, Exception.message(exception))
-          )
+          type = inspect(exception.__struct__)
+          Span.add_event(span_ctx, "exception", %{"exception.type" => type})
+          Span.set_status(span_ctx, OpenTelemetry.status(:error, type))
 
           reraise exception, __STACKTRACE__
       end
@@ -118,6 +117,19 @@ defmodule Chronicle.Diagnostics.Tracing do
     OpenTelemetry.get_tracer(@scope, version && to_string(version), "")
   end
 
-  defp error_message(reason) when is_binary(reason), do: reason
-  defp error_message(reason), do: inspect(reason)
+  # Only a fixed classification is ever put on a span: reasons and exception
+  # messages can carry event payloads, unique values and models.
+  @doc false
+  @spec classify(term()) :: String.t()
+  def classify(%module{}), do: inspect(module)
+
+  def classify(reason) when is_tuple(reason) and tuple_size(reason) > 0 do
+    case elem(reason, 0) do
+      tag when is_atom(tag) -> Atom.to_string(tag)
+      _ -> "error"
+    end
+  end
+
+  def classify(reason) when is_atom(reason), do: Atom.to_string(reason)
+  def classify(_reason), do: "error"
 end

@@ -41,7 +41,7 @@ Every span uses the `Cratis.Chronicle.Client` instrumentation scope — the same
 | `cratis.chronicle.client.reactor.handle` | Consumer | a reactor's `handle/2` (and `handle_replay/2`) delivery |
 | `cratis.chronicle.client.reducer.reduce` | Consumer | a reducer's `reduce/3` delivery |
 
-A span's status is set to error when the wrapped operation returns `{:error, _}` (this client's ordinary tagged-tuple failure shape), and an exception raised inside it is recorded on the span before re-raising — tracing never swallows a failure.
+A span's status is set to error when the wrapped operation returns `{:error, _}` (this client's ordinary tagged-tuple failure shape), and an exception raised inside it is recorded on the span before re-raising — tracing never swallows a failure. The status description is only a fixed classification: the exception module name, or the first atom of a tagged error tuple. The recorded `exception` event carries `exception.type` only; messages, error reasons and stacktraces are never put on a span because they can contain event payloads, unique values or models.
 
 ## Attributes
 

@@ -46,6 +46,36 @@ defmodule Chronicle.Diagnostics.TracingTest do
     end
   end
 
+  describe "span error classification" do
+    test "never carries a secret from the reason or exception message" do
+      secret = "secret@example.com"
+
+      for reason <- [
+            {:error, secret},
+            {:constraint_violated, %{email: secret}},
+            secret,
+            %RuntimeError{message: secret},
+            [secret],
+            {secret, 1}
+          ] do
+        refute Tracing.classify(reason) =~ secret
+      end
+    end
+
+    test "classifies by exception module or first atom of a tagged tuple" do
+      assert Tracing.classify(%ArgumentError{message: "x"}) == "ArgumentError"
+      assert Tracing.classify({:unique_violation, "x"}) == "unique_violation"
+      assert Tracing.classify(:boom) == "boom"
+      assert Tracing.classify("free text") == "error"
+    end
+
+    test "a raised secret is re-raised unchanged but not reported" do
+      assert_raise RuntimeError, "secret@example.com", fn ->
+        Tracing.with_span("x", %{}, fn -> raise "secret@example.com" end)
+      end
+    end
+  end
+
   describe "with_telemetry_span/5" do
     setup do
       ref = make_ref()
