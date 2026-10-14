@@ -73,7 +73,10 @@ defmodule Chronicle.Integration.GenerationDeliveryTest do
 
   setup do
     Process.register(self(), :generation_delivery_it)
-    on_exit(fn -> if Process.whereis(:generation_delivery_it), do: Process.unregister(:generation_delivery_it) end)
+
+    on_exit(fn ->
+      if Process.whereis(:generation_delivery_it), do: Process.unregister(:generation_delivery_it)
+    end)
   end
 
   @opts [client: :generation_delivery_it_client]
