@@ -2,6 +2,8 @@
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 defmodule Chronicle do
+  @behaviour Chronicle.Behaviour
+
   @moduledoc """
   Idiomatic Elixir client for the Chronicle event-sourcing platform.
 
