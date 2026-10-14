@@ -48,9 +48,23 @@ defmodule Chronicle.Integration.WebhooksTest do
                @opts
              )
 
-    assert {:ok, webhooks} = Chronicle.get_webhooks(@opts)
+    webhook =
+      wait_for(fn ->
+        {:ok, webhooks} = Chronicle.get_webhooks(@opts)
+        Enum.find(webhooks, &(&1.id == "not-replayable-webhook"))
+      end)
 
-    assert %{replayable?: false} =
-             Enum.find(webhooks, &(&1.id == "not-replayable-webhook"))
+    assert %{replayable?: false} = webhook
+  end
+
+  defp wait_for(fetch, attempts \\ 40) do
+    case fetch.() do
+      nil when attempts > 0 ->
+        Process.sleep(250)
+        wait_for(fetch, attempts - 1)
+
+      result ->
+        result
+    end
   end
 end
