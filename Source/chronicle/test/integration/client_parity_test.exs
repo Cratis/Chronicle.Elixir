@@ -499,13 +499,16 @@ defmodule Chronicle.Integration.ClientParityTest do
 
   test "nested children build a grandchild list" do
     id = "ld-2"
+    # The kernel resolves a grandchild's parent by the child's identifier across every ledger,
+    # and "ld-1" also has an entry "e-1", so this entry gets an identifier of its own.
+    entry_id = "e-nested"
     assert :ok = EventLog.append(id, %LedgerCreated{}, @opts)
-    assert :ok = EventLog.append(id, %LedgerEntryAdded{entry_id: "e-1", name: "first"}, @opts)
+    assert :ok = EventLog.append(id, %LedgerEntryAdded{entry_id: entry_id, name: "first"}, @opts)
 
     assert :ok =
              EventLog.append(
                id,
-               %LedgerNoteAdded{entry_id: "e-1", note_id: "n-1", text: "hello"},
+               %LedgerNoteAdded{entry_id: entry_id, note_id: "n-1", text: "hello"},
                @opts
              )
 
