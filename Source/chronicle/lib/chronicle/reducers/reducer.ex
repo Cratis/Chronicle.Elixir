@@ -42,7 +42,9 @@ defmodule Chronicle.Reducers.Reducer do
   ## Options for `use Chronicle.Reducers.Reducer`
 
     * `:model` — **(required)** the read model module this reducer produces.
-    * `:id` — a stable string identifier. Defaults to the module's full name.
+    * `:id` — a stable string identifier. Defaults to the module's full name. A defaulted
+      id (pin it explicitly to silence this) emits a one-time warning when discovered —
+      see `Chronicle.Discovery.DefaultedIdWarning`.
     * `:active` — whether Chronicle actively keeps this reducer's read model up
       to date as events are appended. Defaults to `true`. Set to `false` for a
       **passive** reducer: its read model is only computed on demand (e.g. via
@@ -143,6 +145,9 @@ defmodule Chronicle.Reducers.Reducer do
 
       @chronicle_reducer_model model
       @chronicle_reducer_id Keyword.get(opts, :id, __MODULE__ |> to_string())
+      @chronicle_reducer_id_source if Keyword.has_key?(opts, :id),
+                                     do: :explicit,
+                                     else: :module_name
       @chronicle_reducer_active Keyword.get(opts, :active, true)
       @chronicle_reducer_middleware Keyword.get(opts, :middleware, [])
       @chronicle_reducer_generation_delivery Keyword.get(opts, :generation_delivery)
@@ -155,6 +160,7 @@ defmodule Chronicle.Reducers.Reducer do
     quote do
       @doc false
       def __chronicle_reducer__(:id), do: @chronicle_reducer_id
+      def __chronicle_reducer__(:id_source), do: @chronicle_reducer_id_source
       def __chronicle_reducer__(:model), do: @chronicle_reducer_model
       def __chronicle_reducer__(:handles), do: @handles |> Enum.reverse()
       def __chronicle_reducer__(:active), do: @chronicle_reducer_active

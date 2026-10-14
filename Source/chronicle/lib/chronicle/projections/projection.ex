@@ -38,7 +38,9 @@ defmodule Chronicle.Projections.Projection do
 
     * `:model` — **(required)** the read model module this projection writes into.
     * `:id` — identifier string for this projection. Defaults to the last segment
-      of the module name (e.g. `"AccountSummaryProjection"`).
+      of the module name (e.g. `"AccountSummaryProjection"`). A defaulted id (pin it
+      explicitly to silence this) emits a one-time warning when discovered — see
+      `Chronicle.Discovery.DefaultedIdWarning`.
     * `:passive` — when `true`, the projection does not actively observe events and
       never writes to a materialized sink; its read model is resolved on demand via
       immediate projection when looked up by id. Defaults to `false`.
@@ -71,6 +73,7 @@ defmodule Chronicle.Projections.Projection do
   ## Introspection
 
       MyApp.Projections.AccountSummaryProjection.__chronicle_projection__(:id)
+      MyApp.Projections.AccountSummaryProjection.__chronicle_projection__(:id_source)
       MyApp.Projections.AccountSummaryProjection.__chronicle_projection__(:model)
       MyApp.Projections.AccountSummaryProjection.__chronicle_projection__(:from)
       MyApp.Projections.AccountSummaryProjection.__chronicle_projection__(:join)
@@ -98,6 +101,9 @@ defmodule Chronicle.Projections.Projection do
 
       @chronicle_projection_model Keyword.fetch!(opts, :model)
       @chronicle_projection_id Keyword.get(opts, :id, __MODULE__ |> Module.split() |> List.last())
+      @chronicle_projection_id_source if Keyword.has_key?(opts, :id),
+                                        do: :explicit,
+                                        else: :module_name
       @chronicle_projection_passive Keyword.get(opts, :passive, false)
       @chronicle_projection_rewindable not Keyword.get(opts, :not_rewindable, false)
       @chronicle_projection_event_sequence Keyword.get(opts, :event_sequence, "event-log")
@@ -250,6 +256,9 @@ defmodule Chronicle.Projections.Projection do
     quote do
       @doc false
       def __chronicle_projection__(:id), do: @chronicle_projection_id
+
+      @doc false
+      def __chronicle_projection__(:id_source), do: @chronicle_projection_id_source
 
       @doc false
       def __chronicle_projection__(:model), do: @chronicle_projection_model

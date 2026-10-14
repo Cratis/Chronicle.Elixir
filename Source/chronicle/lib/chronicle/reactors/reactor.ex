@@ -38,7 +38,9 @@ defmodule Chronicle.Reactors.Reactor do
 
     * `:id` — a stable string identifier for this reactor. Defaults to the
       module's full name. Changing this value causes Chronicle to treat this as
-      a different reactor and will reset its observation position.
+      a different reactor and will reset its observation position. A defaulted id
+      (pin it explicitly to silence this) emits a one-time warning when discovered —
+      see `Chronicle.Discovery.DefaultedIdWarning`.
     * `:middleware` — modules implementing `Chronicle.Middleware` that wrap every `handle/2`
       call of this reactor (in addition to application-wide `config :cratis_chronicle, middleware:`)
     * `:once_only` — controls replay (mirrors .NET's `[OnceOnly]`). Reactors are replayable by
@@ -174,6 +176,9 @@ defmodule Chronicle.Reactors.Reactor do
       Module.register_attribute(__MODULE__, :handles, accumulate: true)
 
       @chronicle_reactor_id Keyword.get(opts, :id, __MODULE__ |> to_string())
+      @chronicle_reactor_id_source if Keyword.has_key?(opts, :id),
+                                     do: :explicit,
+                                     else: :module_name
       @chronicle_reactor_once_only Keyword.get(opts, :once_only, false)
       @chronicle_reactor_middleware Keyword.get(opts, :middleware, [])
       @chronicle_reactor_generation_delivery Keyword.get(opts, :generation_delivery)
@@ -186,6 +191,7 @@ defmodule Chronicle.Reactors.Reactor do
     quote do
       @doc false
       def __chronicle_reactor__(:id), do: @chronicle_reactor_id
+      def __chronicle_reactor__(:id_source), do: @chronicle_reactor_id_source
       def __chronicle_reactor__(:handles), do: @handles |> Enum.reverse()
       def __chronicle_reactor__(:once_only), do: @chronicle_reactor_once_only
       def __chronicle_reactor__(:middleware), do: @chronicle_reactor_middleware

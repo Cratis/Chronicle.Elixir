@@ -40,23 +40,36 @@ defmodule Chronicle.Observers do
     defstruct id: nil,
               event_sequence_id: nil,
               type: :unknown,
+              owner: :unknown,
               running_state: :unknown,
               last_handled_event_sequence_number: 0,
               next_event_sequence_number: 0,
-              handled_event_count: 0
+              handled_event_count: 0,
+              event_types: []
 
     @type observer_type :: :unknown | :reactor | :projection | :reducer | :external
+    @type observer_owner :: :unknown | :none | :client | :kernel
+
     @type running_state ::
             :unknown | :active | :suspended | :replaying | :disconnected | :quarantined
+
+    @typedoc """
+    One event type as reported by the kernel for an observer (its own `Id` and the
+    `Generation`/`Tombstone` the kernel has for it), not decoded into a client event type
+    module — an observer id has no code reference back to the modules that declared it.
+    """
+    @type event_type :: %{Id: String.t(), Generation: non_neg_integer(), Tombstone: boolean()}
 
     @type t :: %__MODULE__{
             id: String.t(),
             event_sequence_id: String.t(),
             type: observer_type(),
+            owner: observer_owner(),
             running_state: running_state(),
             last_handled_event_sequence_number: non_neg_integer(),
             next_event_sequence_number: non_neg_integer(),
-            handled_event_count: non_neg_integer()
+            handled_event_count: non_neg_integer(),
+            event_types: [event_type()]
           }
   end
 
@@ -349,10 +362,12 @@ defmodule Chronicle.Observers do
       id: Map.get(observer, :Id, ""),
       event_sequence_id: Map.get(observer, :EventSequenceId, ""),
       type: decode_observer_type(Map.get(observer, :Type)),
+      owner: decode_observer_owner(Map.get(observer, :Owner)),
       running_state: decode_running_state(Map.get(observer, :RunningState)),
       last_handled_event_sequence_number: Map.get(observer, :LastHandledEventSequenceNumber, 0),
       next_event_sequence_number: Map.get(observer, :NextEventSequenceNumber, 0),
-      handled_event_count: Map.get(observer, :HandledEventCount, 0)
+      handled_event_count: Map.get(observer, :HandledEventCount, 0),
+      event_types: Map.get(observer, :EventTypes, [])
     }
   end
 
@@ -369,6 +384,11 @@ defmodule Chronicle.Observers do
   defp decode_observer_type(:Reducer), do: :reducer
   defp decode_observer_type(:External), do: :external
   defp decode_observer_type(_), do: :unknown
+
+  defp decode_observer_owner(:None), do: :none
+  defp decode_observer_owner(:Client), do: :client
+  defp decode_observer_owner(:Kernel), do: :kernel
+  defp decode_observer_owner(_), do: :unknown
 
   # The wire enum names this OBSERVER_RUNNING_STATE_Disconnected — protoc prefixes the literal
   # to dodge a collision elsewhere in the file — so a clause matching the plain atom would
