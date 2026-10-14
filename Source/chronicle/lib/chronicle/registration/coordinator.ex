@@ -104,6 +104,7 @@ defmodule Chronicle.Registration.Coordinator do
       reducers: Keyword.get(opts, :reducers, []),
       projections: Keyword.get(opts, :projections, []),
       global_handlers: Keyword.get(opts, :global_handlers, []),
+      constraints: Keyword.get(opts, :constraints, []),
       default_sink_type_id: Keyword.get(opts, :default_sink_type_id, "MongoDB"),
       register_fun: Keyword.get(opts, :register_fun, &default_register/1),
       policy: RetryPolicy.new(Keyword.get(opts, :registration)),
@@ -301,7 +302,9 @@ defmodule Chronicle.Registration.Coordinator do
   end
 
   defp register_constraints(channel, state, event_types) do
-    constraints = Constraints.from_event_types(event_types)
+    constraints =
+      Constraints.from_event_types(event_types) ++
+        Constraints.from_constraint_modules(state.constraints)
 
     case Constraints.register(channel, state.event_store, constraints) do
       :ok -> :ok

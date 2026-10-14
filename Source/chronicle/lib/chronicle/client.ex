@@ -96,6 +96,9 @@ defmodule Chronicle.Client do
     * `:projections` — list of declarative projection modules (each
       `use Chronicle.Projections.Projection`). These are standalone projection definitions
       that reference a separate read model module.
+    * `:constraints` — list of standalone constraint modules (each
+      `use Chronicle.Events.Constraint`). These are merged with model-bound constraints
+      declared on registered event types.
     * `:global_handlers` — list of shared handler modules (each
       `use Chronicle.Projections.GlobalHandler`). Their mappings are merged into every read
       model or declarative projection whose `variant_of/2` names the same identity; never
@@ -220,7 +223,8 @@ defmodule Chronicle.Client do
           seeders: [],
           webhooks: [],
           event_store_subscriptions: [],
-          global_handlers: []
+          global_handlers: [],
+          constraints: []
         }
       end
 
@@ -236,6 +240,8 @@ defmodule Chronicle.Client do
 
     global_handlers =
       Enum.uniq(Keyword.get(opts, :global_handlers, []) ++ discovered.global_handlers)
+
+    constraints = Enum.uniq(Keyword.get(opts, :constraints, []) ++ discovered.constraints)
 
     read_model_reactors = Enum.uniq(Keyword.get(opts, :read_model_reactors, []))
     seeders = Enum.uniq(Keyword.get(opts, :seeders, []) ++ discovered.seeders)
@@ -259,7 +265,8 @@ defmodule Chronicle.Client do
       reducers: reducers,
       seeders: seeders,
       webhooks: webhooks,
-      event_store_subscriptions: event_store_subscriptions
+      event_store_subscriptions: event_store_subscriptions,
+      constraints: constraints
     })
 
     connection_opts =
@@ -359,7 +366,8 @@ defmodule Chronicle.Client do
            read_models: read_models,
            reducers: reducers,
            projections: projections,
-           global_handlers: global_handlers
+           global_handlers: global_handlers,
+           constraints: constraints
          )}
       ] ++
         reactor_children ++

@@ -17,6 +17,7 @@ defmodule Chronicle.Artifacts do
     * `__chronicle_event_store_subscription__/1`
     * `__chronicle_migration__/1`
     * `__chronicle_global_handler__/1`
+    * `__chronicle_constraint__/1`
 
   The returned map can be fed directly into `Chronicle.Client` options.
   """
@@ -32,7 +33,8 @@ defmodule Chronicle.Artifacts do
           webhooks: [module()],
           event_store_subscriptions: [module()],
           migrations: [module()],
-          global_handlers: [module()]
+          global_handlers: [module()],
+          constraints: [module()]
         }
 
   @doc """
@@ -61,7 +63,8 @@ defmodule Chronicle.Artifacts do
         webhooks: [],
         event_store_subscriptions: [],
         migrations: [],
-        global_handlers: []
+        global_handlers: [],
+        constraints: []
       },
       fn module, acc ->
         if Code.ensure_loaded?(module) do
@@ -105,6 +108,11 @@ defmodule Chronicle.Artifacts do
             module,
             function_exported?(module, :__chronicle_global_handler__, 1)
           )
+          |> maybe_put(
+            :constraints,
+            module,
+            function_exported?(module, :__chronicle_constraint__, 1)
+          )
         else
           acc
         end
@@ -138,7 +146,8 @@ defmodule Chronicle.Artifacts do
         webhooks: [],
         event_store_subscriptions: [],
         migrations: [],
-        global_handlers: []
+        global_handlers: [],
+        constraints: []
       },
       fn module, acc ->
         acc
@@ -180,6 +189,11 @@ defmodule Chronicle.Artifacts do
           :global_handlers,
           module,
           function_exported?(module, :__chronicle_global_handler__, 1)
+        )
+        |> maybe_put(
+          :constraints,
+          module,
+          function_exported?(module, :__chronicle_constraint__, 1)
         )
       end
     )

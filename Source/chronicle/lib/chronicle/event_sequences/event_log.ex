@@ -1270,7 +1270,12 @@ defmodule Chronicle.EventSequences.EventLog do
 
   defp unwrap_append_response(envelope, config) do
     with {:ok, response} <- WireResult.unwrap(envelope) do
-      {:ok, AppendResponse.resolve_messages(response, Map.get(config, :event_types, []))}
+      {:ok,
+       AppendResponse.resolve_messages(
+         response,
+         Map.get(config, :event_types, []),
+         Map.get(config, :constraints, [])
+       )}
     end
   end
 
