@@ -14,6 +14,7 @@ defmodule Chronicle.Transactions.UnitOfWork do
 
   alias Chronicle.Correlation.CorrelationId
   alias Chronicle.EventSequences.EventForEventSourceId
+  alias Chronicle.ReadModels.{DecisionConflict, DecisionRead}
 
   alias Chronicle.Transactions.{
     UnitOfWorkIsAlreadyCommitted,
@@ -103,6 +104,7 @@ defmodule Chronicle.Transactions.UnitOfWork do
     state = Agent.get(unit_of_work, & &1)
     ensure_mutable!(state)
     validate_transaction_context!(state, event_sequence_id, opts)
+    ensure_no_decision_read_conflict!(state, event)
 
     Agent.update(unit_of_work, fn current_state ->
       current_state
@@ -110,6 +112,47 @@ defmodule Chronicle.Transactions.UnitOfWork do
       |> Map.update!(:events, &(&1 ++ [event]))
     end)
   end
+
+  @doc """
+  Enrolls a `Chronicle.ReadModels.DecisionRead` as a decision dependency of the unit of work.
+
+  Reads of the same event source merge: the commit guards against anything appended since the
+  **earliest** of their boundaries, across the **union** of their event types. Raises
+  `ArgumentError` when the same event source already carries an explicit `:concurrency_scope`
+  from a buffered event — the two guards cannot both apply, and silently picking one would
+  hide that the caller asked for both.
+  """
+  @spec add_decision_read(t(), DecisionRead.t()) :: :ok
+  def add_decision_read(unit_of_work, %DecisionRead{} = read) do
+    state = Agent.get(unit_of_work, & &1)
+    ensure_mutable!(state)
+    ensure_decision_read_target!(state, read)
+    ensure_no_concurrency_scope_conflict!(state, read.event_source_id)
+
+    Agent.update(unit_of_work, fn current_state ->
+      current_state
+      |> apply_decision_read_context(read)
+      |> Map.update!(:decision_reads, fn reads ->
+        Map.update(reads, read.event_source_id, read.scope, &merge_decision_scope(&1, read.scope))
+      end)
+    end)
+
+    :ok
+  end
+
+  @doc """
+  Returns the merged concurrency scopes enrolled via `add_decision_read/2`, keyed by event
+  source id.
+  """
+  @spec get_decision_reads(t()) :: %{String.t() => Chronicle.Events.ConcurrencyScope.t()}
+  def get_decision_reads(unit_of_work), do: Agent.get(unit_of_work, & &1.decision_reads)
+
+  @doc """
+  Returns whether any decision read has been enrolled via `add_decision_read/2`.
+  """
+  @spec has_decision_reads?(t()) :: boolean()
+  def has_decision_reads?(unit_of_work),
+    do: Agent.get(unit_of_work, &(map_size(&1.decision_reads) > 0))
 
   @doc """
   Returns the buffered events in insertion order.
@@ -199,8 +242,63 @@ defmodule Chronicle.Transactions.UnitOfWork do
       result = fun.(unit_of_work)
 
       case commit(unit_of_work) do
-        :ok -> result
-        {:error, reason} -> raise "failed committing unit of work: #{inspect(reason)}"
+        :ok ->
+          result
+
+        {:error, {:concurrency_violations, violations}} ->
+          if has_decision_reads?(unit_of_work) do
+            raise DecisionConflict, violations: violations
+          else
+            raise "failed committing unit of work: #{inspect({:concurrency_violations, violations})}"
+          end
+
+        {:error, reason} ->
+          raise "failed committing unit of work: #{inspect(reason)}"
+      end
+    rescue
+      error ->
+        if not is_completed?(unit_of_work) do
+          rollback(unit_of_work)
+        end
+
+        reraise error, __STACKTRACE__
+    end
+  end
+
+  @doc """
+  Runs a function inside a unit of work and commits it, returning `{:ok, result}` on success.
+
+  Unlike `with_unit_of_work/2`, a conflict never raises: when the function enrolled at least one
+  decision read (`Chronicle.ReadModels.DecisionReads.get/3`) and the commit is rejected because
+  one of them is no longer current, this returns `{:error, %Chronicle.ReadModels.DecisionConflict{}}`
+  instead. Any other commit failure is returned as `{:error, reason}`. The unit of work is rolled
+  back, and the error re-raised, if `fun` itself raises.
+
+      Chronicle.decide(fn _unit_of_work ->
+        {:ok, read} = Chronicle.ReadModels.DecisionReads.get(MyApp.ReadModels.Seat, "seat-5")
+        if read.instance == nil, do: Chronicle.EventSequences.EventLog.append("seat-5", %SeatBooked{})
+      end)
+  """
+  @spec decide((t() -> result), keyword()) :: {:ok, result} | {:error, term()} when result: any()
+  def decide(fun, opts \\ []) when is_function(fun, 1) do
+    unit_of_work = begin(opts)
+
+    try do
+      result = fun.(unit_of_work)
+
+      case commit(unit_of_work) do
+        :ok ->
+          {:ok, result}
+
+        {:error, {:concurrency_violations, violations}} ->
+          if has_decision_reads?(unit_of_work) do
+            {:error, %DecisionConflict{violations: violations}}
+          else
+            {:error, {:concurrency_violations, violations}}
+          end
+
+        {:error, reason} ->
+          {:error, reason}
       end
     rescue
       error ->
@@ -249,6 +347,7 @@ defmodule Chronicle.Transactions.UnitOfWork do
       rolled_back?: false,
       success?: false,
       callbacks: [],
+      decision_reads: %{},
       commit_fun:
         Keyword.get(opts, :commit_fun, &Chronicle.EventSequences.EventLog.commit_transaction/1)
     }
@@ -293,6 +392,97 @@ defmodule Chronicle.Transactions.UnitOfWork do
 
   defp put_if_present(state, _key, value) when value in [nil, ""], do: state
   defp put_if_present(state, key, value), do: Map.put(state, key, value)
+
+  defp apply_decision_read_context(state, %DecisionRead{} = read) do
+    state
+    |> put_if_present(:event_sequence_id, read.event_sequence_id)
+    |> put_if_present(:namespace, read.namespace)
+  end
+
+  defp ensure_decision_read_target!(state, %DecisionRead{} = read) do
+    cond do
+      state.namespace not in [nil, ""] and state.namespace != read.namespace ->
+        raise ArgumentError, "unit of work already targets namespace #{inspect(state.namespace)}"
+
+      state.event_sequence_id not in [nil, ""] and
+          state.event_sequence_id != read.event_sequence_id ->
+        raise ArgumentError,
+              "unit of work already targets event sequence #{inspect(state.event_sequence_id)}"
+
+      true ->
+        :ok
+    end
+  end
+
+  defp ensure_no_concurrency_scope_conflict!(state, event_source_id) do
+    if Enum.any?(state.events, fn event ->
+         event.event_source_id == event_source_id and not is_nil(event.concurrency_scope)
+       end) do
+      raise ArgumentError,
+            "event source #{inspect(event_source_id)} already has an explicit concurrency " <>
+              "scope; it cannot also be enrolled as a decision read"
+    end
+  end
+
+  defp ensure_no_decision_read_conflict!(%{decision_reads: reads}, %EventForEventSourceId{
+         event_source_id: event_source_id,
+         concurrency_scope: scope
+       })
+       when not is_nil(scope) do
+    if Map.has_key?(reads, event_source_id) do
+      raise ArgumentError,
+            "event source #{inspect(event_source_id)} is already enrolled as a decision read; " <>
+              "it cannot also carry an explicit concurrency scope"
+    end
+  end
+
+  defp ensure_no_decision_read_conflict!(_state, _event), do: :ok
+
+  # Merges two reads of the same event source at their earliest boundary, across the union of
+  # their event types. A stream/source-type narrowing is kept only when both reads agree on it;
+  # otherwise it widens to "the whole event source" rather than silently keeping just one side's.
+  defp merge_decision_scope(existing, new_scope) do
+    {boundary, expects_no_matching_event} = merge_boundary(existing, new_scope)
+    types = Enum.uniq(existing.event_types ++ new_scope.event_types)
+
+    same_stream? =
+      existing.event_stream_type == new_scope.event_stream_type and
+        existing.event_stream_id == new_scope.event_stream_id
+
+    %{
+      existing
+      | sequence_number: boundary,
+        expects_no_matching_event: expects_no_matching_event,
+        event_types: types,
+        event_stream_type: if(same_stream?, do: existing.event_stream_type, else: ""),
+        event_stream_id: if(same_stream?, do: existing.event_stream_id, else: ""),
+        event_source_type:
+          if(existing.event_source_type == new_scope.event_source_type,
+            do: existing.event_source_type,
+            else: ""
+          )
+    }
+  end
+
+  # A scope expecting no matching event carries the "nothing has happened yet" sentinel as its
+  # sequence number (see Chronicle.Events.ConcurrencyScope.expecting_no_matching_event/1), which
+  # a plain min/2 over sequence numbers would treat as the *latest* possible boundary instead of
+  # the earliest - exactly backwards. Prefer whichever side still expects nothing, since that is
+  # the stricter guard; between two such reads, their sequence numbers are both the sentinel, so
+  # either side's is fine.
+  defp merge_boundary(%{expects_no_matching_event: true} = existing, %{
+         expects_no_matching_event: true
+       }),
+       do: {existing.sequence_number, true}
+
+  defp merge_boundary(%{expects_no_matching_event: true} = existing, _new_scope),
+    do: {existing.sequence_number, true}
+
+  defp merge_boundary(_existing, %{expects_no_matching_event: true} = new_scope),
+    do: {new_scope.sequence_number, true}
+
+  defp merge_boundary(existing, new_scope),
+    do: {min(existing.sequence_number, new_scope.sequence_number), false}
 
   defp ensure_mutable!(state) do
     ensure_not_committed!(state)

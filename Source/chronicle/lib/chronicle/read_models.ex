@@ -272,10 +272,35 @@ defmodule Chronicle.ReadModels do
 
   Mirrors the `getInstanceById()` naming used by the Chronicle C# and TypeScript
   clients while returning idiomatic Elixir tuples.
+
+  Accepts the options of `get/3`, plus `:event_source_type`, `:event_stream_type`,
+  `:event_stream_id` and `:event_source_id` to narrow the lookup to a specific event stream
+  instead of the whole event source (used internally by `Chronicle.ReadModels.DecisionReads`).
   """
   @spec get_instance_by_id(module(), String.t(), keyword()) ::
           {:ok, struct() | nil} | {:error, term()}
   def get_instance_by_id(model_module, key, opts \\ []) do
+    case get_instance_by_key_raw(model_module, key, opts) do
+      {:ok, %{instance: instance}} -> {:ok, instance}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc false
+  # Underlies get_instance_by_id/3 and Chronicle.ReadModels.DecisionReads: fetches a read model
+  # instance together with the wire metadata (`LastHandledEventSequenceNumber`, `StreamScoped`)
+  # a decision read needs and get_instance_by_id/3 discards. `:event_source_type`,
+  # `:event_stream_type`, `:event_stream_id` and `:event_source_id` narrow the lookup to a
+  # specific event stream; omitted they default to "" (unscoped), exactly as before this existed.
+  @spec get_instance_by_key_raw(module(), String.t(), keyword()) ::
+          {:ok,
+           %{
+             instance: struct() | nil,
+             last_handled: non_neg_integer(),
+             stream_scoped: boolean()
+           }}
+          | {:error, term()}
+  def get_instance_by_key_raw(model_module, key, opts \\ []) do
     with {:ok, channel, config} <- resolve_channel(opts) do
       namespace = Keyword.get(opts, :namespace, config.namespace)
       model_id = read_model_id(model_module)
@@ -289,31 +314,34 @@ defmodule Chronicle.ReadModels do
           ReadModelIdentifier: model_id,
           EventSequenceId: event_sequence_id,
           ReadModelKey: key,
-          SessionId: session_id
+          SessionId: session_id,
+          EventSourceType: Keyword.get(opts, :event_source_type, ""),
+          EventStreamType: Keyword.get(opts, :event_stream_type, ""),
+          EventStreamId: Keyword.get(opts, :event_stream_id, ""),
+          EventSourceId: Keyword.get(opts, :event_source_id, "")
         )
 
       case call_resilient(config, fn -> ReadModels.Stub.get_instance_by_key(channel, request) end) do
         {:ok, response} ->
-          case Map.get(response, :ReadModel, "") do
-            "" ->
-              {:ok, nil}
+          instance =
+            case Map.get(response, :ReadModel, "") do
+              json when json in ["", nil, "null"] -> nil
+              json -> decode_model(model_module, json)
+            end
 
-            nil ->
-              {:ok, nil}
+          released =
+            if instance != nil and reducer_backed?(model_module, config) do
+              release_instance(instance, model_module, channel, config.event_store, namespace)
+            else
+              instance
+            end
 
-            "null" ->
-              {:ok, nil}
-
-            json ->
-              instance = decode_model(model_module, json)
-
-              if reducer_backed?(model_module, config) do
-                {:ok,
-                 release_instance(instance, model_module, channel, config.event_store, namespace)}
-              else
-                {:ok, instance}
-              end
-          end
+          {:ok,
+           %{
+             instance: released,
+             last_handled: Map.get(response, :LastHandledEventSequenceNumber, 0),
+             stream_scoped: Map.get(response, :StreamScoped, false)
+           }}
 
         {:error, reason} ->
           {:error, reason}

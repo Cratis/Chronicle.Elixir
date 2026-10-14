@@ -224,6 +224,17 @@ defmodule Chronicle do
   defdelegate with_unit_of_work(fun, opts \\ []), to: Chronicle.Transactions.UnitOfWork
 
   @doc """
+  Runs a function inside a unit of work and commits it, returning `{:ok, result}` on success or
+  `{:error, %Chronicle.ReadModels.DecisionConflict{}}` when a decision read enrolled in it
+  (`Chronicle.ReadModels.DecisionReads.get/3`) conflicted with a concurrent append. See
+  `Chronicle.Transactions.UnitOfWork.decide/2`.
+  """
+  @spec decide((Chronicle.Transactions.UnitOfWork.t() -> result), keyword()) ::
+          {:ok, result} | {:error, term()}
+        when result: any()
+  defdelegate decide(fun, opts \\ []), to: Chronicle.Transactions.UnitOfWork
+
+  @doc """
   Fetches a read model instance by its key (typically an event source ID).
 
   Delegates to `Chronicle.ReadModels.get/3`.
