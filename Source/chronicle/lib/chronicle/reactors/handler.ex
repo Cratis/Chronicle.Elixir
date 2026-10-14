@@ -16,15 +16,13 @@ defmodule Chronicle.Reactors.Handler do
   require Logger
 
   alias Chronicle.Connections.{Connection, Lifecycle, Status}
-  alias Chronicle.Diagnostics.Tracing
-  alias Chronicle.EventSequences.{EventForEventSourceId, EventLog}
+  alias Chronicle.Reactors.Dispatch
 
   alias Cratis.Chronicle.Contracts.Observation.Reactors.{
     Reactors,
     ReactorMessage,
     ReactorDefinition,
     RegisterReactor,
-    ReactorResult,
     EventTypeWithKeyExpression,
     ObserverFilters
   }
@@ -73,7 +71,9 @@ defmodule Chronicle.Reactors.Handler do
       generation_delivery: generation_delivery,
       establish_fun: Keyword.get(opts, :establish_fun, &default_establish/2),
       append_fun:
-        Keyword.get(opts, :append_fun, fn operation -> default_append(operation, client) end),
+        Keyword.get(opts, :append_fun, fn operation ->
+          Dispatch.default_append(operation, client)
+        end),
       connection_id: nil,
       stream: nil,
       receiver_task: nil,
@@ -243,230 +243,32 @@ defmodule Chronicle.Reactors.Handler do
   end
 
   defp dispatch_event_batch(events_to_observe, state) do
-    partition = Map.get(events_to_observe, :Partition, "")
-    events = Map.get(events_to_observe, :Events, [])
-
-    {observation_state, exception_messages, stack_trace} =
-      Enum.reduce_while(events, {:success, [], ""}, fn appended_event, _acc ->
-        case dispatch_event(state, appended_event) do
-          :ok -> {:cont, {:success, [], ""}}
-          {:error, reason} -> {:halt, {:failed, [inspect(reason)], format_stack_trace(reason)}}
-        end
-      end)
-
-    last_seq =
-      case List.last(events) do
-        nil -> 0
-        event -> Map.get(Map.get(event, :Context, %{}), :SequenceNumber, 0)
-      end
-
-    result =
-      struct(ReactorMessage,
-        Content:
-          struct(OneOf,
-            Value1:
-              struct(ReactorResult,
-                Partition: partition,
-                State: encode_observation_state(observation_state),
-                LastSuccessfulObservation: last_seq,
-                ExceptionMessages: exception_messages,
-                ExceptionStackTrace: stack_trace
-              )
-          )
-      )
-
+    result = Dispatch.build_result(state, events_to_observe)
     GRPC.Stub.send_request(state.stream, result)
     {:noreply, state}
   end
 
-  defp dispatch_event(state, appended_event) do
-    context = Map.get(appended_event, :Context, %{})
-    event_type = Map.get(context, :EventType, %{})
-    event_type_id = Map.get(event_type, :Id, "")
-
-    case Map.get(state.event_type_map, event_type_id) do
-      nil ->
-        :ok
-
-      event_module ->
-        ctx =
-          build_context(context,
-            event_sequence_id: "event-log",
-            reactor_id: state.module.__chronicle_reactor__(:id)
-          )
-
-        content = Map.get(appended_event, :Content, "")
-
-        case decode_event(event_module, content) do
-          {:ok, event} ->
-            Tracing.with_telemetry_span(
-              [:cratis, :chronicle, :client, :reactor, :handle],
-              %{
-                reactor_id: state.module.__chronicle_reactor__(:id),
-                event_type_id: event_type_id
-              },
-              "cratis.chronicle.client.reactor.handle",
-              %{
-                "cratis.event_sequence.id" => "event-log",
-                "cratis.event_type.id" => event_type_id,
-                "cratis.observer.id" => state.module.__chronicle_reactor__(:id),
-                "cratis.correlation_id" => ctx.correlation_id,
-                kind: :consumer
-              },
-              fn ->
-                try do
-                  middleware = Chronicle.Middleware.for_module(state.module, :reactor)
-
-                  middleware
-                  |> Chronicle.Middleware.run(event, ctx, fn event, ctx ->
-                    case replay_action(state.module, event_module, ctx) do
-                      :skip -> :ok
-                      :handle_replay -> state.module.handle_replay(event, ctx)
-                      :handle -> state.module.handle(event, ctx)
-                    end
-                  end)
-                  |> handle_result(state, ctx.event_source_id)
-                rescue
-                  e -> {:error, e}
-                end
-              end
-            )
-
-          {:error, reason} ->
-            Logger.warning("Failed to decode event #{event_type_id}: #{inspect(reason)}")
-            :ok
-        end
-    end
-  end
-
-  # Normalizes handle/2's return value to :ok | {:error, reason}, appending
-  # any returned side-effect event(s) via the triggering event source id (or
-  # each EventForEventSourceId's own explicit target). Public (but @doc false)
-  # so it can be exercised directly in tests against a minimal state map
-  # carrying just :append_fun, without a live connection.
+  # Thin delegates kept on Handler (rather than inlined) so existing specs calling
+  # Handler.handle_result/3 and Handler.side_effect_operation/2 directly keep working
+  # unchanged after the dispatch logic moved to Chronicle.Reactors.Dispatch.
   @doc false
-  def handle_result(:ok, _state, _event_source_id), do: :ok
-  def handle_result({:error, _reason} = error, _state, _event_source_id), do: error
+  defdelegate handle_result(result, state, event_source_id), to: Dispatch
 
-  def handle_result({:ok, side_effect}, state, event_source_id) do
-    side_effect
-    |> side_effect_operation(event_source_id)
-    |> perform_append(state)
-  end
-
-  def handle_result(_other, _state, _event_source_id), do: :ok
-
-  # Translates a handle/2 side-effect return value into an append instruction,
-  # a pure decision kept separate from performing the actual append (see
-  # perform_append/2) so it can be exercised without a live connection.
   @doc false
-  def side_effect_operation(nil, _event_source_id), do: :noop
-
-  def side_effect_operation(%EventForEventSourceId{} = wrapped, _event_source_id) do
-    {:append, wrapped.event_source_id, wrapped.event,
-     [
-       event_source_type: wrapped.event_source_type,
-       event_stream_type: wrapped.event_stream_type,
-       event_stream_id: wrapped.event_stream_id,
-       tags: wrapped.tags,
-       subject: wrapped.subject,
-       occurred: wrapped.occurred,
-       concurrency_scope: wrapped.concurrency_scope,
-       causation: wrapped.causation,
-       identity: wrapped.identity
-     ]
-     |> Enum.reject(fn {_key, value} -> is_nil(value) or value == [] end)}
-  end
-
-  def side_effect_operation(events, event_source_id) when is_list(events) do
-    cond do
-      events == [] ->
-        :noop
-
-      Enum.all?(events, &match?(%EventForEventSourceId{}, &1)) ->
-        {:append_many_for_event_sources, events}
-
-      Enum.any?(events, &match?(%EventForEventSourceId{}, &1)) ->
-        normalized =
-          Enum.map(events, fn
-            %EventForEventSourceId{} = wrapped -> wrapped
-            event -> %EventForEventSourceId{event_source_id: event_source_id, event: event}
-          end)
-
-        {:append_many_for_event_sources, normalized}
-
-      true ->
-        {:append_many, event_source_id, events}
-    end
-  end
-
-  def side_effect_operation(%_{} = event, event_source_id) do
-    {:append, event_source_id, event, []}
-  end
-
-  def side_effect_operation(_other, _event_source_id), do: :noop
-
-  defp perform_append(:noop, _state), do: :ok
-  defp perform_append(operation, state), do: state.append_fun.(operation)
-
-  defp default_append({:append, event_source_id, event, opts}, client) do
-    EventLog.append(event_source_id, event, Keyword.put(opts, :client, client))
-  end
-
-  defp default_append({:append_many, event_source_id, events}, client) do
-    EventLog.append_many(event_source_id, events, client: client)
-  end
-
-  defp default_append({:append_many_for_event_sources, events}, client) do
-    EventLog.append_many_for_event_sources(events, client: client)
-  end
-
-  defp decode_event(event_module, json_content) do
-    case Jason.decode(json_content) do
-      {:ok, attrs} when is_map(attrs) ->
-        {:ok, Chronicle.Serialization.decode(event_module, attrs, :camel)}
-
-      {:ok, other} ->
-        {:error, {:unexpected_content, other}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
+  defdelegate side_effect_operation(side_effect, event_source_id), to: Dispatch
 
   # EventGenerationDelivery enum: Compatibility = 0, Pinned = 1.
   defp encode_generation_delivery(:pinned), do: :Pinned
   defp encode_generation_delivery(_compatibility), do: :Compatibility
 
-  # An unset or empty wire value means the event was not appended through a
-  # registered event source; no name is invented for it.
   @doc false
-  def once_only_class?(module), do: module.__chronicle_reactor__(:once_only) == true
-
-  # What to do with an event delivered while the reactor may be replaying (see
-  # Chronicle.Reactors.Reactor): skip handlers marked once-only, prefer handle_replay/2 when the
-  # reactor defines it, otherwise handle normally.
-  @doc false
-  def replay_action(module, event_module, %{replaying?: true}) do
-    cond do
-      once_only_class?(module) -> :skip
-      event_module in once_only_events(module) -> :skip
-      function_exported?(module, :handle_replay, 2) -> :handle_replay
-      true -> :handle
-    end
-  end
-
-  def replay_action(_module, _event_module, _context), do: :handle
-
-  defp once_only_events(module) do
-    case module.__chronicle_reactor__(:once_only) do
-      events when is_list(events) -> events
-      _ -> []
-    end
-  end
+  defdelegate once_only_class?(module), to: Dispatch
 
   @doc false
-  def build_context(ctx, opts \\ []), do: Chronicle.Events.EventContext.from_wire(ctx, opts)
+  defdelegate replay_action(module, event_module, context), to: Dispatch
+
+  @doc false
+  defdelegate build_context(ctx, opts \\ []), to: Dispatch
 
   defp schedule_stream_reconnect(%{reconnect_timer: timer} = state) when not is_nil(timer),
     do: state
@@ -503,13 +305,6 @@ defmodule Chronicle.Reactors.Handler do
 
   defp cancel_timer(nil), do: :ok
   defp cancel_timer(timer), do: Process.cancel_timer(timer)
-
-  # ObservationState enum: Success = 1, Failed = 2
-  defp encode_observation_state(:success), do: 1
-  defp encode_observation_state(:failed), do: 2
-
-  defp format_stack_trace(%{__exception__: true} = exception), do: Exception.message(exception)
-  defp format_stack_trace(reason), do: inspect(reason)
 
   # ReplayState enum: None = 0, BeginReplay = 1, EndReplay = 2,
   # BeginReplayPartition = 3, EndReplayPartition = 4.

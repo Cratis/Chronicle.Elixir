@@ -366,7 +366,12 @@ defmodule Chronicle.Client do
         :grpc_options,
         :retry_attempts,
         :reconnect_base_delay,
-        :reconnect_max_delay
+        :reconnect_max_delay,
+        # Test-only seams (see Chronicle.Connections.Connection); forwarded so
+        # Chronicle.Testing.start_supervised_client/1 can point a full client
+        # supervision tree at an in-memory kernel.
+        :connect_fun,
+        :disconnect_fun
       ])
       |> Keyword.put(:name, conn_name)
 
