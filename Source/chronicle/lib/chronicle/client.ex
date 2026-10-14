@@ -234,6 +234,9 @@ defmodule Chronicle.Client do
     # Rejects duplicate event source names before anything connects.
     Chronicle.EventSources.describe!(event_sources)
     migrations = Enum.uniq(Keyword.get(opts, :migrations, []) ++ discovered.migrations)
+    # Rejects a duplicate event type generation or an ambiguous migrator bridge before
+    # anything connects, so a bad set fails immediately instead of being retried.
+    Chronicle.Events.EventTypes.validate!(event_types, migrations)
     reactors = Enum.uniq(Keyword.get(opts, :reactors, []) ++ discovered.reactors)
     reducers = Enum.uniq(Keyword.get(opts, :reducers, []) ++ discovered.reducers)
     read_models = Enum.uniq(Keyword.get(opts, :read_models, []) ++ discovered.read_models)
