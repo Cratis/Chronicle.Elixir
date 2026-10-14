@@ -4,9 +4,12 @@
 defmodule Chronicle.ReadModels.Reactors.Handler do
   @moduledoc false
 
-  # Watches one read model for a `Chronicle.ReadModels.Reactor` module and dispatches the
-  # changes to its callbacks. The watch is (re)established whenever the client is registered and
-  # again, after a delay, when the watch stream ends with an error.
+  # Subscribes to one read model for a `Chronicle.ReadModels.Reactor` module and dispatches its
+  # changes to the module's callbacks. The subscription is established through
+  # `Chronicle.ReadModels.subscribe/2`, which shares its kernel stream with any other subscriber of
+  # the same read model (including other read model reactors), and is (re)established whenever the
+  # client reaches `:registered`. Reconnection after a stream failure, and the backoff between
+  # attempts, is the shared watcher's job - this handler only logs what it is told.
 
   use GenServer, restart: :permanent
 
@@ -14,8 +17,6 @@ defmodule Chronicle.ReadModels.Reactors.Handler do
 
   alias Chronicle.Connections.Lifecycle
   alias Chronicle.ReadModels
-
-  @rewatch_delay 2_000
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
 
@@ -29,8 +30,7 @@ defmodule Chronicle.ReadModels.Reactors.Handler do
       client: Keyword.get(opts, :client, Chronicle.Client),
       lifecycle: Keyword.get(opts, :lifecycle),
       event_sequence_id: module.__chronicle_read_model_reactor__(:event_sequence_id),
-      watcher: nil,
-      timer: nil
+      watcher: nil
     }
 
     if state.lifecycle, do: Lifecycle.subscribe(state.lifecycle)
@@ -45,20 +45,26 @@ defmodule Chronicle.ReadModels.Reactors.Handler do
 
   def handle_info({:chronicle_lifecycle, _phase, _id}, state), do: {:noreply, state}
 
-  def handle_info(:rewatch, state), do: {:noreply, watch(%{state | timer: nil})}
-
   def handle_info({:chronicle_read_model_changed, model, changeset}, %{model: model} = state) do
     dispatch(state.module, changeset)
     {:noreply, state}
   end
 
-  def handle_info({:chronicle_read_model_watch_error, model, reason}, %{model: model} = state) do
+  def handle_info({:chronicle_read_model_watch_ended, model, reason}, %{model: model} = state) do
     Logger.warning(
-      "Read model reactor #{state.module.__chronicle_read_model_reactor__(:id)} lost its watch: " <>
-        "#{inspect(reason)}; re-establishing"
+      "Read model reactor #{state.module.__chronicle_read_model_reactor__(:id)} lost its shared " <>
+        "watch: #{inspect(reason)}; it resumes automatically"
     )
 
-    {:noreply, schedule_rewatch(%{state | watcher: nil})}
+    {:noreply, state}
+  end
+
+  def handle_info({:chronicle_read_model_watch_resumed, model}, %{model: model} = state) do
+    Logger.info(
+      "Read model reactor #{state.module.__chronicle_read_model_reactor__(:id)} watch resumed"
+    )
+
+    {:noreply, state}
   end
 
   def handle_info(_message, state), do: {:noreply, state}
@@ -92,31 +98,27 @@ defmodule Chronicle.ReadModels.Reactors.Handler do
   defp watch(state) do
     state = unwatch(state)
 
-    case ReadModels.watch(state.model,
+    case ReadModels.subscribe(state.model,
            client: state.client,
            event_sequence_id: state.event_sequence_id
          ) do
-      {:ok, watcher} -> %{state | watcher: watcher}
-      {:error, _reason} -> schedule_rewatch(state)
+      {:ok, watcher} ->
+        %{state | watcher: watcher}
+
+      {:error, reason} ->
+        Logger.warning(
+          "Read model reactor #{state.module.__chronicle_read_model_reactor__(:id)} could not " <>
+            "subscribe: #{inspect(reason)}"
+        )
+
+        state
     end
   end
 
-  defp unwatch(%{watcher: nil} = state), do: cancel(state)
+  defp unwatch(%{watcher: nil} = state), do: state
 
   defp unwatch(%{watcher: watcher} = state) do
-    ReadModels.unwatch(watcher)
-    cancel(%{state | watcher: nil})
+    ReadModels.unsubscribe(watcher)
+    %{state | watcher: nil}
   end
-
-  defp cancel(%{timer: nil} = state), do: state
-
-  defp cancel(%{timer: timer} = state) do
-    Process.cancel_timer(timer)
-    %{state | timer: nil}
-  end
-
-  defp schedule_rewatch(%{timer: nil} = state),
-    do: %{state | timer: Process.send_after(self(), :rewatch, @rewatch_delay)}
-
-  defp schedule_rewatch(state), do: state
 end

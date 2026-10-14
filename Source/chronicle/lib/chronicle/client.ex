@@ -142,6 +142,7 @@ defmodule Chronicle.Client do
 
     * `Chronicle.EventSequences.EventLog` — append and query events
     * `Chronicle.ReadModels` — query read model instances
+    * `Chronicle.Projections` — ad-hoc query a PDL declaration and wait for a projection
     * `Chronicle.Events.EventTypes` — manage event type registrations
     * `Chronicle.Jobs` — inspect and control Chronicle jobs
     * `Chronicle.WebHooks` — inspect and register webhooks
@@ -369,6 +370,7 @@ defmodule Chronicle.Client do
     children =
       [
         {Chronicle.Connections.Lifecycle, client: name},
+        {Chronicle.ReadModels.Watchers, client: name},
         # Connection cleanup is bounded by the gRPC child (1s) and OAuth
         # provider (1s); leave 5s for the supervised shutdown. Its independent
         # transport owner also cleans up if the connection is forcibly killed.

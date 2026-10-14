@@ -28,9 +28,11 @@ defmodule Chronicle.ReadModels.Reactor do
 
   Register it with the client (`read_model_reactors: [MyApp.Reactors.BalanceWatcher]`). All three
   callbacks are optional. Return `:ok`; a raised exception is logged and the next change is still
-  delivered. The reactor watches the read model through `Chronicle.ReadModels.watch/2`, so it is
-  re-established after a reconnect, and it receives changes that happen *while it is running* -
-  it is not a replay of history.
+  delivered. The reactor subscribes to the read model through `Chronicle.ReadModels.subscribe/2`,
+  sharing one kernel stream with any other subscriber of the same read model (including another
+  read model reactor); the subscription is re-established after a reconnect, and the shared stream
+  reconnects on its own with backoff if it fails. It receives changes that happen *while it is
+  running* - it is not a replay of history.
 
   ## Options
 

@@ -201,6 +201,19 @@ defmodule Chronicle.ReadModels do
           }
   end
 
+  defmodule ObserveError do
+    @moduledoc """
+    Raised by `Chronicle.ReadModels.observe_stream/2` when the underlying kernel stream fails.
+    """
+
+    defexception [:model, :reason]
+
+    @impl true
+    def message(%__MODULE__{model: model, reason: reason}) do
+      "Observation of #{inspect(model)} ended: #{inspect(reason)}"
+    end
+  end
+
   alias Cratis.Chronicle.Contracts.ReadModels.{
     DehydrateSessionRequest,
     GetAllInstancesRequest,
@@ -719,6 +732,8 @@ defmodule Chronicle.ReadModels do
       {:ok, pid} =
         Task.start(fn -> watch_loop(channel, request, model_module, subscriber) end)
 
+      monitor_subscriber(subscriber, pid)
+
       {:ok, pid}
     end
   end
@@ -731,6 +746,39 @@ defmodule Chronicle.ReadModels do
     Process.exit(watcher, :shutdown)
     :ok
   end
+
+  @doc """
+  Subscribes the calling process to a **shared** watch for a read model, established once per
+  `{namespace, read model, event sequence}` and reused by every subscriber of that key, instead
+  of opening a new kernel stream per call the way `watch/2` does.
+
+  Sends the calling process the same messages as `watch/2`
+  (`{:chronicle_read_model_changed, model_module, changeset}`), plus two the shared watcher adds:
+
+    * `{:chronicle_read_model_watch_ended, model_module, reason}` — the shared stream failed; every
+      subscriber gets this once, and the watcher reconnects on its own with exponential backoff
+      (500 ms up to 30 s). Changes that happen while the stream is down are not replayed.
+    * `{:chronicle_read_model_watch_resumed, model_module}` — the stream reconnected.
+
+  Returns `{:ok, watcher}` — pass it to `unsubscribe/1` to stop. The subscription also ends, and the
+  stream closes once no subscriber is left, when the subscribing process exits.
+
+  ## Options
+
+    * `:client` — the client name (default: `Chronicle.Client`)
+    * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence identifier (default: `"event-log"`)
+  """
+  @spec subscribe(module(), keyword()) :: {:ok, pid()} | {:error, term()}
+  def subscribe(model_module, opts \\ []),
+    do: Chronicle.ReadModels.Watchers.subscribe(model_module, opts)
+
+  @doc """
+  Stops a subscription started by `subscribe/2`.
+  """
+  @spec unsubscribe(pid()) :: :ok
+  def unsubscribe(watcher) when is_pid(watcher),
+    do: Chronicle.ReadModels.Watchers.unsubscribe(watcher)
 
   @doc """
   Observes a collection of read model instances: the calling process receives the page of
@@ -750,10 +798,17 @@ defmodule Chronicle.ReadModels do
     * `:namespace` - overrides the client's default namespace
     * `:occurrence` - observe a specific occurrence of a replayed read model
     * `:page` / `:page_size` - the page to observe (defaults `0` / `50`)
+    * `:filter` - keeps only matching instances in each delivered page; same shape as `query/2`'s
+      `:filter`. An unknown field returns `{:error, {:unknown_field, field}}`.
+    * `:sort` - sorts the instances in each delivered page; same shape as `query/2`'s `:sort`.
   """
   @spec observe(module(), keyword()) :: {:ok, pid()} | {:error, term()}
   def observe(model_module, opts \\ []) do
-    with {:ok, channel, config} <- resolve_channel(opts) do
+    filter = Keyword.get(opts, :filter, [])
+    sort = Keyword.get(opts, :sort)
+
+    with :ok <- validate_filter_fields(model_module, filter, sort),
+         {:ok, channel, config} <- resolve_channel(opts) do
       page = non_negative_integer_option(opts, :page, @default_page)
       page_size = positive_integer_option(opts, :page_size, @default_page_size)
 
@@ -769,10 +824,14 @@ defmodule Chronicle.ReadModels do
 
       subscriber = self()
 
-      Task.start(fn ->
-        Process.monitor(subscriber)
-        observe_loop(channel, request, model_module, subscriber)
-      end)
+      {:ok, pid} =
+        Task.start(fn ->
+          observe_loop(channel, request, model_module, subscriber, filter, sort)
+        end)
+
+      monitor_subscriber(subscriber, pid)
+
+      {:ok, pid}
     end
   end
 
@@ -783,7 +842,41 @@ defmodule Chronicle.ReadModels do
     :ok
   end
 
-  defp observe_loop(channel, request, model_module, subscriber) do
+  @doc """
+  Returns a `Stream` of `Chronicle.ReadModels.QueryResult` built on `observe/2`: the current page,
+  and again every time it changes. Ends the underlying observation when the stream is done
+  (including when the consuming process stops iterating it), and raises
+  `Chronicle.ReadModels.ObserveError` if the kernel stream fails.
+
+  Accepts the same options as `observe/2`.
+
+      MyApp.ReadModels.AccountInfo
+      |> Chronicle.ReadModels.observe_stream(page_size: 25)
+      |> Enum.each(fn result -> IO.inspect(result.instances) end)
+  """
+  @spec observe_stream(module(), keyword()) :: Enumerable.t()
+  def observe_stream(model_module, opts \\ []) do
+    Stream.resource(
+      fn ->
+        case observe(model_module, opts) do
+          {:ok, pid} -> pid
+          {:error, reason} -> raise ObserveError, model: model_module, reason: reason
+        end
+      end,
+      fn pid ->
+        receive do
+          {:chronicle_read_model_instances, ^model_module, result} ->
+            {[result], pid}
+
+          {:chronicle_read_model_observe_error, ^model_module, reason} ->
+            raise ObserveError, model: model_module, reason: reason
+        end
+      end,
+      &unobserve/1
+    )
+  end
+
+  defp observe_loop(channel, request, model_module, subscriber, filter, sort) do
     case MaterializedReadModels.Stub.observe_instances(channel, request) do
       {:ok, reply_stream} ->
         Enum.each(reply_stream, fn
@@ -791,12 +884,7 @@ defmodule Chronicle.ReadModels do
             send(
               subscriber,
               {:chronicle_read_model_instances, model_module,
-               %QueryResult{
-                 instances: decode_models(model_module, Map.get(response, :Instances, [])),
-                 total_count: Map.get(response, :TotalCount, 0),
-                 page: Map.get(response, :Page, Map.get(request, :Page)),
-                 page_size: Map.get(response, :PageSize, Map.get(request, :PageSize))
-               }}
+               decode_observed_page(model_module, request, response, filter, sort)}
             )
 
           {:error, reason} ->
@@ -805,6 +893,35 @@ defmodule Chronicle.ReadModels do
 
       {:error, reason} ->
         send(subscriber, {:chronicle_read_model_observe_error, model_module, reason})
+    end
+  end
+
+  @doc false
+  # Decodes one `ObserveInstances` page into a `QueryResult`, applying `:filter`/`:sort` when
+  # given. Public (but undocumented) so it can be unit tested without a live stream.
+  @spec decode_observed_page(module(), struct(), map(), keyword(), term()) :: QueryResult.t()
+  def decode_observed_page(model_module, request, response, filter, sort) do
+    instances = decode_models(model_module, Map.get(response, :Instances, []))
+
+    if filter == [] and is_nil(sort) do
+      %QueryResult{
+        instances: instances,
+        total_count: Map.get(response, :TotalCount, 0),
+        page: Map.get(response, :Page, Map.get(request, :Page)),
+        page_size: Map.get(response, :PageSize, Map.get(request, :PageSize))
+      }
+    else
+      matching =
+        instances
+        |> Chronicle.ReadModels.Filter.apply(filter)
+        |> Chronicle.ReadModels.Filter.sort(sort)
+
+      %QueryResult{
+        instances: matching,
+        total_count: length(matching),
+        page: Map.get(response, :Page, Map.get(request, :Page)),
+        page_size: Map.get(response, :PageSize, Map.get(request, :PageSize))
+      }
     end
   end
 
@@ -827,6 +944,25 @@ defmodule Chronicle.ReadModels do
         send(subscriber, {:chronicle_read_model_watch_error, model_module, reason})
     end
   end
+
+  # Spawns a lightweight process that kills `worker` once `subscriber` exits, so `watch/2` and
+  # `observe/2` stop their background stream when the subscribing process does.
+  defp monitor_subscriber(subscriber, worker) do
+    Task.start(fn ->
+      ref = Process.monitor(subscriber)
+
+      receive do
+        {:DOWN, ^ref, :process, ^subscriber, _reason} -> Process.exit(worker, :shutdown)
+      end
+    end)
+  end
+
+  @doc false
+  # Decodes a raw `Watch` changeset. Used both by `watch_loop/4` and by the shared
+  # `Chronicle.ReadModels.Watchers.Watcher` behind `subscribe/2`.
+  @spec decode_watch_changeset(module(), term()) :: Changeset.t()
+  def decode_watch_changeset(model_module, changeset),
+    do: decode_changeset(model_module, changeset)
 
   defp decode_changeset(model_module, changeset) do
     %Changeset{
