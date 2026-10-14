@@ -7,14 +7,16 @@ defmodule Chronicle.EventSequences.AppendResponse do
   alias Chronicle.Events.Constraints
 
   @doc false
-  @spec resolve_messages(term(), [module()]) :: term()
-  def resolve_messages(response, event_types) when is_map(response) do
+  @spec resolve_messages(term(), [module()], [module()]) :: term()
+  def resolve_messages(response, event_types, constraint_modules \\ [])
+
+  def resolve_messages(response, event_types, constraint_modules) when is_map(response) do
     violations = field(response, :ConstraintViolations, :constraint_violations, [])
 
     if is_list(violations) and violations != [] do
       messages =
-        event_types
-        |> Constraints.from_event_types()
+        (Constraints.from_event_types(event_types) ++
+           Constraints.from_constraint_modules(constraint_modules))
         |> Map.new(&{&1.name, Map.get(&1, :message, "")})
 
       key =
@@ -28,15 +30,17 @@ defmodule Chronicle.EventSequences.AppendResponse do
     end
   end
 
-  def resolve_messages(response, _event_types), do: response
+  def resolve_messages(response, _event_types, _constraint_modules), do: response
 
   defp resolve_message(violation, messages) when is_map(violation) do
     name = field(violation, :ConstraintName, :constraint_name, nil)
 
     case Map.get(messages, name) do
       message when is_binary(message) and message != "" ->
-        key = if Map.has_key?(violation, :Message), do: :Message, else: :message
-        Map.put(violation, key, message)
+        put_message(violation, message)
+
+      {module, function} when is_atom(module) and is_atom(function) ->
+        put_message(violation, apply(module, function, [violation]))
 
       _ ->
         violation
@@ -44,6 +48,11 @@ defmodule Chronicle.EventSequences.AppendResponse do
   end
 
   defp resolve_message(violation, _messages), do: violation
+
+  defp put_message(violation, message) do
+    key = if Map.has_key?(violation, :Message), do: :Message, else: :message
+    Map.put(violation, key, message)
+  end
 
   @spec normalize(term()) :: :ok | {:error, term()}
   def normalize(response) when is_map(response) do

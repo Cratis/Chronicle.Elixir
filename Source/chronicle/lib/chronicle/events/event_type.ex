@@ -188,6 +188,7 @@ defmodule Chronicle.Events.EventType do
           unique_event_type: 0,
           unique_event_type: 1,
           remove_constraint: 1,
+          remove_constraint: 2,
           closes_stream: 0,
           closes_stream: 1
         ]
@@ -295,6 +296,13 @@ defmodule Chronicle.Events.EventType do
       `PerEventStreamId()`. An atom (`:per_event_source_type`,
       `:per_event_stream_type`, or `:per_event_stream_id`) or a list of them.
       Defaults to unscoped (globally unique across the whole event store).
+    * `:event_sequences` — restrict the declaration to specific event
+      sequences (default: all)
+
+  `:message` also accepts a `{Module, :function}` callback invoked with the violation to
+  compute one; see `Chronicle.Events.ConstraintViolation.details/1`.
+
+  An unknown option, an invalid `:mode`, or an invalid `:scope` value is a compile-time error.
 
   ## Scoping example
 
@@ -303,6 +311,13 @@ defmodule Chronicle.Events.EventType do
       unique(:email, scope: :per_event_source_type)
   """
   defmacro unique(fields, opts \\ []) do
+    validate_unique_opts!(
+      __CALLER__,
+      opts,
+      [:name, :mode, :ignore_casing, :message, :scope, :event_sequences],
+      "unique/2"
+    )
+
     quote do
       @unique {unquote(fields), unquote(opts)}
     end
@@ -315,11 +330,36 @@ defmodule Chronicle.Events.EventType do
 
     * `:name` — explicit constraint name (defaults to the event type id)
     * `:message` — human-readable message to use when the constraint is
-      violated
+      violated, or a `{Module, :function}` callback; see `unique/2`
+    * `:scope` — see `unique/2`
+    * `:event_sequences` — see `unique/2`
+
+  An unknown option or an invalid `:scope` value is a compile-time error.
   """
   defmacro unique_event_type(opts \\ []) do
+    validate_unique_opts!(
+      __CALLER__,
+      opts,
+      [:name, :message, :scope, :event_sequences],
+      "unique_event_type/1"
+    )
+
     quote do
       @unique_event_type unquote(opts)
+    end
+  end
+
+  @doc false
+  def validate_unique_opts!(caller, opts, allowed_keys, context) do
+    case Chronicle.Events.Constraints.validate_unique_opts(opts, allowed_keys) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        raise CompileError,
+          file: caller.file,
+          line: caller.line,
+          description: "#{inspect(caller.module)}: #{context} #{reason}"
     end
   end
 
@@ -364,6 +404,28 @@ defmodule Chronicle.Events.EventType do
   defmacro remove_constraint(name) do
     quote do
       @remove_constraint unquote(name)
+    end
+  end
+
+  @doc """
+  Declares that appending this event removes a named constraint, carrying the value to
+  release.
+
+  `:properties` names the constrained properties, in the same order as the `unique/2`
+  declaration, that this event carries the value of (empty or omitted releases every value for
+  the event source, same as `remove_constraint/1`). Only meaningful for a `:per_value` unique
+  constraint — a unique event type constraint has no constrained value to carry.
+
+      defmodule MyApp.Events.MappingVersionRemoved do
+        use Chronicle.Events.EventType, id: "mapping-version-removed"
+        defstruct [:version_id]
+
+        remove_constraint("UniqueMappingVersionId", properties: [:version_id])
+      end
+  """
+  defmacro remove_constraint(name, opts) do
+    quote do
+      @remove_constraint {unquote(name), unquote(opts)}
     end
   end
 end
