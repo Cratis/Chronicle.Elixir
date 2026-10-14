@@ -102,6 +102,17 @@ defmodule Chronicle.AppendWireCase do
             }
           )
 
+        %Wire.VerifyContentRequest{} ->
+          struct(stream.response_mod,
+            IsAuthorized: true,
+            Response: %Wire.VerifyContentResponse{
+              Result: Map.get(responses, :verify_content_result, :Equal)
+            }
+          )
+
+        %Wire.MetadataAtRequest{} ->
+          struct(stream.response_mod, IsAuthorized: true, Data: Map.get(responses, :metadata, []))
+
         _ ->
           payload_module =
             if match?(%Wire.AppendRequest{}, request),

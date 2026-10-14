@@ -60,14 +60,15 @@ defmodule Chronicle.EventSequences.EventLog do
 
   alias Chronicle.Auditing.{CausationEntry, CausationManager, CausationType}
   alias Chronicle.Correlation.{CorrelationId, CorrelationIdManager}
-  alias Chronicle.EventSequences.{DefinitionRouting, EventForEventSourceId}
+  alias Chronicle.EventSequences.{ConcurrencyStrategy, DefinitionRouting, EventForEventSourceId}
   alias Chronicle.Identity.IdentityProvider
   alias Chronicle.WireResult
 
   alias Chronicle.Events.ConcurrencyScope, as: ClientConcurrencyScope
 
   alias Chronicle.Connections.Connection
-  alias Chronicle.EventSequences.{AppendResponse, AppendResult}
+  alias Chronicle.EventSequences.{AppendResponse, AppendResult, PreparedEvent}
+  alias Chronicle.Events.EventType, as: ClientEventType
   alias Chronicle.Transactions.UnitOfWork
 
   alias Bcl.Guid, as: BclGuid
@@ -152,11 +153,12 @@ defmodule Chronicle.EventSequences.EventLog do
     event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
 
     if UnitOfWork.has_current?() do
-      Enum.each(events, fn event ->
-        buffer_append(event_sequence_id, event_source_id, event, opts)
+      Enum.reduce_while(events, :ok, fn event, :ok ->
+        case buffer_append(event_sequence_id, event_source_id, event, opts) do
+          :ok -> {:cont, :ok}
+          {:error, _} = error -> {:halt, error}
+        end
       end)
-
-      :ok
     else
       do_append_many(event_sequence_id, event_source_id, events, opts)
     end
@@ -273,17 +275,19 @@ defmodule Chronicle.EventSequences.EventLog do
     event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
 
     if UnitOfWork.has_current?() do
-      Enum.each(events, fn %EventForEventSourceId{} = event ->
-        UnitOfWork.add_event(
-          UnitOfWork.current(),
-          event_sequence_id,
-          event,
-          client: Keyword.get(opts, :client, Chronicle.Client),
-          namespace: Keyword.get(opts, :namespace)
-        )
-      end)
+      with :ok <- check_event_types(events) do
+        Enum.each(events, fn %EventForEventSourceId{} = event ->
+          UnitOfWork.add_event(
+            UnitOfWork.current(),
+            event_sequence_id,
+            event,
+            client: Keyword.get(opts, :client, Chronicle.Client),
+            namespace: Keyword.get(opts, :namespace)
+          )
+        end)
 
-      :ok
+        :ok
+      end
     else
       with {:ok, channel, config} <- resolve_append_channel(opts) do
         namespace = Keyword.get(opts, :namespace, config.namespace)
@@ -408,17 +412,20 @@ defmodule Chronicle.EventSequences.EventLog do
   end
 
   @doc false
-  @spec buffer_append(String.t(), String.t(), struct(), keyword()) :: :ok
+  @spec buffer_append(String.t(), String.t(), struct(), keyword()) :: :ok | {:error, term()}
   def buffer_append(event_sequence_id, event_source_id, event, opts \\ []) do
-    buffered_event = build_event_for_event_source_id(event_source_id, event, opts, :transactional)
+    with :ok <- check_event_type(event) do
+      buffered_event =
+        build_event_for_event_source_id(event_source_id, event, opts, :transactional)
 
-    UnitOfWork.add_event(
-      UnitOfWork.current(),
-      event_sequence_id,
-      buffered_event,
-      client: Keyword.get(opts, :client, Chronicle.Client),
-      namespace: Keyword.get(opts, :namespace)
-    )
+      UnitOfWork.add_event(
+        UnitOfWork.current(),
+        event_sequence_id,
+        buffered_event,
+        client: Keyword.get(opts, :client, Chronicle.Client),
+        namespace: Keyword.get(opts, :namespace)
+      )
+    end
   end
 
   @doc false
@@ -801,8 +808,134 @@ defmodule Chronicle.EventSequences.EventLog do
 
   defp has_events?(_), do: false
 
+  @doc """
+  Serializes `event` once and returns a `Chronicle.EventSequences.PreparedEvent` bound to this
+  client, namespace and event sequence, for reuse with `append_prepared/3` and
+  `Chronicle.EventSequences.Streams.verify_content/3`. Mutating `event` afterward has no effect -
+  the content was captured at preparation time.
+
+  ## Options
+
+    * `:client` — the client name (default: `Chronicle.Client`)
+    * `:namespace` — overrides the client's default namespace
+    * `:event_sequence_id` — event sequence id (default: `"event-log"`)
+
+  Returns `{:error, {:unknown_event_type, module}}` when `event` does not
+  `use Chronicle.Events.EventType`.
+  """
+  @spec prepare(struct(), keyword()) :: {:ok, PreparedEvent.t()} | {:error, term()}
+  def prepare(event, opts \\ []) do
+    with :ok <- check_event_type(event) do
+      client = Keyword.get(opts, :client, Chronicle.Client)
+
+      case Chronicle.Client.config(client) do
+        config when is_map(config) ->
+          namespace = Keyword.get(opts, :namespace, config.namespace)
+          event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+
+          {:ok,
+           %PreparedEvent{
+             owner: {client, namespace, event_sequence_id},
+             event: event,
+             event_type: build_event_type(event),
+             content: encode_event(event)
+           }}
+
+        _ ->
+          {:error, :no_client}
+      end
+    end
+  end
+
+  @doc """
+  Appends a `prepare/2`d event. Accepts the options of `append/3`. The event was serialized once,
+  at preparation time - this never re-serializes it.
+
+  Returns `{:error, :prepared_event_belongs_to_another_sequence}` when `prepared_event` was
+  prepared for a different client, namespace, or event sequence than this call targets.
+  """
+  @spec append_prepared(String.t(), PreparedEvent.t(), keyword()) :: :ok | {:error, term()}
+  def append_prepared(event_source_id, %PreparedEvent{} = prepared_event, opts \\ []) do
+    event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+    client = Keyword.get(opts, :client, Chronicle.Client)
+
+    with :ok <-
+           check_prepared_owner(
+             prepared_event,
+             client,
+             Keyword.get(opts, :namespace),
+             event_sequence_id
+           ) do
+      if UnitOfWork.has_current?() do
+        buffer_append_prepared(event_sequence_id, event_source_id, prepared_event, opts)
+      else
+        do_append_prepared(event_sequence_id, event_source_id, prepared_event, opts)
+      end
+    end
+  end
+
+  defp check_prepared_owner(
+         %PreparedEvent{owner: owner},
+         client,
+         namespace_opt,
+         event_sequence_id
+       ) do
+    case Chronicle.Client.config(client) do
+      config when is_map(config) ->
+        namespace = namespace_opt || config.namespace
+
+        if owner == {client, namespace, event_sequence_id} do
+          :ok
+        else
+          {:error, :prepared_event_belongs_to_another_sequence}
+        end
+
+      _ ->
+        {:error, :no_client}
+    end
+  end
+
+  defp do_append_prepared(event_sequence_id, event_source_id, prepared_event, opts) do
+    event_to_append =
+      build_prepared_event_for_event_source_id(event_source_id, prepared_event, opts, :append)
+
+    do_append_event(event_sequence_id, event_to_append, opts)
+  end
+
+  defp buffer_append_prepared(event_sequence_id, event_source_id, prepared_event, opts) do
+    event_to_append =
+      build_prepared_event_for_event_source_id(
+        event_source_id,
+        prepared_event,
+        opts,
+        :transactional
+      )
+
+    UnitOfWork.add_event(
+      UnitOfWork.current(),
+      event_sequence_id,
+      event_to_append,
+      client: Keyword.get(opts, :client, Chronicle.Client),
+      namespace: Keyword.get(opts, :namespace)
+    )
+  end
+
+  defp build_prepared_event_for_event_source_id(event_source_id, prepared_event, opts, mode) do
+    event_source_id
+    |> build_event_for_event_source_id(prepared_event.event, opts, mode)
+    |> Map.put(:prepared, %{
+      event_type: prepared_event.event_type,
+      content: prepared_event.content
+    })
+  end
+
   defp do_append(event_sequence_id, event_source_id, event, opts) do
-    case raw_append(event_sequence_id, event_source_id, event, opts) do
+    event_to_append = build_event_for_event_source_id(event_source_id, event, opts, :append)
+    do_append_event(event_sequence_id, event_to_append, opts)
+  end
+
+  defp do_append_event(event_sequence_id, event_to_append, opts) do
+    case raw_append_event(event_sequence_id, event_to_append, opts) do
       {:ok, response} -> normalize_response(response)
       {:error, reason} -> {:error, reason}
     end
@@ -813,9 +946,13 @@ defmodule Chronicle.EventSequences.EventLog do
   # like append_and_wait_for_completion/3 — don't have to duplicate the
   # request-building logic.
   defp raw_append(event_sequence_id, event_source_id, event, opts) do
+    event_to_append = build_event_for_event_source_id(event_source_id, event, opts, :append)
+    raw_append_event(event_sequence_id, event_to_append, opts)
+  end
+
+  defp raw_append_event(event_sequence_id, event_to_append, opts) do
     with {:ok, channel, config} <- resolve_append_channel(opts) do
       namespace = Keyword.get(opts, :namespace, config.namespace)
-      event_to_append = build_event_for_event_source_id(event_source_id, event, opts, :append)
 
       with {:ok, [event_to_append]} <-
              prepare_events([event_to_append], config, namespace, event_sequence_id, opts) do
@@ -835,8 +972,8 @@ defmodule Chronicle.EventSequences.EventLog do
         EventSourceId: event_to_append.event_source_id,
         EventStreamType: event_to_append.event_stream_type,
         EventStreamId: event_to_append.event_stream_id,
-        EventType: build_event_type(event_to_append.event),
-        Content: encode_event(event_to_append.event),
+        EventType: prepared_event_type(event_to_append),
+        Content: prepared_content(event_to_append),
         Causation: causation_entries_to_proto(event_to_append.causation),
         CausedBy: identity_to_proto(event_to_append.identity),
         ConcurrencyScope: build_concurrency_scope(event_to_append.concurrency_scope),
@@ -852,6 +989,16 @@ defmodule Chronicle.EventSequences.EventLog do
     end
   end
 
+  # A `prepare/2`d event already carries its serialized content and event type - captured once,
+  # at preparation time - so sending it never re-serializes the event.
+  defp prepared_event_type(%EventForEventSourceId{prepared: %{event_type: event_type}}),
+    do: event_type
+
+  defp prepared_event_type(%EventForEventSourceId{event: event}), do: build_event_type(event)
+
+  defp prepared_content(%EventForEventSourceId{prepared: %{content: content}}), do: content
+  defp prepared_content(%EventForEventSourceId{event: event}), do: encode_event(event)
+
   # Only appends that went through a definition claim registered-source metadata;
   # legacy appends leave the wire field unset rather than inventing a name.
   defp event_source_name(%EventForEventSourceId{routing: nil}), do: nil
@@ -862,9 +1009,45 @@ defmodule Chronicle.EventSequences.EventLog do
   defp prepare_events(events, config, namespace, event_sequence_id, opts) do
     events = Enum.map(events, &apply_event_type_defaults/1)
 
-    with :ok <- check_payload_size(events) do
+    with :ok <- check_event_types(events),
+         :ok <- validate_concurrency_scopes(events),
+         :ok <- check_payload_size(events) do
       resolve_events(events, config, namespace, event_sequence_id, opts)
     end
+  end
+
+  defp check_event_types(events) do
+    Enum.find_value(events, :ok, fn %EventForEventSourceId{event: event} ->
+      case check_event_type(event) do
+        :ok -> nil
+        {:error, _} = error -> error
+      end
+    end)
+  end
+
+  defp check_event_type(%module{}) do
+    if ClientEventType.event_type?(module) do
+      :ok
+    else
+      {:error, {:unknown_event_type, module}}
+    end
+  end
+
+  # The wire carries one concurrency scope per event source id (first-declared-wins), so two
+  # explicit, unequal scopes for the same id would silently drop one. Equal duplicates (the same
+  # guard declared more than once) are harmless and allowed.
+  defp validate_concurrency_scopes(events) do
+    events
+    |> Enum.filter(&(&1.concurrency_scope != nil))
+    |> Enum.group_by(& &1.event_source_id)
+    |> Enum.find_value(:ok, fn {event_source_id, group} ->
+      normalized =
+        group |> Enum.map(&ClientConcurrencyScope.normalize(&1.concurrency_scope)) |> Enum.uniq()
+
+      if length(normalized) > 1 do
+        {:error, {:duplicate_concurrency_scope, event_source_id}}
+      end
+    end)
   end
 
   # An event type may declare the field holding its data subject and static tags
@@ -886,23 +1069,28 @@ defmodule Chronicle.EventSequences.EventLog do
       :ok
     else
       events
-      |> Enum.map(&encode_event(&1.event))
+      |> Enum.map(&prepared_content/1)
       |> Chronicle.PayloadLimit.check_all()
     end
   end
 
   defp resolve_events(events, config, namespace, event_sequence_id, opts) do
-    if DefinitionRouting.used?(events) do
-      client = Keyword.get(opts, :client, Chronicle.Client)
+    client = Keyword.get(opts, :client, Chronicle.Client)
+    tail_opts = [client: client, namespace: namespace, event_sequence_id: event_sequence_id]
 
+    with {:ok, events} <- resolve_definition_routed_concurrency(events, config, tail_opts) do
+      ConcurrencyStrategy.apply_default(events, config, fn event_source_id, narrowing ->
+        raw_tail_sequence_number(event_source_id, tail_opts ++ narrowing)
+      end)
+    end
+  end
+
+  defp resolve_definition_routed_concurrency(events, config, tail_opts) do
+    if DefinitionRouting.used?(events) do
       with {:ok, resolved} <-
              DefinitionRouting.resolve(events, Map.get(config, :event_sources, [])) do
         DefinitionRouting.apply_concurrency(resolved, fn event_source_id, narrowing ->
-          raw_tail_sequence_number(
-            event_source_id,
-            [client: client, namespace: namespace, event_sequence_id: event_sequence_id] ++
-              narrowing
-          )
+          raw_tail_sequence_number(event_source_id, tail_opts ++ narrowing)
         end)
       end
     else
