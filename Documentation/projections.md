@@ -48,6 +48,42 @@ model. `key` identifies the child an event applies to and `parent_key` the paren
 
 Use `clear: [:field]` in a mapping to set a scalar back to no value.
 
+## Ad-hoc querying with `Chronicle.Projections`
+
+`Chronicle.Projections.query/2` sends a Projection Declaration Language (PDL) string straight to
+the kernel and returns the projected entries, without registering a permanent projection or
+defining a read model module:
+
+```elixir
+{:ok, result} =
+  Chronicle.Projections.query("""
+  projection OrderSummary
+    from OrderPlaced
+  """)
+
+result.instances      # decoded as plain maps unless :read_model is given
+```
+
+Pass `:read_model` to decode each entry as a struct instead. A declaration with syntax or type
+errors returns `{:error, {:invalid_declaration, [%{message:, line:, column:}]}}`. See the shared
+[Ad-hoc Querying](/chronicle/projections/projection-declaration-language/adhoc-querying/) page for
+the full picture — Elixir now joins C# in supporting this.
+
+`Chronicle.Projections.preview/2` runs an already-registered projection's own declaration the same
+way, looked up by read model module or projection identifier.
+
+## Waiting for a projection
+
+`Chronicle.Projections.wait_for/3` polls until a projection has handled a given event sequence
+number, or returns `{:error, :timeout}`:
+
+```elixir
+{:ok, %{sequence_number: sequence}} =
+  Chronicle.EventSequences.EventLog.append_with_result(account_id, event)
+
+:ok = Chronicle.Projections.wait_for(MyApp.ReadModels.Account, sequence)
+```
+
 ## Event context values
 
 `:occurred` maps to the event's occurred time (`$eventContext(Occurred)`). The old `$occurred`
