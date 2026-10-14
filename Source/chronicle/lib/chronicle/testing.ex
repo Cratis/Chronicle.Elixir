@@ -125,6 +125,10 @@ defmodule Chronicle.Testing do
              event_sources: event_sources,
              constraints: constraint_modules,
              discover: false,
+             # The in-memory kernel answers no discovery queries, and there is nothing
+             # registered before the spec to drift from.
+             drift_policy: :ignore,
+             warn_defaulted_ids: false,
              connect_fun: connect_fun,
              disconnect_fun: disconnect_fun
            ),
