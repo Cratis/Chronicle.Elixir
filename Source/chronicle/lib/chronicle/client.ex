@@ -126,6 +126,14 @@ defmodule Chronicle.Client do
       query option (`:least_connections`, `:round_robin`, or `:random`), used
       to pick among multiple hosts or DNS SRV-resolved addresses. See
       `Chronicle.Connections.LoadBalancer`.
+    * `:concurrency` — the default concurrency scope strategy applied to an append that has
+      no explicit `:concurrency_scope` and none derived from an event source definition's
+      declared dimensions. `default: :none` (the default) sends no constraint, matching prior
+      behavior. `default: :optimistic` reads the tail narrowed the same way the append is
+      routed and expects nothing to have been appended since, mirroring the .NET client's
+      `OptimisticConcurrencyStrategy`. `check_first_append: false` (default) leaves a first
+      append into an empty narrowing unchecked; `true` expects no event matching it yet (see
+      `Chronicle.Events.ConcurrencyScope.expecting_no_matching_event/1`).
 
   ## Convenience functions
 
@@ -274,7 +282,8 @@ defmodule Chronicle.Client do
       seeders: seeders,
       webhooks: webhooks,
       event_store_subscriptions: event_store_subscriptions,
-      constraints: constraints
+      constraints: constraints,
+      concurrency: Keyword.get(opts, :concurrency, [])
     })
 
     connection_opts =

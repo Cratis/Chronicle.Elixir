@@ -124,6 +124,20 @@ defmodule Chronicle.Events.EventType do
   def declared_tags(_), do: []
 
   @doc """
+  Returns whether `module` is a Chronicle event type (`use Chronicle.Events.EventType`).
+
+  Every append path checks this before building a request, so an event struct that never
+  registered an event type fails with a structured `{:error, {:unknown_event_type, module}}`
+  instead of raising deep inside request building.
+  """
+  @spec event_type?(module()) :: boolean()
+  def event_type?(module) when is_atom(module) do
+    Code.ensure_loaded?(module) and function_exported?(module, :__chronicle_event_type__, 1)
+  end
+
+  def event_type?(_), do: false
+
+  @doc """
   Returns metadata for this event type module.
 
   Accepts `:id`, `:generation`, or `:constraints` as the key.

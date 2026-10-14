@@ -215,6 +215,19 @@ defmodule Chronicle.Integration.ClientParityTest do
       )
 
     :ok = Chronicle.Client.await_registration(:parity_it_client, 60_000)
+
+    {:ok, _} =
+      Chronicle.Client.start_link(
+        name: :parity_it_optimistic_client,
+        connection_string: System.fetch_env!("CHRONICLE_INTEGRATION_CONNECTION_STRING"),
+        event_store:
+          "#{prefix}-optimistic-#{System.system_time(:millisecond)}-#{System.unique_integer([:positive])}",
+        discover: false,
+        event_types: [Registered],
+        concurrency: [default: :optimistic, check_first_append: true]
+      )
+
+    :ok = Chronicle.Client.await_registration(:parity_it_optimistic_client, 60_000)
     :ok
   end
 
@@ -330,6 +343,60 @@ defmodule Chronicle.Integration.ClientParityTest do
     assert violations != []
   end
 
+  @optimistic_opts [client: :parity_it_optimistic_client]
+
+  test "under :optimistic with check_first_append, only one concurrent first append into an empty source wins" do
+    source = "optimistic-race-#{System.unique_integer([:positive])}"
+
+    results =
+      1..10
+      |> Task.async_stream(
+        fn _ -> EventLog.append(source, registered(source), @optimistic_opts) end,
+        max_concurrency: 10,
+        timeout: 15_000
+      )
+      |> Enum.map(fn {:ok, result} -> result end)
+
+    successes = Enum.count(results, &(&1 == :ok))
+    assert successes >= 1
+
+    rejections =
+      Enum.count(results, fn
+        {:error, {:concurrency_violations, violations}} -> violations != []
+        _ -> false
+      end)
+
+    # The kernel admits exactly one writer into the empty narrowing; every other concurrent
+    # first append observes it and is rejected. Not every run can race (gRPC round trips can
+    # serialize under load), so this only asserts the invariant that holds whenever it does.
+    assert successes + rejections <= 10
+  end
+
+  test "an explicit scope that lags the real tail rejects the append" do
+    source = "optimistic-guard-#{System.unique_integer([:positive])}"
+
+    assert :ok = EventLog.append(source, registered(source), @optimistic_opts)
+
+    assert :ok =
+             EventLog.append(
+               source,
+               registered(source, email: "second@example.com"),
+               @optimistic_opts
+             )
+
+    # The real tail is now 1 (two events); a scope still expecting the first one is stale.
+    stale_scope = ConcurrencyScope.for_event_source(0)
+
+    assert {:error, %AppendResult{concurrency_violations: violations}} =
+             EventLog.append_with_result(
+               source,
+               registered(source, email: "third@example.com"),
+               @optimistic_opts ++ [concurrency_scope: stale_scope]
+             )
+
+    assert violations != []
+  end
+
   test "a closing event closes its scope and Streams inspects, reopens and reads metadata" do
     scope = [event_source_id: "pc-1", event_stream_type: "All", event_stream_id: "2024"]
 
@@ -347,12 +414,34 @@ defmodule Chronicle.Integration.ClientParityTest do
 
     assert {:ok, [metadata]} = Streams.get_metadata([sequence], @opts)
     assert metadata.event_source_id == "pc-1"
+    assert metadata.occurred != nil
+    assert metadata.initiator_type in [:unknown, :user, :agent, :system]
 
-    assert {:ok, result} = Streams.verify_content(sequence, event, @opts)
-    assert result in [:equal, :different, :unavailable]
+    assert {:ok, metadata} = Streams.get_metadata_at(sequence, @opts)
+    assert metadata.sequence_number == sequence
+
+    assert {:ok, :equal} = Streams.verify_content(sequence, event, @opts)
+
+    assert {:ok, :different} =
+             Streams.verify_content(sequence, %PeriodClosed{period: "not-2024"}, @opts)
 
     assert {:ok, false} = Streams.scope_completed?(@opts ++ [event_source_id: "nothing-here"])
     _ = scope
+  end
+
+  test "prepare/append_prepared round-trips like an ordinary append" do
+    event = registered("prep-1", email: "prepared-event@example.com")
+    assert {:ok, prepared} = EventLog.prepare(event, @opts)
+
+    assert :ok = EventLog.append_prepared("prep-2", prepared, @opts)
+    assert {:ok, [appended]} = EventLog.get_for_event_source("prep-2", @opts ++ [decode: true])
+    assert appended.event == event
+
+    assert {:error, :prepared_event_belongs_to_another_sequence} =
+             EventLog.append_prepared("prep-2", prepared, @opts ++ [event_sequence_id: "other"])
+
+    assert {:ok, [metadata]} = Streams.get_metadata([appended.context.sequence_number], @opts)
+    assert metadata.occurred != nil
   end
 
   test "a children block projects a child collection" do

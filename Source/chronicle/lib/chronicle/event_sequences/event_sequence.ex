@@ -237,6 +237,76 @@ defmodule Chronicle.EventSequences.EventSequence do
   end
 
   @doc """
+  Serializes `event` once and returns a `Chronicle.EventSequences.PreparedEvent` bound to this
+  event sequence. See `Chronicle.EventSequences.EventLog.prepare/2`.
+  """
+  @spec prepare(t(), struct(), keyword()) ::
+          {:ok, Chronicle.EventSequences.PreparedEvent.t()} | {:error, term()}
+  def prepare(%__MODULE__{} = event_sequence, event, opts \\ []) do
+    Chronicle.EventSequences.EventLog.prepare(event, merge_opts(event_sequence, opts))
+  end
+
+  @doc """
+  Appends a `prepare/3`d event. See `Chronicle.EventSequences.EventLog.append_prepared/3`.
+  """
+  @spec append_prepared(t(), String.t(), Chronicle.EventSequences.PreparedEvent.t(), keyword()) ::
+          :ok | {:error, term()}
+  def append_prepared(%__MODULE__{} = event_sequence, event_source_id, prepared_event, opts \\ []) do
+    Chronicle.EventSequences.EventLog.append_prepared(
+      event_source_id,
+      prepared_event,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Reads the metadata of events by sequence number. See `Chronicle.EventSequences.Streams.get_metadata/2`.
+  """
+  @spec get_metadata(t(), [non_neg_integer()], keyword()) :: {:ok, [map()]} | {:error, term()}
+  def get_metadata(%__MODULE__{} = event_sequence, sequence_numbers, opts \\ []) do
+    Chronicle.EventSequences.Streams.get_metadata(
+      sequence_numbers,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Reads the metadata of a single event by sequence number. See
+  `Chronicle.EventSequences.Streams.get_metadata_at/2`.
+  """
+  @spec get_metadata_at(t(), non_neg_integer(), keyword()) :: {:ok, map()} | {:error, term()}
+  def get_metadata_at(%__MODULE__{} = event_sequence, sequence_number, opts \\ []) do
+    Chronicle.EventSequences.Streams.get_metadata_at(
+      sequence_number,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Verifies that `event` is what was stored at `sequence_number`. See
+  `Chronicle.EventSequences.Streams.verify_content/3`.
+  """
+  @spec verify_content(
+          t(),
+          non_neg_integer(),
+          struct() | Chronicle.EventSequences.PreparedEvent.t(),
+          keyword()
+        ) ::
+          {:ok, :equal | :different | :unavailable} | {:error, term()}
+  def verify_content(
+        %__MODULE__{} = event_sequence,
+        sequence_number,
+        event_or_prepared,
+        opts \\ []
+      ) do
+    Chronicle.EventSequences.Streams.verify_content(
+      sequence_number,
+      event_or_prepared,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
   Gets a transactional view of the event sequence that buffers appends in the current unit of work.
   """
   @spec transactional(t()) :: TransactionalEventSequence.t()

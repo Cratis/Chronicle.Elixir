@@ -45,6 +45,7 @@ defmodule Chronicle.EventSequences.EventForEventSourceId do
     :event_source,
     :event_stream,
     :routing,
+    :prepared,
     causation: [],
     identity: nil
   ]
@@ -62,6 +63,7 @@ defmodule Chronicle.EventSequences.EventForEventSourceId do
           event_source: module() | String.t() | nil,
           event_stream: String.t() | nil,
           routing: Chronicle.EventSources.Routing.t() | nil,
+          prepared: %{event_type: struct(), content: String.t()} | nil,
           causation: [CausationEntry.t()],
           identity: Identity.t() | nil
         }
