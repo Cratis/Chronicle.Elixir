@@ -68,6 +68,7 @@ defmodule Chronicle.Connections.Connection do
     ClientCertificate,
     TransportFailureInterceptor,
     ConnectionString,
+    CredentialRegistry,
     DnsResolver,
     LoadBalancer,
     ResponseCrashRedaction,
@@ -181,6 +182,8 @@ defmodule Chronicle.Connections.Connection do
     Process.flag(:trap_exit, true)
     ResponseCrashRedaction.install!()
     connection_string = connection_string_from(options)
+    CredentialRegistry.remember(connection_string.api_key)
+    CredentialRegistry.remember(connection_string.password)
     client_certificate = ClientCertificate.load!(connection_string)
     grpc_options = Keyword.get(options, :grpc_options, [])
     warn_if_insecure(connection_string)
