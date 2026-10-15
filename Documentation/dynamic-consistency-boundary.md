@@ -124,7 +124,7 @@ If either side changed after it was read, the commit is rejected and neither eve
 
 ## Passive reducers (Elixir-only)
 
-The .NET and TypeScript clients refuse a reducer-backed read model outright
+The .NET client refuses a reducer-backed read model outright
 (`DecisionReadRefusalReason.Reducer`). Elixir admits a **passive** reducer
 (`use Chronicle.Reducers.Reducer, active: false`) instead: because a passive reducer's read
 model is never kept warm by an observer, its current value is always folded fresh on the client

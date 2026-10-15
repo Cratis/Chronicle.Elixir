@@ -32,7 +32,7 @@ defmodule Chronicle.ReadModels.DecisionReads do
 
   ## Passive reducers (Elixir-only)
 
-  The .NET and TypeScript clients refuse every reducer-backed read model outright. A read model
+  The .NET client refuses every reducer-backed read model outright. A read model
   produced by a **passive** reducer (`use Chronicle.Reducers.Reducer, active: false`) can be
   decision-read here instead: because a passive reducer is never kept warm by an observer, its
   current value is always folded fresh from `Chronicle.EventSequences.EventLog.get_for_event_source/2`,
