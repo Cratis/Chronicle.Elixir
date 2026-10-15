@@ -42,7 +42,9 @@ defmodule Chronicle.Integration.StartAtTailTest do
   setup_all do
     connection_string = System.fetch_env!("CHRONICLE_INTEGRATION_CONNECTION_STRING")
     prefix = System.get_env("CHRONICLE_INTEGRATION_EVENT_STORE_PREFIX", "startattail-elixir")
-    event_store = "#{prefix}-#{System.system_time(:millisecond)}-#{System.unique_integer([:positive])}"
+
+    event_store =
+      "#{prefix}-#{System.system_time(:millisecond)}-#{System.unique_integer([:positive])}"
 
     # History exists before either reactor has ever been registered.
     {:ok, _} =
