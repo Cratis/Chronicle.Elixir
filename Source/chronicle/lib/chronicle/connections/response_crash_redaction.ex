@@ -4,15 +4,26 @@
 defmodule Chronicle.Connections.ResponseCrashRedaction do
   @moduledoc false
 
-  # grpc 1.0.5 retains the whole request stream, including its channel and
-  # per-call headers, in the Mint response process state. A malformed trailer
-  # can crash that process and OTP logs its state. A primary filter runs before
-  # any Logger handler formats the report, including externally installed ones.
+  # grpc 1.0.5 keeps request headers (the API key and the bearer token) in the state of
+  # several processes: the Mint response process holds the whole stream, the Mint connection
+  # process holds an HTTP/2 connection whose HPACK table stores the `api-key` header, and
+  # `GRPC.Client.Connection` holds the channel. When one of them crashes, OTP reports its
+  # state, last message and stacktrace arguments. A primary filter runs before any Logger
+  # handler formats the event, including externally installed ones, so it covers every
+  # report shape that carries those terms:
+  #
+  #   * `gen_server`, `gen_statem` and `gen_event` terminate reports,
+  #   * `proc_lib` crash reports,
+  #   * supervisor child_terminated, start_error and shutdown reports,
+  #   * plain string and format events, scrubbed for remembered credential values.
   @filter_id :chronicle_mint_response_crash_redaction
 
-  require Logger
+  @report_origins [:gen_server, :gen_statem, :gen_event, :proc_lib, :supervisor]
+  @text_levels [:emergency, :alert, :critical, :error, :warning]
 
-  @redacted :"[redacted: contains a gRPC stream]"
+  alias Chronicle.Connections.CredentialScrubber
+
+  require Logger
 
   # Installing the filter is best effort: failing to install it must not stop the client.
   @spec install!() :: :ok
@@ -36,58 +47,58 @@ defmodule Chronicle.Connections.ResponseCrashRedaction do
 
   @doc false
   def filter(
-        %{msg: {:report, %{label: {:gen_server, :terminate}, state: state}}} = event,
+        %{msg: {:report, %{label: {:gen_server, :terminate}, state: state} = report}} = event,
         _config
       )
       when is_map(state) and is_map_key(state, :grpc_stream) do
     case state.grpc_stream do
       %GRPC.Client.Stream{} ->
-        %{
-          event
-          | msg:
-              {:string,
-               "gRPC Mint response process terminated; crash report suppressed to protect authentication headers"}
-        }
+        notice =
+          "gRPC Mint response process terminated (#{reason_class(report)}); " <>
+            "crash report suppressed to protect authentication headers"
+
+        %{event | msg: {:string, notice}}
 
       _ ->
-        redact_fields(event)
+        scrub_report(event)
     end
   end
 
-  # A crash while handling a message can carry the stream (and its authentication headers)
-  # in the message being handled or in the exit reason, even when the state does not.
-  def filter(%{msg: {:report, %{label: {:gen_server, :terminate}}}} = event, _config),
-    do: redact_fields(event)
+  def filter(%{msg: {:report, %{label: {origin, _}}}} = event, _config)
+      when origin in @report_origins,
+      do: scrub_report(event)
+
+  def filter(%{level: level, msg: {:string, data}} = event, _config)
+      when level in @text_levels do
+    case CredentialScrubber.chardata(data) do
+      ^data -> event
+      scrubbed -> %{event | msg: {:string, scrubbed}}
+    end
+  end
+
+  def filter(%{level: level, msg: {format, args}} = event, _config)
+      when level in @text_levels and is_list(args) do
+    case CredentialScrubber.term(args) do
+      ^args -> event
+      scrubbed -> %{event | msg: {format, scrubbed}}
+    end
+  end
 
   def filter(event, _config), do: event
 
-  defp redact_fields(%{msg: {:report, report}} = event) do
-    redacted =
-      Enum.reduce([:last_message, :reason], report, fn key, acc ->
-        if Map.has_key?(acc, key) and carries_stream?(Map.get(acc, key)),
-          do: Map.put(acc, key, @redacted),
-          else: acc
-      end)
-
-    if redacted == report, do: event, else: %{event | msg: {:report, redacted}}
+  defp scrub_report(%{msg: {:report, report}} = event) do
+    case CredentialScrubber.term(report) do
+      ^report -> event
+      scrubbed -> %{event | msg: {:report, scrubbed}}
+    end
   end
 
-  defp carries_stream?(%GRPC.Client.Stream{}), do: true
-  defp carries_stream?(%GRPC.Channel{headers: headers}) when headers not in [nil, []], do: true
+  # Only the module or atom naming the failure is printed, never data from the report.
+  defp reason_class(%{reason: reason}), do: class(reason)
+  defp reason_class(_report), do: "unknown reason"
 
-  defp carries_stream?(%_{} = struct), do: struct |> Map.from_struct() |> carries_stream?()
-  defp carries_stream?(map) when is_map(map), do: map |> Map.values() |> carries_stream?()
-
-  defp carries_stream?(tuple) when is_tuple(tuple),
-    do: tuple |> Tuple.to_list() |> carries_stream?()
-
-  defp carries_stream?(list) when is_list(list), do: carries_stream_in_list?(list)
-  defp carries_stream?(_other), do: false
-
-  # Improper lists (from stack traces and iodata) are walked without crashing.
-  defp carries_stream_in_list?([head | tail]),
-    do: carries_stream?(head) or carries_stream_in_list?(tail)
-
-  defp carries_stream_in_list?([]), do: false
-  defp carries_stream_in_list?(improper), do: carries_stream?(improper)
+  defp class(%{__struct__: module}), do: inspect(module)
+  defp class({reason, _detail}), do: class(reason)
+  defp class(reason) when is_atom(reason), do: inspect(reason)
+  defp class(_reason), do: "unknown reason"
 end

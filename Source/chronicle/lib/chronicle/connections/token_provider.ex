@@ -22,7 +22,7 @@ defmodule Chronicle.Connections.TokenProvider do
 
   require Logger
 
-  alias Chronicle.Connections.{Auth, ConnectionString, Status}
+  alias Chronicle.Connections.{Auth, ConnectionString, CredentialRegistry, Status}
 
   # Refresh once the token has less than this many milliseconds left.
   @refresh_margin 60_000
@@ -141,6 +141,7 @@ defmodule Chronicle.Connections.TokenProvider do
   defp fetch(state) do
     case state.fetch_fun.(state.connection_string) do
       {:ok, {token, expires_in}} ->
+        CredentialRegistry.remember(token)
         lifetime = (expires_in || @default_expires_in) * 1_000
         %{state | token: token, expires_at: now_ms() + lifetime, last_failed_fetch: nil}
 
