@@ -28,6 +28,9 @@ defmodule Chronicle.Transactions.UnitOfWork do
 
   @doc """
   Begins a new unit of work and makes it current for the calling process.
+
+  The caller owns the unit of work: complete it with `commit/1` or `rollback/1`, and stop its
+  process with `Agent.stop/1` when done. `decide/2` and `with_unit_of_work/2` do both for you.
   """
   @spec begin(keyword()) :: t()
   def begin(opts \\ []), do: UnitOfWorkManager.begin(opts)
@@ -172,6 +175,9 @@ defmodule Chronicle.Transactions.UnitOfWork do
 
   @doc """
   Commits the buffered events.
+
+  When the commit itself fails (`{:error, reason}`, for example when the kernel is unreachable),
+  the unit of work stays open and current: retry `commit/1`, or call `rollback/1`.
   """
   @spec commit(t()) :: :ok | {:error, term()}
   def commit(unit_of_work) do
@@ -232,7 +238,9 @@ defmodule Chronicle.Transactions.UnitOfWork do
 
   @doc """
   Runs a function inside a unit of work and commits it if the function succeeds.
-  Rolls the unit of work back if the function raises.
+  Rolls the unit of work back if the function raises. The function's return value is returned
+  as-is and committed whatever it is. When this returns, the unit of work is completed and its
+  process stopped.
   """
   @spec with_unit_of_work((t() -> result), keyword()) :: result when result: any()
   def with_unit_of_work(fun, opts \\ []) when is_function(fun, 1) do
@@ -262,6 +270,8 @@ defmodule Chronicle.Transactions.UnitOfWork do
         end
 
         reraise error, __STACKTRACE__
+    after
+      release(unit_of_work)
     end
   end
 
@@ -271,8 +281,13 @@ defmodule Chronicle.Transactions.UnitOfWork do
   Unlike `with_unit_of_work/2`, a conflict never raises: when the function enrolled at least one
   decision read (`Chronicle.ReadModels.DecisionReads.get/3`) and the commit is rejected because
   one of them is no longer current, this returns `{:error, %Chronicle.ReadModels.DecisionConflict{}}`
-  instead. Any other commit failure is returned as `{:error, reason}`. The unit of work is rolled
-  back, and the error re-raised, if `fun` itself raises.
+  instead. Any other commit failure is returned as `{:error, reason}`, after rolling the unit of
+  work back so later appends from the process are not buffered into it.
+
+  Returning `{:error, reason}` from `fun` rejects the decision: the unit of work is rolled back,
+  nothing is written, and `{:error, reason}` is returned as-is. The unit of work is rolled back,
+  and the error re-raised, if `fun` itself raises. When `decide/2` returns, its unit of work is
+  completed and its process stopped, so don't keep the unit of work beyond `fun`.
 
       Chronicle.decide(fn _unit_of_work ->
         {:ok, read} = Chronicle.ReadModels.DecisionReads.get(MyApp.ReadModels.Seat, "seat-5")
@@ -284,21 +299,13 @@ defmodule Chronicle.Transactions.UnitOfWork do
     unit_of_work = begin(opts)
 
     try do
-      result = fun.(unit_of_work)
+      case fun.(unit_of_work) do
+        {:error, _reason} = rejected ->
+          rollback(unit_of_work)
+          rejected
 
-      case commit(unit_of_work) do
-        :ok ->
-          {:ok, result}
-
-        {:error, {:concurrency_violations, violations}} ->
-          if has_decision_reads?(unit_of_work) do
-            {:error, %DecisionConflict{violations: violations}}
-          else
-            {:error, {:concurrency_violations, violations}}
-          end
-
-        {:error, reason} ->
-          {:error, reason}
+        result ->
+          commit_decision(unit_of_work, result)
       end
     rescue
       error ->
@@ -307,7 +314,44 @@ defmodule Chronicle.Transactions.UnitOfWork do
         end
 
         reraise error, __STACKTRACE__
+    after
+      release(unit_of_work)
     end
+  end
+
+  defp commit_decision(unit_of_work, result) do
+    case commit(unit_of_work) do
+      :ok ->
+        {:ok, result}
+
+      {:error, {:concurrency_violations, violations}} ->
+        if has_decision_reads?(unit_of_work) do
+          {:error, %DecisionConflict{violations: violations}}
+        else
+          {:error, {:concurrency_violations, violations}}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # `decide/2` and `with_unit_of_work/2` own the unit of work they begin: once the call returns,
+  # it is completed (rolled back if nothing else completed it, which also stops it being current)
+  # and its process is stopped, so a long-lived caller does not accumulate one per call.
+  defp release(unit_of_work) do
+    if Process.alive?(unit_of_work) do
+      if not is_completed?(unit_of_work) do
+        rollback(unit_of_work)
+      end
+
+      Process.unlink(unit_of_work)
+      Agent.stop(unit_of_work)
+    end
+
+    :ok
+  catch
+    :exit, _reason -> :ok
   end
 
   @doc false
