@@ -105,6 +105,24 @@ def handle_replay(%OrderPlaced{} = event, _context), do: update_projection_cache
 Excluding replays is not exactly-once delivery: recovering a failed partition can deliver an event
 again as an ordinary observation. Guard side effects with the delivery id below.
 
+## Starting at the tail
+
+A new reactor catches up from the very beginning of the event sequence, as ordinary observation,
+so a reactor whose handlers cause side effects acts on every historical event the moment it is
+deployed. `once_only` does not prevent that, because it only excludes replay. Set
+`start_at_tail: true` and the first time Chronicle sees the reactor it begins at the tail of the
+event sequence and observes only what is appended afterwards:
+
+```elixir
+use Chronicle.Reactors.Reactor, start_at_tail: true
+```
+
+The option only affects the first registration: a reactor that already has a position keeps it, so
+it never skips events after a restart. Changing the module name without pinning `:id` makes a new
+reactor, which starts at the tail again. An explicit replay still replays from the beginning. Both
+the Chronicle server and this client must support it; a server that predates it ignores the request
+and the reactor catches up from the beginning.
+
 ## Pinned generation delivery
 
 By default (`:compatibility`), Chronicle upgrades every event to the handled module's own

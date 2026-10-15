@@ -48,8 +48,26 @@ defmodule Chronicle.Reactors.Reactor do
       (`IsNotReplayable: true`), so the kernel never replays it - use it for side effects such as
       sending an email. `once_only: [MyApp.Events.OrderShipped]` keeps the reactor replayable but
       skips the handlers of the listed events while replaying.
+    * `:start_at_tail` — `true` makes the reactor begin at the tail of the event sequence the
+      first time Chronicle sees it, so it observes only what is appended from then on instead of
+      catching up on all history (see "Starting at the tail" below). Defaults to `false`.
     * `:generation_delivery` — `:compatibility` (default) or `:pinned`. See
       "Pinned generation delivery" below.
+
+  ## Starting at the tail
+
+  A new reactor catches up from the very beginning of the event sequence, as ordinary
+  observation, so a reactor whose handlers cause side effects - sending an email, calling an
+  external system - acts on every historical event the moment it is deployed. `once_only`
+  does not prevent that, because it only excludes replay. `start_at_tail: true` does.
+
+      use Chronicle.Reactors.Reactor, start_at_tail: true
+
+  It only affects the first registration: a reactor Chronicle already holds a position for
+  keeps it, so the option never skips events after a restart. Changing the module name without
+  pinning `:id` makes a new reactor, which starts at the tail again. An explicit replay still
+  replays from the beginning. Both the Chronicle server and this client must support it; a server
+  that predates it ignores the request and the reactor catches up from the beginning.
 
   ## Pinned generation delivery
 
@@ -180,6 +198,7 @@ defmodule Chronicle.Reactors.Reactor do
                                      do: :explicit,
                                      else: :module_name
       @chronicle_reactor_once_only Keyword.get(opts, :once_only, false)
+      @chronicle_reactor_start_at_tail Keyword.get(opts, :start_at_tail, false) == true
       @chronicle_reactor_middleware Keyword.get(opts, :middleware, [])
       @chronicle_reactor_generation_delivery Keyword.get(opts, :generation_delivery)
 
@@ -194,6 +213,7 @@ defmodule Chronicle.Reactors.Reactor do
       def __chronicle_reactor__(:id_source), do: @chronicle_reactor_id_source
       def __chronicle_reactor__(:handles), do: @handles |> Enum.reverse()
       def __chronicle_reactor__(:once_only), do: @chronicle_reactor_once_only
+      def __chronicle_reactor__(:start_at_tail), do: @chronicle_reactor_start_at_tail
       def __chronicle_reactor__(:middleware), do: @chronicle_reactor_middleware
 
       def __chronicle_reactor__(:generation_delivery),

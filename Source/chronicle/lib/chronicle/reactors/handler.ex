@@ -233,6 +233,7 @@ defmodule Chronicle.Reactors.Handler do
                   EventTypes: event_types,
                   IsReplayable: not once_only_class?(state.module),
                   IsNotReplayable: once_only_class?(state.module),
+                  StartAtTail: state.module.__chronicle_reactor__(:start_at_tail),
                   Tags: [],
                   Filters: struct(ObserverFilters),
                   GenerationDelivery: encode_generation_delivery(state.generation_delivery)
