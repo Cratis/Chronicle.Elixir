@@ -45,6 +45,14 @@ case Chronicle.decide(fn _unit_of_work ->
 end
 ```
 
+To reject a decision, return `{:error, reason}` from the function. `Chronicle.decide/2` then
+rolls the unit of work back, so nothing the function appended is written, even an append made
+before the rejection, and returns `{:error, reason}` as-is. Any other return value is committed.
+A commit that fails for another reason, such as an unreachable kernel, also rolls back and
+returns `{:error, reason}`. Either way, once `Chronicle.decide/2` returns, its unit of work is
+completed and its process stopped, so it is safe to call from a long-lived process such as a
+GenServer or a Phoenix connection.
+
 Call `get/2` only from inside `Chronicle.decide/2` (or `Chronicle.Transactions.UnitOfWork.with_unit_of_work/2`)
 — it enrolls the read on the current unit of work. Call `get_detached/2` to fold the same way
 without committing anything against it:
@@ -120,7 +128,9 @@ Chronicle.decide(fn _unit_of_work ->
 end)
 ```
 
-If either side changed after it was read, the commit is rejected and neither event is appended.
+The `{:error, :course_is_full}` style rejections come back from `Chronicle.decide/2` unwrapped,
+so match `{:error, :course_is_full}` rather than `{:ok, {:error, :course_is_full}}`. If either
+side changed after it was read, the commit is rejected and neither event is appended.
 
 ## Passive reducers (Elixir-only)
 
