@@ -188,5 +188,5 @@ jobs:
     steps:
       - name: Report that nothing was published
         run: |
-          echo "::error::Nothing was published and no release was cut (reason: ${{ needs.release.outputs.reason }}). For 'no-label', add exactly one of major, minor or patch to the merged pull request and re-run this workflow - see verify-semver-label, which is meant to catch this before the merge."
+          echo "::error::Nothing was published and no release was cut (reason: ${{ needs.release.outputs.reason }}). For 'no-label', add exactly one of major, minor or patch to the merged pull request and re-run this workflow - see the Verify Pull Request Policy check, which is meant to catch this before the merge."
           exit 1
