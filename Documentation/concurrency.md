@@ -1,6 +1,7 @@
 ---
 title: Optimistic concurrency from Elixir
 description: Guard Elixir appends with an expected sequence number and handle a conflict before deciding whether to retry.
+sharedTopicBridge: true
 ---
 
 Two requests can read the same account state and each decide that a withdrawal is allowed. If both append without a concurrency check, neither decision accounts for the other withdrawal. An optimistic concurrency scope lets you append only if the events your decision depends on have not changed.
