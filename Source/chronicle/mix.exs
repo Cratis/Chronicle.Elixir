@@ -24,7 +24,8 @@ defmodule Chronicle.MixProject do
       # is silently ignored and encoding raises Protocol.UndefinedError.
       consolidate_protocols: Mix.env() != :test,
       deps: deps(),
-      description: "Idiomatic Elixir client for Cratis Chronicle, the open-source event-sourcing database and runtime",
+      description:
+        "Idiomatic Elixir client for Cratis Chronicle, the open-source event-sourcing database and runtime",
       package: package(),
       source_url: @source_url,
       homepage_url: "https://www.cratis.io/chronicle/clients/elixir/",
