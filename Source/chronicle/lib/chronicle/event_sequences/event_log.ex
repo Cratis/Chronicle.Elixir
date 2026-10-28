@@ -77,6 +77,9 @@ defmodule Chronicle.EventSequences.EventLog do
   @event_log_id "event-log"
   @unavailable_sequence_number 18_446_744_073_709_551_615
   @default_wait_for_completion_timeout 5_000
+  # Large batches can take longer than gRPC's 10 s unary default; a deadline that fires after
+  # the kernel has committed makes the caller retry and duplicate events.
+  @default_append_timeout 60_000
 
   @doc """
   Appends a single event to the event log for the given event source.
@@ -86,6 +89,7 @@ defmodule Chronicle.EventSequences.EventLog do
     * `:client` — the client name (default: `Chronicle.Client`)
     * `:namespace` — overrides the client's default namespace
     * `:event_sequence_id` — event sequence id (default: `"event-log"`)
+    * `:timeout` — gRPC deadline in milliseconds or `:infinity` (default: `60_000`)
     * `:event_source_type` — explicit event source type, otherwise resolved by the kernel
     * `:event_stream_type` — explicit event stream type, otherwise resolved by the kernel
     * `:event_stream_id` — explicit event stream ID, otherwise resolved by the kernel
@@ -227,7 +231,9 @@ defmodule Chronicle.EventSequences.EventLog do
             opts
           )
 
-        case EventSequences.Stub.append_many_for_event_sources(channel, request) do
+        case EventSequences.Stub.append_many_for_event_sources(channel, request,
+               timeout: append_timeout(opts)
+             ) do
           {:ok, envelope} ->
             with {:ok, response} <- unwrap_append_response(envelope, config) do
               result_for(response, opts)
@@ -265,6 +271,7 @@ defmodule Chronicle.EventSequences.EventLog do
     * `:client` — the client name (default: `Chronicle.Client`)
     * `:namespace` — overrides the client's default namespace
     * `:event_sequence_id` — event sequence id (default: `"event-log"`)
+    * `:timeout` — gRPC deadline in milliseconds or `:infinity` (default: `60_000`)
   """
   @spec append_many_for_event_sources([EventForEventSourceId.t()], keyword()) ::
           :ok | {:error, term()}
@@ -310,7 +317,9 @@ defmodule Chronicle.EventSequences.EventLog do
               opts
             )
 
-          case EventSequences.Stub.append_many_for_event_sources(channel, request) do
+          case EventSequences.Stub.append_many_for_event_sources(channel, request,
+                 timeout: append_timeout(opts)
+               ) do
             {:ok, envelope} ->
               with {:ok, response} <- unwrap_append_response(envelope, config) do
                 normalize_response(response)
@@ -477,8 +486,12 @@ defmodule Chronicle.EventSequences.EventLog do
     )
   end
 
+  defp append_timeout(opts), do: Keyword.get(opts, :timeout, @default_append_timeout)
+
   defp commit_request(channel, request, config) do
-    case EventSequences.Stub.append_many_for_event_sources(channel, request) do
+    case EventSequences.Stub.append_many_for_event_sources(channel, request,
+           timeout: @default_append_timeout
+         ) do
       {:ok, envelope} ->
         with {:ok, response} <- unwrap_append_response(envelope, config) do
           response_data = if is_map(response), do: response, else: %{}
@@ -1061,7 +1074,7 @@ defmodule Chronicle.EventSequences.EventLog do
         EventSource: event_source_name(event_to_append)
       )
 
-    case EventSequences.Stub.append(channel, request) do
+    case EventSequences.Stub.append(channel, request, timeout: append_timeout(opts)) do
       {:ok, envelope} -> unwrap_append_response(envelope, config)
       {:error, reason} -> {:error, reason}
     end
@@ -1213,7 +1226,9 @@ defmodule Chronicle.EventSequences.EventLog do
                 opts
               )
 
-            case EventSequences.Stub.append_many_for_event_sources(channel, request) do
+            case EventSequences.Stub.append_many_for_event_sources(channel, request,
+                   timeout: append_timeout(opts)
+                 ) do
               {:ok, envelope} ->
                 with {:ok, response} <- unwrap_append_response(envelope, config) do
                   normalize_response(response)
