@@ -33,7 +33,13 @@ defmodule Chronicle.ExternalServices.Definition do
   @type authorization ::
           {:basic, %{username: String.t(), password: String.t()}}
           | {:bearer, %{token: String.t()}}
-          | {:oauth, %{authority: String.t(), client_id: String.t(), client_secret: String.t()}}
+          | {:oauth,
+             %{
+               required(:authority) => String.t(),
+               required(:client_id) => String.t(),
+               required(:client_secret) => String.t(),
+               optional(:scope) => String.t()
+             }}
 
   @type t :: %__MODULE__{
           id: String.t(),
@@ -105,14 +111,16 @@ defmodule Chronicle.ExternalServices.Definition do
   end
 
   defp authorization_to_proto(
-         {:oauth, %{authority: authority, client_id: client_id, client_secret: client_secret}}
+         {:oauth,
+          %{authority: authority, client_id: client_id, client_secret: client_secret} = oauth}
        ) do
     struct(OneOf_BasicAuthorization_BearerTokenAuthorization_OAuthAuthorization,
       Value2:
         struct(OAuthAuthorization,
           Authority: authority,
           ClientId: client_id,
-          ClientSecret: client_secret
+          ClientSecret: client_secret,
+          Scope: Map.get(oauth, :scope) || ""
         )
     )
   end

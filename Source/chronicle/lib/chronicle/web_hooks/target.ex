@@ -11,7 +11,13 @@ defmodule Chronicle.WebHooks.Target do
   @type authorization ::
           {:basic, %{username: String.t(), password: String.t()}}
           | {:bearer, %{token: String.t()}}
-          | {:oauth, %{authority: String.t(), client_id: String.t(), client_secret: String.t()}}
+          | {:oauth,
+             %{
+               required(:authority) => String.t(),
+               required(:client_id) => String.t(),
+               required(:client_secret) => String.t(),
+               optional(:scope) => String.t()
+             }}
           | nil
 
   @type t :: %__MODULE__{

@@ -77,6 +77,36 @@ defmodule Chronicle.WebHooksTest do
     end
   end
 
+  describe "Definition.to_proto/1 OAuth scope" do
+    defp oauth_proto(builder) do
+      proto =
+        builder
+        |> DefinitionBuilder.build("webhook", "https://example.com")
+        |> Definition.to_proto()
+
+      proto."Target"."Authorization"."Value2"
+    end
+
+    test "forwards the scope when given" do
+      oauth =
+        DefinitionBuilder.new()
+        |> DefinitionBuilder.with_oauth("https://auth", "id", "secret", "read write")
+        |> oauth_proto()
+
+      assert oauth."Scope" == "read write"
+      assert oauth."ClientId" == "id"
+    end
+
+    test "leaves the scope empty when omitted" do
+      oauth =
+        DefinitionBuilder.new()
+        |> DefinitionBuilder.with_oauth("https://auth", "id", "secret")
+        |> oauth_proto()
+
+      assert oauth."Scope" == ""
+    end
+  end
+
   describe "Definition.to_proto/1" do
     test "sends IsNotReplayable alongside IsReplayable when not replayable" do
       proto =

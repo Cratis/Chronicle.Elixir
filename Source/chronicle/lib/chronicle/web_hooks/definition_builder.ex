@@ -63,15 +63,15 @@ defmodule Chronicle.WebHooks.DefinitionBuilder do
   end
 
   @doc """
-  Uses OAuth client credentials authentication.
+  Uses OAuth client credentials authentication. The optional `scope` is requested from the
+  authority; when omitted no scope is sent.
   """
-  @spec with_oauth(t(), String.t(), String.t(), String.t()) :: t()
-  def with_oauth(%__MODULE__{} = builder, authority, client_id, client_secret) do
-    %{
-      builder
-      | authorization:
-          {:oauth, %{authority: authority, client_id: client_id, client_secret: client_secret}}
-    }
+  @spec with_oauth(t(), String.t(), String.t(), String.t(), String.t() | nil) :: t()
+  def with_oauth(%__MODULE__{} = builder, authority, client_id, client_secret, scope \\ nil) do
+    oauth = %{authority: authority, client_id: client_id, client_secret: client_secret}
+    oauth = if scope in [nil, ""], do: oauth, else: Map.put(oauth, :scope, scope)
+
+    %{builder | authorization: {:oauth, oauth}}
   end
 
   @doc """
