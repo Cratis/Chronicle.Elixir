@@ -77,11 +77,13 @@ builder
 |> DefinitionBuilder.with_event_type(MyApp.Events.AccountOpened)
 |> DefinitionBuilder.with_basic_auth("user", "password")
 |> DefinitionBuilder.with_bearer_token("token")
-|> DefinitionBuilder.with_oauth("https://login.example.com", "client-id", "client-secret")
+|> DefinitionBuilder.with_oauth("https://login.example.com", "client-id", "client-secret", "api.read")
 |> DefinitionBuilder.with_header("x-source", "my-app")
 |> DefinitionBuilder.not_replayable()
 |> DefinitionBuilder.not_active()
 ```
+
+The scope argument of `with_oauth/5` is optional. Omit it and no scope is requested from the authority. It applies to the outbound OAuth client-credentials call only, not to the client's own connection to the kernel.
 
 If you don't select any event types, the webhook uses the event types the client was given in `:event_types` or discovered in your application. When that list is empty, for example with `discover: false` and no `:event_types`, it falls back to every event type module loaded in the VM. Select event types explicitly to control exactly what the webhook receives.
 

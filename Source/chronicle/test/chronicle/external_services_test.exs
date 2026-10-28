@@ -99,6 +99,30 @@ defmodule Chronicle.ExternalServicesTest do
     end
   end
 
+  describe "Definition.to_proto/1 OAuth scope" do
+    defp oauth_proto(scope_args) do
+      DefinitionBuilder.new()
+      |> DefinitionBuilder.http("https://example.com")
+      |> then(
+        &apply(DefinitionBuilder, :with_oauth, [&1, "https://auth", "id", "secret" | scope_args])
+      )
+      |> DefinitionBuilder.build("svc", "svc")
+      |> Definition.to_proto()
+      |> Map.get(:Endpoint)
+      |> Map.get(:Http)
+      |> Map.get(:Authorization)
+      |> Map.get(:Value2)
+    end
+
+    test "forwards the scope when given" do
+      assert Map.get(oauth_proto(["read write"]), :Scope) == "read write"
+    end
+
+    test "leaves the scope empty when omitted" do
+      assert Map.get(oauth_proto([]), :Scope) == ""
+    end
+  end
+
   describe "Definition.to_proto/1" do
     test "converts an HTTP definition with bearer auth" do
       proto =

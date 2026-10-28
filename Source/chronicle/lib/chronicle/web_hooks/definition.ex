@@ -112,14 +112,16 @@ defmodule Chronicle.WebHooks.Definition do
   end
 
   defp authorization_to_proto(
-         {:oauth, %{authority: authority, client_id: client_id, client_secret: client_secret}}
+         {:oauth,
+          %{authority: authority, client_id: client_id, client_secret: client_secret} = oauth}
        ) do
     struct(OneOf_BasicAuthorization_BearerTokenAuthorization_OAuthAuthorization,
       Value2:
         struct(OAuthAuthorization,
           Authority: authority,
           ClientId: client_id,
-          ClientSecret: client_secret
+          ClientSecret: client_secret,
+          Scope: Map.get(oauth, :scope) || ""
         )
     )
   end
