@@ -52,7 +52,32 @@ defmodule Chronicle.Reactors.Dispatch do
               State: encode_observation_state(observation_state),
               LastSuccessfulObservation: last_seq,
               ExceptionMessages: exception_messages,
-              ExceptionStackTrace: stack_trace
+              ExceptionStackTrace: stack_trace,
+              # Echoed so the kernel completes exactly this delivery, not just the oldest one
+              # pending for the partition.
+              DeliveryId: Map.get(events_to_observe, :DeliveryId, 0) || 0
+            )
+        )
+    )
+  end
+
+  @doc """
+  Builds a failed `ReactorMessage` result for a batch that is answered without being
+  handled, because the kernel has already stopped waiting for it.
+  """
+  @spec expired_result(map(), String.t()) :: struct()
+  def expired_result(events_to_observe, reason) do
+    struct(ReactorMessage,
+      Content:
+        struct(OneOf,
+          Value1:
+            struct(ReactorResult,
+              Partition: Map.get(events_to_observe, :Partition, ""),
+              State: encode_observation_state(:failed),
+              LastSuccessfulObservation: 0,
+              ExceptionMessages: [reason],
+              ExceptionStackTrace: "",
+              DeliveryId: Map.get(events_to_observe, :DeliveryId, 0) || 0
             )
         )
     )

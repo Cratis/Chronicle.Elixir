@@ -499,12 +499,12 @@ defmodule Chronicle.Reactors.HandlerTest do
 
       ExUnit.CaptureLog.capture_log(fn ->
         send(handler, {:event_batch, %{Partition: "account-1", Events: []}})
-        _ = :sys.get_state(handler)
+        # The stream is torn down and reopened after the reconnect delay.
+        assert_receive {:failing_handler_established, "conn-1"}, 3_000
       end)
 
       refute_received {:DOWN, ^monitor, :process, ^handler, _}
-      assert :sys.get_state(handler).stream == nil
-      assert_receive {:failing_handler_established, "conn-1"}, 3_000
+      assert Process.alive?(handler)
     end
   end
 end
