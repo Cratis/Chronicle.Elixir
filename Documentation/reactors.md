@@ -174,7 +174,7 @@ A reactor handles batches for different event sources at the same time, up to 16
 
 Because of this, `handle/2` can run in several processes at once. Keep shared state in something built for concurrent access, such as a database, an ETS table or a `GenServer`, and not in the process dictionary or module attributes. Tune the limit with the `:max_concurrent_partitions` client option. Set it to `1` to handle every batch one after another, as versions before 3.16 did. Reducers follow the same rules, per read model instance.
 
-Each batch Chronicle sends also says how long Chronicle waits for its result. If a batch only gets its turn after that time, Chronicle has already given up on it and will send the events again, so the client answers it as failed right away instead of handling it. The `[:chronicle, :observer, :batch, :expired]` telemetry event reports when that happens. A Chronicle server that predates this (before 19.113) sends no deadline, and every batch is handled.
+Each batch Chronicle sends also says how long Chronicle waits for its result. If a batch only gets its turn after that time, Chronicle has already given up on it and will send the events again, so the client answers it as failed right away instead of handling it. The `[:chronicle, :observer, :batch, :expired]` telemetry event reports when that happens. A Chronicle server before 19.114 sends no deadline, and every batch is handled.
 
 ## Delivery identity
 
