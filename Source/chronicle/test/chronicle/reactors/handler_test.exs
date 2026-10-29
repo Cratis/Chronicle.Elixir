@@ -471,7 +471,7 @@ defmodule Chronicle.Reactors.HandlerTest do
       test = self()
 
       establish_fun = fn _state, connection_id ->
-        send(test, {:established, connection_id})
+        send(test, {:failing_handler_established, connection_id})
         {:ok, :fake_stream, nil}
       end
 
@@ -490,7 +490,7 @@ defmodule Chronicle.Reactors.HandlerTest do
 
       Lifecycle.connected(lifecycle, "conn-1")
       Lifecycle.registered(lifecycle)
-      assert_receive {:established, "conn-1"}, 1_000
+      assert_receive {:failing_handler_established, "conn-1"}, 1_000
       %{handler: handler}
     end
 
@@ -504,7 +504,7 @@ defmodule Chronicle.Reactors.HandlerTest do
 
       refute_received {:DOWN, ^monitor, :process, ^handler, _}
       assert :sys.get_state(handler).stream == nil
-      assert_receive {:established, "conn-1"}, 3_000
+      assert_receive {:failing_handler_established, "conn-1"}, 3_000
     end
   end
 end
