@@ -109,6 +109,7 @@ defmodule Chronicle.Connections.Connection do
           | {:disconnect_fun, (term() -> any())}
           | {:name, GenServer.name()}
           | {:auto_connect, boolean()}
+          | {:dedicated_session_channel, boolean()}
 
   @doc """
   Starts a Chronicle connection process linked to the current process.
@@ -143,6 +144,23 @@ defmodule Chronicle.Connections.Connection do
   @spec channel(GenServer.server()) :: {:ok, term()} | {:error, :not_connected}
   def channel(connection) do
     GenServer.call(connection, :channel)
+  end
+
+  @doc """
+  Returns `{:ok, channel}` for the session (the Connect stream and its keepalive
+  answers) when connected, or `{:error, :not_connected}`.
+
+  With `dedicated_session_channel: true` this is a second HTTP/2 connection to
+  the same server as `channel/1`, dialed and torn down together with it. Large
+  observer results queued on the main connection then cannot hold back the
+  keepalive answers: the gRPC adapter queues request bodies for a whole
+  connection in one queue, so a send waiting on flow control delays every send
+  behind it. Without the option, or when the second dial fails, it is the main
+  channel.
+  """
+  @spec session_channel(GenServer.server()) :: {:ok, term()} | {:error, :not_connected}
+  def session_channel(connection) do
+    GenServer.call(connection, :session_channel)
   end
 
   @doc false
@@ -215,6 +233,8 @@ defmodule Chronicle.Connections.Connection do
       client_certificate: client_certificate,
       token_provider: start_token_provider(connection_string, client_certificate),
       channel: nil,
+      session_channel: nil,
+      dedicated_session_channel?: Keyword.get(options, :dedicated_session_channel, false),
       connected?: false,
       append_compatible?: false,
       append_check: nil,
@@ -255,7 +275,8 @@ defmodule Chronicle.Connections.Connection do
       client_certificate: :redacted,
       grpc_options: :redacted,
       append_check: if(state.append_check, do: :in_progress, else: nil),
-      channel: if(state.channel, do: :connected, else: nil)
+      channel: if(state.channel, do: :connected, else: nil),
+      session_channel: if(state.session_channel, do: :connected, else: nil)
     )
   end
 
@@ -281,6 +302,14 @@ defmodule Chronicle.Connections.Connection do
 
   def handle_call(:channel, _from, %{channel: channel, connected?: true} = state) do
     {:reply, {:ok, channel}, state}
+  end
+
+  def handle_call(:session_channel, _from, %{channel: channel, connected?: true} = state) do
+    {:reply, {:ok, state.session_channel || channel}, state}
+  end
+
+  def handle_call(:session_channel, _from, state) do
+    {:reply, {:error, :not_connected}, state}
   end
 
   def handle_call(:channel, _from, state) do
@@ -380,10 +409,10 @@ defmodule Chronicle.Connections.Connection do
   end
 
   def handle_info(
-        {:connect_result, attempt, {:ok, channel}},
+        {:connect_result, attempt, {:ok, channel, session_channel}},
         %{connect_attempt: attempt} = state
       ) do
-    state = succeed_connect(state, channel)
+    state = succeed_connect(state, channel, session_channel)
     send(attempt, {:connect_accepted, self()})
     {:noreply, %{state | connect_attempt: nil}}
   end
@@ -402,8 +431,8 @@ defmodule Chronicle.Connections.Connection do
      })}
   end
 
-  def handle_info({:connect_result, _attempt, {:ok, channel}}, state) do
-    disconnect_orphan(channel, state.disconnect_fun)
+  def handle_info({:connect_result, _attempt, {:ok, channel, session_channel}}, state) do
+    disconnect_orphans(channel, session_channel, state.disconnect_fun)
     {:noreply, state}
   end
 
@@ -511,6 +540,7 @@ defmodule Chronicle.Connections.Connection do
     token_provider = state.token_provider
     client_certificate = state.client_certificate
     disconnect_fun = state.disconnect_fun
+    dedicated_session_channel? = state.dedicated_session_channel?
 
     # Every dial starts from a fresh token: one that was valid for the previous session says
     # nothing about the next (the kernel may have restarted with new signing keys).
@@ -534,19 +564,28 @@ defmodule Chronicle.Connections.Connection do
                 client_certificate
               )
 
-            connect_fun.(target, opts)
+            with {:ok, channel} <- connect_fun.(target, opts) do
+              {:ok, channel,
+               dial_session_channel(
+                 dedicated_session_channel?,
+                 connect_fun,
+                 target,
+                 opts,
+                 channel
+               )}
+            end
           end
 
         send(parent, {:connect_result, self(), result})
 
-        if match?({:ok, _}, result) do
+        if match?({:ok, _, _}, result) do
           receive do
             {:connect_accepted, ^parent} ->
               :ok
 
             {:DOWN, ^owner_monitor, :process, ^parent, _reason} ->
-              {:ok, channel} = result
-              disconnect_orphan(channel, disconnect_fun)
+              {:ok, channel, session_channel} = result
+              disconnect_orphans(channel, session_channel, disconnect_fun)
           end
         end
       end)
@@ -572,7 +611,27 @@ defmodule Chronicle.Connections.Connection do
     {:ok, addresses}
   end
 
-  defp succeed_connect(state, channel) do
+  # A second connection to the server the main channel was dialed to, for the
+  # session. Falls back to sharing the main channel rather than failing the
+  # connect: isolation is a protection, not a requirement.
+  defp dial_session_channel(false, _connect_fun, _target, _opts, channel), do: channel
+
+  defp dial_session_channel(true, connect_fun, target, opts, channel) do
+    case connect_fun.(target, opts) do
+      {:ok, session_channel} ->
+        session_channel
+
+      {:error, reason} ->
+        Logger.warning(
+          "Chronicle could not open a dedicated session connection (#{inspect(reason)}); " <>
+            "the session shares the main connection"
+        )
+
+        channel
+    end
+  end
+
+  defp succeed_connect(state, channel, session_channel) do
     connection_process = connection_process_for(channel)
 
     state
@@ -580,6 +639,7 @@ defmodule Chronicle.Connections.Connection do
     |> cancel_append_check()
     |> Map.merge(%{
       channel: channel,
+      session_channel: session_channel,
       connected?: true,
       append_compatible?: false,
       reconnect_attempt: 0,
@@ -640,11 +700,23 @@ defmodule Chronicle.Connections.Connection do
     :exit, _ -> :ok
   end
 
+  defp disconnect_orphans(channel, channel, disconnect_fun),
+    do: disconnect_orphan(channel, disconnect_fun)
+
+  defp disconnect_orphans(channel, session_channel, disconnect_fun) do
+    disconnect_orphan(session_channel, disconnect_fun)
+    disconnect_orphan(channel, disconnect_fun)
+  end
+
   defp disconnect_channel(%{channel: nil} = state), do: state
 
   defp disconnect_channel(%{channel: channel, disconnect_fun: disconnect_fun} = state) do
     cancel_timer(state.reconnect_timer)
     demonitor(state.connection_monitor)
+
+    if state.session_channel && state.session_channel != channel do
+      disconnect_orphan(state.session_channel, disconnect_fun)
+    end
 
     try do
       disconnect_fun.(channel)
@@ -652,7 +724,7 @@ defmodule Chronicle.Connections.Connection do
       _error -> :ok
     end
 
-    %{state | reconnect_timer: nil, connection_monitor: nil}
+    %{state | reconnect_timer: nil, connection_monitor: nil, session_channel: nil}
   end
 
   defp connection_string_from(options) do

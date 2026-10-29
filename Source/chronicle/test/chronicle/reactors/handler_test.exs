@@ -465,4 +465,46 @@ defmodule Chronicle.Reactors.HandlerTest do
       assert_receive {:partition_replay_end, "account-1"}, 1_000
     end
   end
+
+  describe "sending a result fails" do
+    setup %{lifecycle: lifecycle} do
+      test = self()
+
+      establish_fun = fn _state, connection_id ->
+        send(test, {:failing_handler_established, connection_id})
+        {:ok, :fake_stream, nil}
+      end
+
+      send_fun = fn _stream, _result -> exit({:timeout, {GenServer, :call, []}}) end
+
+      {:ok, handler} =
+        Handler.start_link(
+          module: TestReactor,
+          connection: :unused,
+          event_store: "test",
+          namespace: "Default",
+          lifecycle: lifecycle,
+          establish_fun: establish_fun,
+          send_fun: send_fun
+        )
+
+      Lifecycle.connected(lifecycle, "conn-1")
+      Lifecycle.registered(lifecycle)
+      assert_receive {:failing_handler_established, "conn-1"}, 1_000
+      %{handler: handler}
+    end
+
+    test "keeps the handler running and reopens its stream", %{handler: handler} do
+      monitor = Process.monitor(handler)
+
+      ExUnit.CaptureLog.capture_log(fn ->
+        send(handler, {:event_batch, %{Partition: "account-1", Events: []}})
+        _ = :sys.get_state(handler)
+      end)
+
+      refute_received {:DOWN, ^monitor, :process, ^handler, _}
+      assert :sys.get_state(handler).stream == nil
+      assert_receive {:failing_handler_established, "conn-1"}, 3_000
+    end
+  end
 end

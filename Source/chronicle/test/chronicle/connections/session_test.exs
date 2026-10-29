@@ -16,6 +16,7 @@ defmodule Chronicle.Connections.SessionTest.FakeConnection do
 
   @impl true
   def handle_call(:channel, _from, test_pid), do: {:reply, {:ok, %{fake: true}}, test_pid}
+  def handle_call(:session_channel, _from, test_pid), do: {:reply, {:ok, %{fake: true}}, test_pid}
 
   @impl true
   def handle_cast(:reconnect, test_pid) do
@@ -93,6 +94,43 @@ defmodule Chronicle.Connections.SessionTest do
 
     assert_receive {:chronicle_lifecycle, :disconnected, _}, 1_000
     assert Lifecycle.phase(lifecycle) == :disconnected
+  end
+
+  test "keeps the session within a configured keepalive timeout", %{lifecycle: lifecycle} do
+    {:ok, session} =
+      Session.start_link(
+        connection: :unused,
+        lifecycle: lifecycle,
+        auto_connect: false,
+        keepalive_timeout: 60_000
+      )
+
+    send(session, :keepalive_received)
+    assert_receive {:chronicle_lifecycle, :connected, _}, 1_000
+
+    # Longer than the 5 second default, shorter than the configured timeout.
+    backdate_last_keepalive(session, 30_000)
+    send(session, :watchdog)
+
+    refute_receive {:chronicle_lifecycle, :disconnected, _}, 200
+  end
+
+  test "drops the session after a configured keepalive timeout", %{lifecycle: lifecycle} do
+    {:ok, session} =
+      Session.start_link(
+        connection: :unused,
+        lifecycle: lifecycle,
+        auto_connect: false,
+        keepalive_timeout: 1_000
+      )
+
+    send(session, :keepalive_received)
+    assert_receive {:chronicle_lifecycle, :connected, _}, 1_000
+
+    backdate_last_keepalive(session, 2_000)
+    send(session, :watchdog)
+
+    assert_receive {:chronicle_lifecycle, :disconnected, _}, 1_000
   end
 
   test "keeps the session while keepalives keep arriving", %{

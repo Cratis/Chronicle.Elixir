@@ -15,7 +15,7 @@ defmodule Chronicle.Connections.Session do
   #
   # Liveness is a two-way contract. `Chronicle.Connections.KeepAlive` answers
   # every keepalive the kernel pushes, and the watchdog here treats a gap longer
-  # than @keepalive_timeout as a dead session. Both halves are needed: the kernel
+  # than the keepalive timeout as a dead session. Both halves are needed: the kernel
   # does not close the Connect stream when its own watchdog evicts us, so waiting
   # for a stream error alone leaves a half-open session that looks connected
   # forever while observers receive nothing.
@@ -42,9 +42,12 @@ defmodule Chronicle.Connections.Session do
   @retry_delay 3_000
 
   # Mirrors the C# client: the kernel emits a keepalive every second and evicts
-  # any client whose LastSeen falls more than 5 seconds behind.
+  # any client whose LastSeen falls more than 5 seconds behind
+  # (connectedClients.staleThresholdSeconds). The client's own timeout is
+  # configurable (the `:keepalive_timeout` client option) and belongs together
+  # with that kernel setting.
   @keepalive_poll_interval 1_000
-  @keepalive_timeout 5_000
+  @default_keepalive_timeout 5_000
 
   def start_link(opts) do
     case name_for(opts[:client_name]) do
@@ -97,6 +100,7 @@ defmodule Chronicle.Connections.Session do
       connection_id: generate_connection_id(),
       keepalive_task: nil,
       keepalive_fun: Keyword.get(opts, :keepalive_fun, &KeepAlive.answer/2),
+      keepalive_timeout: Keyword.get(opts, :keepalive_timeout) || @default_keepalive_timeout,
       last_keepalive: nil,
       watchdog_timer: nil,
       reconnect_timer: nil,
@@ -120,7 +124,9 @@ defmodule Chronicle.Connections.Session do
   def handle_info(:connect, state) do
     state = %{state | reconnect_timer: nil}
 
-    case Connection.channel(state.connection) do
+    # The session runs on its own connection when the client dials one (see
+    # Connection.session_channel/1), so observer traffic cannot starve keepalives.
+    case Connection.session_channel(state.connection) do
       {:ok, channel} ->
         case start_session(channel, state) do
           {:ok, new_state} ->
@@ -156,7 +162,7 @@ defmodule Chronicle.Connections.Session do
   def handle_info(:watchdog, %{last_keepalive: nil} = state), do: {:noreply, state}
 
   def handle_info(:watchdog, state) do
-    if now_ms() - state.last_keepalive > @keepalive_timeout do
+    if now_ms() - state.last_keepalive > state.keepalive_timeout do
       {:noreply, drop_session(state, :keepalive_timeout)}
     else
       {:noreply, %{state | watchdog_timer: start_watchdog()}}
