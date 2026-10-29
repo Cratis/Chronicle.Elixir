@@ -168,6 +168,14 @@ of the BEAM node) from [discovery](./discovery.md), naming the module and showin
 `warn_defaulted_ids: false` to `Chronicle.Client` to suppress it. See
 [Discovery and artifact identity drift](./discovery.md).
 
+## Concurrency
+
+A reactor handles batches for different event sources at the same time, up to 16 by default. Batches for one event source always run one at a time, in the order Chronicle sends them. A slow event source therefore no longer holds up all the others, and the reactor keeps up with a large catch-up or replay.
+
+Because of this, `handle/2` can run in several processes at once. Keep shared state in something built for concurrent access, such as a database, an ETS table or a `GenServer`, and not in the process dictionary or module attributes. Tune the limit with the `:max_concurrent_partitions` client option. Set it to `1` to handle every batch one after another, as versions before 3.16 did. Reducers follow the same rules, per read model instance.
+
+Each batch Chronicle sends also says how long Chronicle waits for its result. If a batch only gets its turn after that time, Chronicle has already given up on it and will send the events again, so the client answers it as failed right away instead of handling it. The `[:chronicle, :observer, :batch, :expired]` telemetry event reports when that happens. A Chronicle server that predates this (before 19.113) sends no deadline, and every batch is handled.
+
 ## Delivery identity
 
 Every reactor invocation context carries `delivery_id`: a stable identity of *this delivery of this

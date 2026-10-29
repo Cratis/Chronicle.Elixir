@@ -83,6 +83,13 @@ For applications that build metrics on `:telemetry` rather than an OpenTelemetry
 )
 ```
 
+Reactor and reducer handlers also report on the batches they process:
+
+- `[:chronicle, :observer, :batch, :start | :stop | :exception]` is a span around each batch, with `observer`, `kind` (`:reactor` or `:reducer`), `partition` and `batch_size` metadata.
+- `[:chronicle, :observer, :batch, :expired]` is emitted for a batch answered as failed without being handled, because Chronicle had stopped waiting for it. Its `waited` measurement is in milliseconds.
+- `[:chronicle, :observer, :queue]` reports the `queue_depth` and `in_flight` measurements whenever a batch starts or finishes.
+- `[:chronicle, :observer, :result, :send_failed]` is emitted when a result could not be sent and the observer reopens its stream.
+
 The `:stop` event's metadata carries `error: true` when the operation returned `{:error, _}`, alongside the event count and sequence id. This is separate from the observer-lag telemetry described in [Observers](observers.md#lag) (`[:chronicle, :observer, :lag]`), which predates this convention and is not renamed by it.
 
 ## Trace propagation

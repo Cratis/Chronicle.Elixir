@@ -148,6 +148,10 @@ defmodule Chronicle.Client do
       query option (`:least_connections`, `:round_robin`, or `:random`), used
       to pick among multiple hosts or DNS SRV-resolved addresses. See
       `Chronicle.Connections.LoadBalancer`.
+    * `:max_concurrent_partitions` — how many partitions (event sources for a reactor,
+      read model instances for a reducer) each reactor and reducer handles at the same time.
+      Defaults to `16`. Batches for one partition always run one at a time and in order. Set
+      to `1` to handle every batch one after another, as versions before 3.16 did.
     * `:keepalive_timeout` — milliseconds without a keepalive from the kernel after
       which the session is treated as dead and reconnected. Defaults to `5_000`, matching
       the kernel's `connectedClients.staleThresholdSeconds` (5); raise both together.
@@ -400,7 +404,8 @@ defmodule Chronicle.Client do
       event_store: event_store,
       namespace: namespace,
       default_sink_type_id: default_sink_type_id,
-      event_generation_delivery: Keyword.get(opts, :event_generation_delivery, :compatibility)
+      event_generation_delivery: Keyword.get(opts, :event_generation_delivery, :compatibility),
+      max_concurrent_partitions: Keyword.get(opts, :max_concurrent_partitions)
     ]
 
     reactor_children =

@@ -79,12 +79,38 @@ defmodule Chronicle.Reducers.Dispatch do
                 LastSuccessfulObservation: last_seq,
                 ExceptionMessages: exception_messages,
                 ExceptionStackTrace: stack_trace,
-                ReadModelState: read_model_json
+                ReadModelState: read_model_json,
+                # Echoed so the kernel completes exactly this delivery, not just the oldest one
+                # pending for the partition.
+                DeliveryId: Map.get(reduce_op, :DeliveryId, 0) || 0
               )
           )
       )
 
     {message, final_state}
+  end
+
+  @doc """
+  Builds a failed `ReducerMessage` result for a reduce operation that is answered without
+  being handled, because the kernel has already stopped waiting for it.
+  """
+  @spec expired_result(map(), String.t()) :: struct()
+  def expired_result(reduce_op, reason) do
+    struct(ReducerMessage,
+      Content:
+        struct(OneOf,
+          Value1:
+            struct(ReducerResult,
+              Partition: Map.get(reduce_op, :Partition, ""),
+              State: encode_observation_state(:failed),
+              LastSuccessfulObservation: 0,
+              ExceptionMessages: [reason],
+              ExceptionStackTrace: "",
+              ReadModelState: "",
+              DeliveryId: Map.get(reduce_op, :DeliveryId, 0) || 0
+            )
+        )
+    )
   end
 
   # A read model larger than the message limit makes the kernel answer ResourceExhausted, and the

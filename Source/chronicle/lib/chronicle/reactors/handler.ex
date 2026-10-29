@@ -17,7 +17,7 @@ defmodule Chronicle.Reactors.Handler do
 
   alias Chronicle.Connections.{Connection, Lifecycle, Status}
   alias Chronicle.Reactors.Dispatch
-  alias Chronicle.Observers.ResultSender
+  alias Chronicle.Observers.BatchRunner
 
   alias Cratis.Chronicle.Contracts.Observation.Reactors.{
     Reactors,
@@ -82,6 +82,8 @@ defmodule Chronicle.Reactors.Handler do
       reconnect_timer: nil
     }
 
+    state = Map.merge(state, BatchRunner.init(opts))
+
     if state.lifecycle, do: Lifecycle.subscribe(state.lifecycle)
 
     {:ok, state}
@@ -132,14 +134,33 @@ defmodule Chronicle.Reactors.Handler do
     end
   end
 
-  def handle_info({:event_batch, events_to_observe}, state) do
-    case replay_state(events_to_observe) do
-      :none ->
-        dispatch_event_batch(events_to_observe, state)
+  def handle_info({:event_batch, events_to_observe}, state),
+    do: handle_info({:event_batch, events_to_observe, now_ms()}, state)
 
-      replay_signal ->
-        notify_replay(state.module, replay_signal, Map.get(events_to_observe, :Partition, ""))
-        {:noreply, state}
+  # Batches for different partitions run concurrently, each partition's in order;
+  # replay notifications keep their place relative to the batches around them.
+  def handle_info({:event_batch, events_to_observe, received_at}, state) do
+    partition = Map.get(events_to_observe, :Partition, "")
+
+    state =
+      case replay_state(events_to_observe) do
+        :none ->
+          BatchRunner.batch(state, partition, events_to_observe, received_at, hooks())
+
+        signal when signal in [:begin_replay, :end_replay] ->
+          BatchRunner.barrier(state, {:replay, signal, partition}, hooks())
+
+        signal ->
+          BatchRunner.inline(state, partition, {:replay, signal, partition}, hooks())
+      end
+
+    {:noreply, state}
+  end
+
+  def handle_info({:batch_finished, tag, outcome}, state) do
+    case BatchRunner.finished(state, tag, outcome, hooks()) do
+      {:ok, state} -> {:noreply, state}
+      {:send_failed, state} -> {:noreply, schedule_stream_reconnect(teardown(state))}
     end
   end
 
@@ -151,6 +172,13 @@ defmodule Chronicle.Reactors.Handler do
   def handle_info({:DOWN, _ref, :process, pid, reason}, %{receiver_task: %Task{pid: pid}} = state) do
     Logger.warning("Reactor #{state.module} receiver task exited: #{inspect(reason)}")
     {:noreply, schedule_stream_reconnect(%{state | stream: nil, receiver_task: nil})}
+  end
+
+  def handle_info({:DOWN, monitor, :process, _pid, reason}, state) do
+    case BatchRunner.down(state, monitor, reason, hooks()) do
+      {:send_failed, state} -> {:noreply, schedule_stream_reconnect(teardown(state))}
+      {_, state} -> {:noreply, state}
+    end
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
@@ -196,7 +224,8 @@ defmodule Chronicle.Reactors.Handler do
       {:ok, reply_stream} ->
         Enum.each(reply_stream, fn
           {:ok, events_to_observe} ->
-            send(handler, {:event_batch, events_to_observe})
+            # Stamped on arrival: the kernel's delivery deadline counts from here.
+            send(handler, {:event_batch, events_to_observe, System.monotonic_time(:millisecond)})
 
           {:error, reason} ->
             send(handler, {:stream_down, reason})
@@ -248,14 +277,18 @@ defmodule Chronicle.Reactors.Handler do
     )
   end
 
-  defp dispatch_event_batch(events_to_observe, state) do
-    result = Dispatch.build_result(state, events_to_observe)
-
-    case ResultSender.send_result(state.stream, result, state.module, state.send_fun) do
-      :ok -> {:noreply, state}
-      {:error, _reason} -> {:noreply, schedule_stream_reconnect(teardown(state))}
-    end
+  defp hooks do
+    %{
+      kind: :reactor,
+      build_result: &Dispatch.build_result/2,
+      expired_result: &Dispatch.expired_result/2,
+      notify: fn state, {:replay, signal, partition} ->
+        notify_replay(state.module, signal, partition)
+      end
+    }
   end
+
+  defp now_ms, do: System.monotonic_time(:millisecond)
 
   # Thin delegates kept on Handler (rather than inlined) so existing specs calling
   # Handler.handle_result/3 and Handler.side_effect_operation/2 directly keep working
@@ -290,6 +323,7 @@ defmodule Chronicle.Reactors.Handler do
   # Tears down the current observation stream and receiver task, returning a
   # clean state ready to (re)establish.
   defp teardown(state) do
+    state = BatchRunner.reset(state)
     cleanup_stream(state)
     shutdown_task(state.receiver_task)
     cancel_timer(state.reconnect_timer)
