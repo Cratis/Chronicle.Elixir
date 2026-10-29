@@ -100,13 +100,15 @@ defmodule Chronicle.Connections.ConnectionLifecycleTest do
       )
 
     {:ok, socket} = :gen_tcp.accept(listener, 5_000)
+    # The session's dedicated connection to the same server.
+    {:ok, session_socket} = :gen_tcp.accept(listener, 5_000)
     connection = Chronicle.Client.connection_name(:blocked_compatibility_client)
     assert :ok = Connection.connect(connection, 5_000)
     transport = :sys.get_state(connection).transport
     transport_supervisor = :sys.get_state(transport).supervisor
     transport_monitor = Process.monitor(transport)
     supervisor_monitor = Process.monitor(transport_supervisor)
-    assert DynamicSupervisor.count_children(transport_supervisor).active == 1
+    assert DynamicSupervisor.count_children(transport_supervisor).active == 2
 
     caller = spawn(fn -> Connection.append_channel(connection) end)
     caller_monitor = Process.monitor(caller)
@@ -115,7 +117,9 @@ defmodule Chronicle.Connections.ConnectionLifecycleTest do
     assert :ok = Supervisor.stop(client)
     assert System.monotonic_time(:millisecond) - started < 4_000
     assert_closed(socket)
+    assert_closed(session_socket)
     :gen_tcp.close(socket)
+    :gen_tcp.close(session_socket)
     assert_receive {:DOWN, ^transport_monitor, :process, ^transport, _}, 2_000
     assert_receive {:DOWN, ^supervisor_monitor, :process, ^transport_supervisor, _}, 2_000
     assert_child_count(before_count, System.monotonic_time(:millisecond) + 2_000)
@@ -296,6 +300,8 @@ defmodule Chronicle.Connections.ConnectionLifecycleTest do
         )
 
       {:ok, socket} = :gen_tcp.accept(listener, 5_000)
+      # The session's dedicated connection to the same server.
+      {:ok, session_socket} = :gen_tcp.accept(listener, 5_000)
 
       connection = Chronicle.Client.connection_name(:lifecycle_test_client)
       assert :ok = Connection.connect(connection, 5_000)
@@ -303,14 +309,16 @@ defmodule Chronicle.Connections.ConnectionLifecycleTest do
       transport_supervisor = :sys.get_state(transport).supervisor
       transport_monitor = Process.monitor(transport)
       supervisor_monitor = Process.monitor(transport_supervisor)
-      assert DynamicSupervisor.count_children(transport_supervisor).active == 1
+      assert DynamicSupervisor.count_children(transport_supervisor).active == 2
       assert DynamicSupervisor.count_children(GRPC.Client.Supervisor).active == before_count
 
       assert :ok = Supervisor.stop(client)
       assert_receive {:DOWN, ^transport_monitor, :process, ^transport, _}, 2_000
       assert_receive {:DOWN, ^supervisor_monitor, :process, ^transport_supervisor, _}, 2_000
       assert_closed(socket)
+      assert_closed(session_socket)
       :gen_tcp.close(socket)
+      :gen_tcp.close(session_socket)
       assert_child_count(before_count, System.monotonic_time(:millisecond) + 2_000)
     end
   end

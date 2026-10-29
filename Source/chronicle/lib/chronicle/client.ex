@@ -148,6 +148,13 @@ defmodule Chronicle.Client do
       query option (`:least_connections`, `:round_robin`, or `:random`), used
       to pick among multiple hosts or DNS SRV-resolved addresses. See
       `Chronicle.Connections.LoadBalancer`.
+    * `:keepalive_timeout` — milliseconds without a keepalive from the kernel after
+      which the session is treated as dead and reconnected. Defaults to `5_000`, matching
+      the kernel's `connectedClients.staleThresholdSeconds` (5); raise both together.
+    * `:dedicated_session_channel` — defaults to `true`. The session (the Connect
+      stream and its keepalive answers) runs on its own HTTP/2 connection to the same
+      server, so large reactor and reducer results cannot hold its keepalives back. Set
+      to `false` to share one connection for everything.
     * `:concurrency` — the default concurrency scope strategy applied to an append that has
       no explicit `:concurrency_scope` and none derived from an event source definition's
       declared dimensions. `default: :none` (the default) sends no constraint, matching prior
@@ -378,6 +385,13 @@ defmodule Chronicle.Client do
         :disconnect_fun
       ])
       |> Keyword.put(:name, conn_name)
+      # The session (Connect stream + keepalive answers) gets its own HTTP/2
+      # connection to the same server, so large observer results cannot hold
+      # its keepalives back (Cratis/Chronicle.Elixir#193).
+      |> Keyword.put_new(
+        :dedicated_session_channel,
+        Keyword.get(opts, :dedicated_session_channel, true)
+      )
 
     observer_opts = [
       client: name,
@@ -461,7 +475,10 @@ defmodule Chronicle.Client do
         # transport owner also cleans up if the connection is forcibly killed.
         Supervisor.child_spec({Connection, connection_opts}, shutdown: 5_000),
         {Chronicle.Connections.Session,
-         connection: conn_name, client_name: name, lifecycle: lifecycle_name},
+         connection: conn_name,
+         client_name: name,
+         lifecycle: lifecycle_name,
+         keepalive_timeout: Keyword.get(opts, :keepalive_timeout)},
         {Chronicle.Registration.Coordinator,
          Keyword.merge(observer_opts,
            registration: Keyword.get(opts, :registration),

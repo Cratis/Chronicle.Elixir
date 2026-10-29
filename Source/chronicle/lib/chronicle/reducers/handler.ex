@@ -16,6 +16,7 @@ defmodule Chronicle.Reducers.Handler do
 
   alias Chronicle.Connections.{Connection, Lifecycle, Status}
   alias Chronicle.Reducers.Dispatch
+  alias Chronicle.Observers.ResultSender
 
   alias Cratis.Chronicle.Contracts.Observation.Reducers.{
     Reducers,
@@ -69,6 +70,7 @@ defmodule Chronicle.Reducers.Handler do
       model_module: module.__chronicle_reducer__(:model),
       default_sink_type_id: Keyword.get(opts, :default_sink_type_id, "MongoDB"),
       establish_fun: Keyword.get(opts, :establish_fun, &default_establish/2),
+      send_fun: Keyword.get(opts, :send_fun, &GRPC.Stub.send_request/2),
       connection_id: nil,
       stream: nil,
       receiver_task: nil,
@@ -84,7 +86,8 @@ defmodule Chronicle.Reducers.Handler do
   def format_status(%{state: state} = status) do
     Status.redact(status,
       stream: if(state.stream, do: :open, else: nil),
-      establish_fun: :redacted
+      establish_fun: :redacted,
+      send_fun: :redacted
     )
   end
 
@@ -179,6 +182,8 @@ defmodule Chronicle.Reducers.Handler do
     end
   rescue
     e -> {:error, e}
+  catch
+    :exit, reason -> {:error, reason}
   end
 
   defp registered?(%{lifecycle: nil}), do: true
@@ -246,8 +251,11 @@ defmodule Chronicle.Reducers.Handler do
 
   defp dispatch_reduce_operation(reduce_op, state) do
     result = Dispatch.build_result(state, reduce_op)
-    GRPC.Stub.send_request(state.stream, result)
-    {:noreply, state}
+
+    case ResultSender.send_result(state.stream, result, state.module, state.send_fun) do
+      :ok -> {:noreply, state}
+      {:error, _reason} -> {:noreply, schedule_stream_reconnect(teardown(state))}
+    end
   end
 
   @doc false

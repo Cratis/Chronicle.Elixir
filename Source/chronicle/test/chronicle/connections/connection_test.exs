@@ -54,6 +54,81 @@ defmodule Chronicle.Connections.ConnectionTest do
     end
   end
 
+  describe "session channel" do
+    test "is the main channel unless a dedicated one is asked for" do
+      channel = channel_with_conn(self())
+      conn = start(connect_fun: fn _target, _opts -> {:ok, channel} end, auto_connect: true)
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert Connection.session_channel(conn) == {:ok, channel}
+    end
+
+    test "is a second connection to the same server when a dedicated one is asked for" do
+      test = self()
+      {:ok, dials} = Agent.start_link(fn -> 0 end)
+
+      connect_fun = fn target, _opts ->
+        dial = Agent.get_and_update(dials, &{&1 + 1, &1 + 1})
+        send(test, {:dialed, dial, target})
+        {:ok, Map.put(channel_with_conn(test), :dial, dial)}
+      end
+
+      conn = start(connect_fun: connect_fun, dedicated_session_channel: true, auto_connect: true)
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert_receive {:dialed, 1, target}
+      assert_receive {:dialed, 2, ^target}
+      assert {:ok, %{dial: 1}} = Connection.channel(conn)
+      assert {:ok, %{dial: 2}} = Connection.session_channel(conn)
+    end
+
+    test "falls back to the main channel when the dedicated dial fails" do
+      test = self()
+      {:ok, dials} = Agent.start_link(fn -> 0 end)
+
+      connect_fun = fn _target, _opts ->
+        case Agent.get_and_update(dials, &{&1 + 1, &1 + 1}) do
+          1 -> {:ok, channel_with_conn(test)}
+          _ -> {:error, :refused}
+        end
+      end
+
+      conn = start(connect_fun: connect_fun, dedicated_session_channel: true, auto_connect: true)
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert Connection.session_channel(conn) == Connection.channel(conn)
+    end
+
+    test "is closed together with the main channel" do
+      test = self()
+      {:ok, dials} = Agent.start_link(fn -> 0 end)
+
+      connect_fun = fn _target, _opts ->
+        dial = Agent.get_and_update(dials, &{&1 + 1, &1 + 1})
+        {:ok, Map.put(channel_with_conn(test), :dial, dial)}
+      end
+
+      conn =
+        start(
+          connect_fun: connect_fun,
+          disconnect_fun: fn channel -> send(test, {:disconnected, channel.dial}) end,
+          dedicated_session_channel: true,
+          auto_connect: true
+        )
+
+      assert Connection.connect(conn, 1_000) == :ok
+      Connection.reconnect(conn)
+
+      assert_receive {:disconnected, 1}, 1_000
+      assert_receive {:disconnected, 2}, 1_000
+    end
+
+    test "is not handed out while disconnected" do
+      conn = start([])
+      assert Connection.session_channel(conn) == {:error, :not_connected}
+    end
+  end
+
   describe "connect failure and retry" do
     test "retries until it succeeds" do
       test = self()

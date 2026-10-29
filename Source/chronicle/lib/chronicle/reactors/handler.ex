@@ -17,6 +17,7 @@ defmodule Chronicle.Reactors.Handler do
 
   alias Chronicle.Connections.{Connection, Lifecycle, Status}
   alias Chronicle.Reactors.Dispatch
+  alias Chronicle.Observers.ResultSender
 
   alias Cratis.Chronicle.Contracts.Observation.Reactors.{
     Reactors,
@@ -70,6 +71,7 @@ defmodule Chronicle.Reactors.Handler do
       event_type_map: event_type_map,
       generation_delivery: generation_delivery,
       establish_fun: Keyword.get(opts, :establish_fun, &default_establish/2),
+      send_fun: Keyword.get(opts, :send_fun, &GRPC.Stub.send_request/2),
       append_fun:
         Keyword.get(opts, :append_fun, fn operation ->
           Dispatch.default_append(operation, client)
@@ -90,6 +92,7 @@ defmodule Chronicle.Reactors.Handler do
     Status.redact(status,
       stream: if(state.stream, do: :open, else: nil),
       establish_fun: :redacted,
+      send_fun: :redacted,
       append_fun: :redacted
     )
   end
@@ -181,6 +184,8 @@ defmodule Chronicle.Reactors.Handler do
     end
   rescue
     e -> {:error, e}
+  catch
+    :exit, reason -> {:error, reason}
   end
 
   defp registered?(%{lifecycle: nil}), do: true
@@ -245,8 +250,11 @@ defmodule Chronicle.Reactors.Handler do
 
   defp dispatch_event_batch(events_to_observe, state) do
     result = Dispatch.build_result(state, events_to_observe)
-    GRPC.Stub.send_request(state.stream, result)
-    {:noreply, state}
+
+    case ResultSender.send_result(state.stream, result, state.module, state.send_fun) do
+      :ok -> {:noreply, state}
+      {:error, _reason} -> {:noreply, schedule_stream_reconnect(teardown(state))}
+    end
   end
 
   # Thin delegates kept on Handler (rather than inlined) so existing specs calling
