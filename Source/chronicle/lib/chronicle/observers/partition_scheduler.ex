@@ -17,15 +17,23 @@ defmodule Chronicle.Observers.PartitionScheduler do
   #   * `{:barrier, item}` runs in the handler process once everything before it
   #     has finished, and nothing after it starts until it has run (replay
   #     begin/end notifications).
+  #   * `{:exclusive, item}` runs as a task once everything before it has
+  #     finished, and nothing after it starts until it has finished (a page that
+  #     spans several partitions, so it holds every one of them).
   #
   # The scheduler is pure: `schedule/1` returns the actions to take, in order,
   # and the handler performs them.
 
   defstruct pending: [], in_flight: MapSet.new(), max_in_flight: 1
 
+  @exclusive :__chronicle_exclusive__
+
   @type partition :: term()
   @type entry ::
-          {:batch, partition(), term()} | {:inline, partition(), term()} | {:barrier, term()}
+          {:batch, partition(), term()}
+          | {:inline, partition(), term()}
+          | {:barrier, term()}
+          | {:exclusive, term()}
   @type action :: {:start, partition(), term()} | {:run, term()}
   @type t :: %__MODULE__{
           pending: [entry()],
@@ -42,6 +50,12 @@ defmodule Chronicle.Observers.PartitionScheduler do
   @spec enqueue(t(), entry()) :: t()
   def enqueue(%__MODULE__{} = scheduler, entry),
     do: %{scheduler | pending: scheduler.pending ++ [entry]}
+
+  @doc """
+  The partition an `{:exclusive, item}` entry is started and completed under.
+  """
+  @spec exclusive() :: partition()
+  def exclusive, do: @exclusive
 
   @doc "Marks the batch in flight for `partition` as finished."
   @spec complete(t(), partition()) :: t()
@@ -66,6 +80,15 @@ defmodule Chronicle.Observers.PartitionScheduler do
   """
   @spec schedule(t()) :: {[action()], t()}
   def schedule(%__MODULE__{} = scheduler) do
+    if MapSet.member?(scheduler.in_flight, @exclusive) do
+      # An exclusive page holds every partition until it has finished.
+      {[], scheduler}
+    else
+      scan_pending(scheduler)
+    end
+  end
+
+  defp scan_pending(scheduler) do
     {actions, kept, in_flight} =
       scan(scheduler.pending, [], [], scheduler.in_flight, MapSet.new(), scheduler.max_in_flight)
 
@@ -82,6 +105,15 @@ defmodule Chronicle.Observers.PartitionScheduler do
       scan(rest, [{:run, item} | actions], kept, in_flight, held, max)
     else
       # Nothing behind a barrier may start before it has run.
+      {Enum.reverse(actions), Enum.reverse(kept) ++ [entry | rest], in_flight}
+    end
+  end
+
+  defp scan([{:exclusive, item} = entry | rest], actions, kept, in_flight, _held, _max) do
+    if kept == [] and MapSet.size(in_flight) == 0 do
+      {Enum.reverse([{:start, @exclusive, item} | actions]), rest,
+       MapSet.put(in_flight, @exclusive)}
+    else
       {Enum.reverse(actions), Enum.reverse(kept) ++ [entry | rest], in_flight}
     end
   end

@@ -87,4 +87,37 @@ defmodule Chronicle.Observers.PartitionSchedulerTest do
     assert PartitionScheduler.in_flight(scheduler) == 0
     assert PartitionScheduler.queue_depth(scheduler) == 0
   end
+
+  describe "an exclusive page" do
+    test "waits for what is in flight before it, then starts alone" do
+      {actions, scheduler} =
+        schedule(PartitionScheduler.new(4), [{:batch, "a", 1}, {:exclusive, 2}, {:batch, "b", 3}])
+
+      assert actions == [{:start, "a", 1}]
+
+      {actions, scheduler} =
+        scheduler |> PartitionScheduler.complete("a") |> PartitionScheduler.schedule()
+
+      assert actions == [{:start, PartitionScheduler.exclusive(), 2}]
+      assert {[], scheduler} = PartitionScheduler.schedule(scheduler)
+
+      {actions, _} =
+        scheduler
+        |> PartitionScheduler.complete(PartitionScheduler.exclusive())
+        |> PartitionScheduler.schedule()
+
+      assert actions == [{:start, "b", 3}]
+    end
+
+    test "holds back batches queued after it while it runs" do
+      {[{:start, _, 1}], scheduler} = schedule(PartitionScheduler.new(4), [{:exclusive, 1}])
+
+      {actions, _} =
+        scheduler
+        |> PartitionScheduler.enqueue({:batch, "a", 2})
+        |> PartitionScheduler.schedule()
+
+      assert actions == []
+    end
+  end
 end
