@@ -168,6 +168,92 @@ of the BEAM node) from [discovery](./discovery.md), naming the module and showin
 `warn_defaulted_ids: false` to `Chronicle.Client` to suppress it. See
 [Discovery and artifact identity drift](./discovery.md).
 
+## Handling events in batches
+
+Chronicle delivers events in **pages**: a page holds the events of one or more event sources, in
+sequence order, on every path (live, catch-up, replay and retry). The client always asks for
+pages. `handle/2` keeps working unchanged: it is called once per event, event source by event
+source.
+
+A **batch function** is called once per page instead, with every event of the types it observes.
+Declare it with one `@observes` attribute per event type, just before the function, and
+pattern-match on the `{event, context}` pairs of the `Chronicle.Observers.EventBatch` it
+receives:
+
+```elixir
+defmodule MyApp.Reactors.Users do
+  use Chronicle.Reactors.Reactor
+
+  alias Chronicle.Observers.EventBatch
+
+  @observes MyApp.Events.UserRegistered
+  @observes MyApp.Events.UserRenamed
+  @observes MyApp.Events.UserRemoved
+  def index(batch, _context) do
+    operations =
+      Enum.map(batch, fn
+        {%MyApp.Events.UserRegistered{name: name}, ctx} -> {:upsert, ctx.event_source_id, name}
+        {%MyApp.Events.UserRenamed{new_name: name}, ctx} -> {:upsert, ctx.event_source_id, name}
+        {%MyApp.Events.UserRemoved{}, ctx} -> {:delete, ctx.event_source_id}
+      end)
+
+    response = MyApp.Search.bulk(operations)
+
+    batch = Enum.reduce(response.failed, batch, &EventBatch.fail(&2, &1, :index_failed))
+    Enum.reduce(response.throttled, batch, &EventBatch.defer(&2, &1, 5_000))
+  end
+
+  # A per-event handler in the same reactor, for a type no batch function observes.
+  @handles MyApp.Events.UserEmailChanged
+
+  @impl true
+  def handle(%MyApp.Events.UserEmailChanged{} = event, _context), do: MyApp.Mailer.confirm(event)
+end
+```
+
+The second argument is a `Chronicle.Observers.BatchContext`: the observer, event store,
+namespace, the partitions and event count of the page, its first and last sequence numbers, the
+deadline, and `origin` - `:live`, `:catch_up`, `:replay` or `:retry`.
+
+Each event type reaches exactly one function. The reactor refuses to start when an event type is
+observed by two batch functions, or observed by a batch function and also declared with
+`@handles`, when `@observes` precedes `handle/2` or `handle_replay/2`, or when a batch function
+does not take `(batch, context)`. Each refusal raises an exception from `Chronicle.Observers`.
+
+Order is kept per function: each function sees its events in sequence order, and so in order
+within each event source. Two functions of one reactor are not ordered relative to each other, so
+side effects that must happen in a particular order belong in the same function.
+
+A batch function returns:
+
+- `:ok` - every event source in the batch succeeded.
+- the batch, after `EventBatch.fail/3` or `EventBatch.defer/3` - only those event sources fail or
+  are delivered again after the delay, from their first event in the batch or from the event a
+  context points at. A deferral is not a failure and does not count towards quarantine.
+- `{:error, reason}`, or it raises - every event source in the batch fails at its first event in
+  the batch.
+
+Returning events is not supported in a batch function: append through `Chronicle.EventSequences.EventLog`.
+When the functions of a reactor report different outcomes for one event source, it settles at the
+earliest event reported, and everything from there is delivered again, so keep side effects
+idempotent and use the [delivery identity](#delivery-identity) to recognize a redelivery.
+
+A Chronicle server before 19.122 sends one event source at a time. Batch functions still work,
+but cannot defer: a deferral fails the event source with
+`Chronicle.Observers.DeferralNotSupportedByKernel`, and failed-partition recovery delivers it
+again.
+
+Bound the pages with the `:batch_size` option:
+
+```elixir
+use Chronicle.Reactors.Reactor,
+  batch_size: [max_events: 1_000, max_bytes: 4_194_304, max_delay_milliseconds: 50]
+```
+
+Unset bounds are left to the Chronicle server. A page that spans several event sources runs on
+its own, after the batches before it and before the ones after it. [Middleware](#middleware)
+wraps `handle/2` only; it does not wrap batch functions.
+
 ## Concurrency
 
 A reactor handles batches for different event sources at the same time, up to 16 by default. Batches for one event source always run one at a time, in the order Chronicle sends them. A slow event source therefore no longer holds up all the others, and the reactor keeps up with a large catch-up or replay.

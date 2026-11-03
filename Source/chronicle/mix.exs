@@ -112,6 +112,8 @@ defmodule Chronicle.MixProject do
         Observers: [
           Chronicle.Reactors.Reactor,
           Chronicle.Reducers.Reducer,
+          Chronicle.Observers.EventBatch,
+          Chronicle.Observers.BatchContext,
           Chronicle.EventStoreSubscriptions,
           Chronicle.EventStoreSubscriptions.Subscription,
           Chronicle.EventStoreSubscriptions.Definition,
