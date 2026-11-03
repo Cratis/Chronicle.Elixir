@@ -53,6 +53,39 @@ defmodule Chronicle.Reactors.Reactor do
       catching up on all history (see "Starting at the tail" below). Defaults to `false`.
     * `:generation_delivery` — `:compatibility` (default) or `:pinned`. See
       "Pinned generation delivery" below.
+    * `:batch_size` — bounds for the pages Chronicle delivers: `:max_events`, `:max_bytes` and
+      `:max_delay_milliseconds`. Bounds that are not given are left to the Chronicle server.
+
+  ## Batch functions
+
+  Chronicle delivers events in pages, which hold the events of one or more event sources in
+  sequence order. `handle/2` is called once per event, event source by event source. A batch
+  function is called once per page instead, with every event of the types it observes, so work
+  that is cheaper in bulk (one request to a search index) can be done in bulk.
+
+  Declare a batch function with one `@observes` attribute per event type, just before it. It
+  takes a `Chronicle.Observers.EventBatch`, whose elements are `{event, context}` tuples, and a
+  `Chronicle.Observers.BatchContext`:
+
+      @observes MyApp.Events.UserRegistered
+      @observes MyApp.Events.UserRemoved
+      def index(batch, _context) do
+        batch
+        |> Enum.map(fn
+          {%MyApp.Events.UserRegistered{name: name}, ctx} -> {:upsert, ctx.event_source_id, name}
+          {%MyApp.Events.UserRemoved{}, ctx} -> {:delete, ctx.event_source_id}
+        end)
+        |> MyApp.Search.bulk()
+
+        :ok
+      end
+
+  A batch function returns `:ok`, the batch after `Chronicle.Observers.EventBatch.fail/3` or
+  `Chronicle.Observers.EventBatch.defer/3` to settle single event sources, or `{:error, reason}`
+  (or raises) to fail every event source of the batch at its first event in it. Returning events
+  is not supported. A reactor can have batch functions and `handle/2` side by side, but each event
+  type reaches exactly one function: the reactor refuses to start otherwise. Order is kept per
+  function, not across functions. Middleware wraps `handle/2` only.
 
   ## Starting at the tail
 
@@ -155,7 +188,8 @@ defmodule Chronicle.Reactors.Reactor do
   @doc """
   Handles an event dispatched by Chronicle.
 
-  Called once per event for each partition. Must return `:ok`, `{:error, reason}`,
+  Required when the reactor declares event types with `@handles`. Called once per event for each
+  partition. Must return `:ok`, `{:error, reason}`,
   or `{:ok, event_or_events}` to append a side effect (see moduledoc).
   """
   @callback handle(event :: struct(), context :: map()) ::
@@ -181,7 +215,8 @@ defmodule Chronicle.Reactors.Reactor do
   @callback handle_replay(event :: struct(), context :: map()) ::
               :ok | {:error, term()} | {:ok, struct() | [struct()]}
 
-  @optional_callbacks handle_replay: 2,
+  @optional_callbacks handle: 2,
+                      handle_replay: 2,
                       on_replay_begin: 0,
                       on_replay_end: 0,
                       on_partition_replay_begin: 1,
@@ -192,7 +227,11 @@ defmodule Chronicle.Reactors.Reactor do
       @behaviour Chronicle.Reactors.Reactor
 
       Module.register_attribute(__MODULE__, :handles, accumulate: true)
+      Module.register_attribute(__MODULE__, :observes, accumulate: true)
+      Module.register_attribute(__MODULE__, :chronicle_batch_functions, accumulate: true)
+      @on_definition Chronicle.Observers.BatchFunctions
 
+      @chronicle_reactor_batch_size Keyword.get(opts, :batch_size, [])
       @chronicle_reactor_id Keyword.get(opts, :id, __MODULE__ |> to_string())
       @chronicle_reactor_id_source if Keyword.has_key?(opts, :id),
                                      do: :explicit,
@@ -211,7 +250,20 @@ defmodule Chronicle.Reactors.Reactor do
       @doc false
       def __chronicle_reactor__(:id), do: @chronicle_reactor_id
       def __chronicle_reactor__(:id_source), do: @chronicle_reactor_id_source
-      def __chronicle_reactor__(:handles), do: @handles |> Enum.reverse()
+
+      def __chronicle_reactor__(:handles) do
+        observed =
+          Enum.flat_map(__chronicle_reactor__(:batch_functions), fn {_, _, _, types} -> types end)
+
+        Enum.uniq(observed ++ __chronicle_reactor__(:per_event))
+      end
+
+      def __chronicle_reactor__(:per_event), do: @handles |> Enum.reverse()
+
+      def __chronicle_reactor__(:batch_functions),
+        do: Chronicle.Observers.BatchFunctions.merge(Enum.reverse(@chronicle_batch_functions))
+
+      def __chronicle_reactor__(:batch_size), do: @chronicle_reactor_batch_size
       def __chronicle_reactor__(:once_only), do: @chronicle_reactor_once_only
       def __chronicle_reactor__(:start_at_tail), do: @chronicle_reactor_start_at_tail
       def __chronicle_reactor__(:middleware), do: @chronicle_reactor_middleware

@@ -53,6 +53,30 @@ defmodule Chronicle.Reducers.Reducer do
       that's read rarely, where continuous observation would be wasted work.
     * `:generation_delivery` — `:compatibility` (default) or `:pinned`. See
       "Pinned generation delivery" below.
+    * `:batch_size` — `:max_concurrency` is how many read models (event sources) of one page are
+      reduced at the same time (default: the number of schedulers online); `:max_events`,
+      `:max_bytes` and `:max_delay_milliseconds` bound the pages Chronicle delivers.
+
+  ## Batch functions
+
+  Instead of `reduce/3` with `@handles`, a reducer can fold with one batch function, declared
+  with one `@observes` attribute per event type. It is called once per event source in a page,
+  with that event source's events as a `Chronicle.Observers.EventBatch` of `{event, context}`
+  tuples, its stored read model (or `nil`) and a `Chronicle.Observers.BatchContext`:
+
+      @observes MyApp.Events.AccountOpened
+      @observes MyApp.Events.FundsDeposited
+      def fold(events, current, _context) do
+        Enum.reduce(events, current, fn
+          {%MyApp.Events.AccountOpened{} = opened, _ctx}, _ -> %MyApp.ReadModels.Account{balance: opened.initial_balance}
+          {%MyApp.Events.FundsDeposited{amount: amount}, _ctx}, account -> %{account | balance: account.balance + amount}
+        end)
+      end
+
+  It returns the next read model, `nil` to remove it, `{:defer, retry_after_ms}` to have the
+  event source delivered again after the delay, or `{:error, reason}` (or raises) to fail it. A
+  reducer has either `reduce/3` with `@handles` or one batch function, never both; it refuses to
+  start otherwise.
 
   ## Pinned generation delivery
 
@@ -113,6 +137,8 @@ defmodule Chronicle.Reducers.Reducer do
   @doc """
   Applies an event to the current read model state.
 
+  Required when the reducer declares event types with `@handles`.
+
   Receives the event struct, the current model (or `nil` on first event), and
   a context map. Returns the updated read model struct.
   """
@@ -130,7 +156,8 @@ defmodule Chronicle.Reducers.Reducer do
   @doc "Called when replay of a single partition (event source) ends."
   @callback on_partition_replay_end(partition :: String.t()) :: any()
 
-  @optional_callbacks on_replay_begin: 0,
+  @optional_callbacks reduce: 3,
+                      on_replay_begin: 0,
                       on_replay_end: 0,
                       on_partition_replay_begin: 1,
                       on_partition_replay_end: 1
@@ -142,7 +169,11 @@ defmodule Chronicle.Reducers.Reducer do
       @behaviour Chronicle.Reducers.Reducer
 
       Module.register_attribute(__MODULE__, :handles, accumulate: true)
+      Module.register_attribute(__MODULE__, :observes, accumulate: true)
+      Module.register_attribute(__MODULE__, :chronicle_batch_functions, accumulate: true)
+      @on_definition Chronicle.Observers.BatchFunctions
 
+      @chronicle_reducer_batch_size Keyword.get(opts, :batch_size, [])
       @chronicle_reducer_model model
       @chronicle_reducer_id Keyword.get(opts, :id, __MODULE__ |> to_string())
       @chronicle_reducer_id_source if Keyword.has_key?(opts, :id),
@@ -162,7 +193,20 @@ defmodule Chronicle.Reducers.Reducer do
       def __chronicle_reducer__(:id), do: @chronicle_reducer_id
       def __chronicle_reducer__(:id_source), do: @chronicle_reducer_id_source
       def __chronicle_reducer__(:model), do: @chronicle_reducer_model
-      def __chronicle_reducer__(:handles), do: @handles |> Enum.reverse()
+
+      def __chronicle_reducer__(:handles) do
+        observed =
+          Enum.flat_map(__chronicle_reducer__(:batch_functions), fn {_, _, _, types} -> types end)
+
+        Enum.uniq(observed ++ __chronicle_reducer__(:per_event))
+      end
+
+      def __chronicle_reducer__(:per_event), do: @handles |> Enum.reverse()
+
+      def __chronicle_reducer__(:batch_functions),
+        do: Chronicle.Observers.BatchFunctions.merge(Enum.reverse(@chronicle_batch_functions))
+
+      def __chronicle_reducer__(:batch_size), do: @chronicle_reducer_batch_size
       def __chronicle_reducer__(:active), do: @chronicle_reducer_active
       def __chronicle_reducer__(:middleware), do: @chronicle_reducer_middleware
 
