@@ -17,9 +17,10 @@ defmodule Chronicle.Reactors.Handler do
 
   alias Chronicle.Connections.{Connection, Lifecycle, Status}
   alias Chronicle.Reactors.Dispatch
-  alias Chronicle.Observers.BatchRunner
+  alias Chronicle.Observers.{BatchFunctions, BatchRunner, PageDeliveryOptions}
 
   alias Cratis.Chronicle.Contracts.Observation.Reactors.{
+    PageDelivery,
     Reactors,
     ReactorMessage,
     ReactorDefinition,
@@ -46,6 +47,9 @@ defmodule Chronicle.Reactors.Handler do
   def init(opts) do
     module = Keyword.fetch!(opts, :module)
     client = Keyword.get(opts, :client, Chronicle.Client)
+    # Raises when an event type would reach more than one function, so a mixed-up reactor
+    # never registers.
+    functions = BatchFunctions.validate!(:reactor, module)
     event_type_modules = module.__chronicle_reactor__(:handles)
 
     generation_delivery =
@@ -69,6 +73,7 @@ defmodule Chronicle.Reactors.Handler do
       event_store: Keyword.fetch!(opts, :event_store),
       namespace: Keyword.fetch!(opts, :namespace),
       event_type_map: event_type_map,
+      batch_functions: functions.batch,
       generation_delivery: generation_delivery,
       establish_fun: Keyword.get(opts, :establish_fun, &default_establish/2),
       send_fun: Keyword.get(opts, :send_fun, &GRPC.Stub.send_request/2),
@@ -139,13 +144,14 @@ defmodule Chronicle.Reactors.Handler do
 
   # Batches for different partitions run concurrently, each partition's in order;
   # replay notifications keep their place relative to the batches around them.
+  # A page that spans several partitions runs on its own.
   def handle_info({:event_batch, events_to_observe, received_at}, state) do
     partition = Map.get(events_to_observe, :Partition, "")
 
     state =
       case replay_state(events_to_observe) do
         :none ->
-          BatchRunner.batch(state, partition, events_to_observe, received_at, hooks())
+          BatchRunner.delivery(state, events_to_observe, received_at, hooks())
 
         signal when signal in [:begin_replay, :end_replay] ->
           BatchRunner.barrier(state, {:replay, signal, partition}, hooks())
@@ -260,6 +266,12 @@ defmodule Chronicle.Reactors.Handler do
               ConnectionId: conn_id,
               EventStore: state.event_store,
               Namespace: state.namespace,
+              # Opts in to pages; a kernel that predates them ignores the field.
+              PageDelivery:
+                PageDeliveryOptions.to_wire(
+                  PageDelivery,
+                  state.module.__chronicle_reactor__(:batch_size)
+                ),
               Reactor:
                 struct(ReactorDefinition,
                   ReactorId: reactor_id,
