@@ -11,123 +11,42 @@ Event sequences are a shared Chronicle concept. Use the shared docs for the even
 - [Appending events](/chronicle/events/appending/)
 - [Elixir client setup](./get-started.md)
 
-The sections below cover `Chronicle.EventSequences.EventLog` APIs that are new to the
-Elixir client and not yet covered by the shared docs above.
+Choose an [append result](#append-results) and decide whether to
+[wait for observers](#appending-and-waiting-for-observer-completion) before the next step.
+Then [read events](#reading-typed-events) or use the concurrency and stream APIs below.
+[Redaction](#redacting-events) is a separate advanced task; read its warnings before acting.
 
-## Redacting events
+## Append results
 
-Redaction permanently erases an event's content, for example to honor a GDPR erasure
-request. It works on events, not on keys: [compliance](/chronicle/compliance/) encrypts
-PII and makes it unreadable by deleting a subject's key, while redaction overwrites the
-stored event itself. Neither can be undone. Mirrors the C# and TypeScript clients' `IEventSequence.Redact()`.
-
-Redact a single event by its sequence number, with a reason:
-
-```elixir
-:ok = Chronicle.EventSequences.EventLog.redact(sequence_number, "Customer requested erasure")
-```
-
-Redact every event for an event source in one call — for example, to erase all data for a
-specific user:
+`append/3` and `append_many/3` return `:ok` or `{:error, reason}`. When you need the sequence
+number that was assigned, or the *structured* reason an append was refused, use the `_with_result`
+variants. They return a `Chronicle.EventSequences.AppendResult`; mirrors the .NET `AppendResult`
+and `AppendManyResult`.
 
 ```elixir
-:ok =
-  Chronicle.EventSequences.EventLog.redact_for_event_source(
-    event_source_id,
-    "Account closed under GDPR"
-  )
-```
+case Chronicle.append_with_result("user-1", %MyApp.Events.UserRegistered{email: "a@b.c"}) do
+  {:ok, %{sequence_number: sequence_number}} ->
+    {:registered, sequence_number}
 
-Narrow a bulk redaction to specific event types by passing a list of event type modules as
-the third argument:
+  {:error, %{constraint_violations: [violation | _]}} ->
+    {:rejected, violation.constraint_name, violation.message}
 
-```elixir
-:ok =
-  Chronicle.EventSequences.EventLog.redact_for_event_source(
-    event_source_id,
-    "Email address was captured in error",
-    [MyApp.Events.EmailChanged]
-  )
-```
+  {:error, %{concurrency_violations: [violation | _]}} ->
+    {:conflict, violation.expected_sequence_number, violation.actual_sequence_number}
 
-Both functions accept `:client`, `:namespace` and `:event_sequence_id`, plus the
-`:correlation_id`, `:identity` and `:causation` context overrides described in
-[Context management](context.md). They ignore the other `append/3` options, such as
-`:tags`, `:subject` and `:concurrency_scope`.
-
-## Reading forward from a sequence number
-
-`get_from_sequence_number/2` returns events from (and including) a given sequence number
-onward, optionally filtered by event source id and event types. Mirrors the C# and
-TypeScript clients' `GetFromSequenceNumber()`.
-
-```elixir
-{:ok, events} =
-  Chronicle.EventSequences.EventLog.get_from_sequence_number(sequence_number,
-    event_source_id: event_source_id,
-    event_types: [MyApp.Events.OrderPlaced]
-  )
-```
-
-The list holds the generated contract structs,
-`%Cratis.Chronicle.Contracts.Sequences.AppendedEventResponse{}`, not your event structs.
-Each carries its metadata in `Context` and the event's JSON in its content field.
-
-## Sequence numbers
-
-`get_tail_sequence_number/2` returns the sequence number of the last appended event.
-`get_next_sequence_number/2` mirrors it but returns the number that will be assigned to the
-**next** appended event — it distinguishes "the log is empty" (returns `0`) from "the tail
-is at sequence `0`" (returns `1`), which `get_tail_sequence_number/2` alone cannot do.
-Mirrors the C# and TypeScript clients' `GetNextSequenceNumber()`.
-
-```elixir
-{:ok, tail} = Chronicle.EventSequences.EventLog.get_tail_sequence_number(event_source_id)
-{:ok, next} = Chronicle.EventSequences.EventLog.get_next_sequence_number(event_source_id)
-```
-
-Leaving `:event_source_type` and `:event_stream_type` out looks across every source and stream type. Version 3.5.0 narrowed an omitted value to `"Default"` and returned `{:ok, 0}` however many events were stored; upgrade to 3.5.1 or later.
-
-`get_tail_sequence_number_for_observer/2` scopes the tail lookup to only the event types a
-reactor or reducer module subscribes to (its `@handles` declarations), instead of every
-event type. Mirrors the C# client's `GetTailSequenceNumberForObserver()`.
-
-```elixir
-{:ok, tail} =
-  Chronicle.EventSequences.EventLog.get_tail_sequence_number_for_observer(
-    MyApp.Reactors.OrderNotifier
-  )
-```
-
-## Filtering by stream
-
-`get_for_event_source/2` and `get_tail_sequence_number/2` also accept `:event_source_type`,
-`:event_stream_type`, and `:event_stream_id` options, narrowing either call to a specific
-non-default stream instead of silently ignoring these dimensions:
-
-```elixir
-{:ok, events} =
-  Chronicle.EventSequences.EventLog.get_for_event_source(event_source_id,
-    event_stream_type: "audit-trail",
-    event_stream_id: "2024"
-  )
-```
-
-## Completing a stream
-
-`complete_stream/3` closes a named, non-default stream so that no further events can be
-appended to it. The default stream can never be completed.
-
-```elixir
-case Chronicle.EventSequences.EventLog.complete_stream("audit-trail", "2024") do
-  {:ok, _tail_sequence_number} -> :ok
-  {:error, :default_stream_cannot_be_completed} -> :error
-  {:error, :already_completed} -> :ok
-  {:error, reason} -> {:error, reason}
+  {:error, other} ->
+    {:error, other}
 end
 ```
 
-The last clause covers transport errors such as `{:error, :not_connected}`.
+`append_many_with_result/3` returns every assigned sequence number in order. A rejection is
+`{:error, %AppendResult{}}` carrying `:constraint_violations` (each with `:constraint_name`,
+`:message`, `:event_type_id`, `:sequence_number` and `:details`), `:concurrency_violations` (each
+with `:event_source_id`, `:expected_sequence_number` and `:actual_sequence_number`) and `:errors`.
+Transport failures stay plain `{:error, reason}` terms.
+
+To wait until the observers have processed what you appended, call
+`Chronicle.EventSequences.AppendResult.wait_for_completion/2` on a successful result.
 
 ## Appending and waiting for observer completion
 
@@ -135,6 +54,9 @@ The last clause covers transport errors such as `{:error, :not_connected}`.
 seconds) for every observer affected by the append — reactors, reducers, projections — to
 either reach the appended sequence number or fail, instead of returning as soon as the
 event is durably stored. Mirrors the C# client's `AppendResult.WaitForCompletion()`.
+
+An error can follow a stored append if the wait fails. Read the three outcomes below before
+running this example; don't retry an append blindly on an error.
 
 ```elixir
 case Chronicle.EventSequences.EventLog.append_and_wait_for_completion(
@@ -171,37 +93,23 @@ stored:
 
 There is no append-many variant: waiting after `append_many/3` isn't supported.
 
-## Append results
+## Reading forward from a sequence number
 
-`append/3` and `append_many/3` return `:ok` or `{:error, reason}`. When you need the sequence
-number that was assigned, or the *structured* reason an append was refused, use the `_with_result`
-variants. They return a `Chronicle.EventSequences.AppendResult`; mirrors the .NET `AppendResult`
-and `AppendManyResult`.
+`get_from_sequence_number/2` returns events from (and including) a given sequence number
+onward, optionally filtered by event source id and event types. Mirrors the C# and
+TypeScript clients' `GetFromSequenceNumber()`.
 
 ```elixir
-case Chronicle.append_with_result("user-1", %MyApp.Events.UserRegistered{email: "a@b.c"}) do
-  {:ok, %{sequence_number: sequence_number}} ->
-    {:registered, sequence_number}
-
-  {:error, %{constraint_violations: [violation | _]}} ->
-    {:rejected, violation.constraint_name, violation.message}
-
-  {:error, %{concurrency_violations: [violation | _]}} ->
-    {:conflict, violation.expected_sequence_number, violation.actual_sequence_number}
-
-  {:error, other} ->
-    {:error, other}
-end
+{:ok, events} =
+  Chronicle.EventSequences.EventLog.get_from_sequence_number(sequence_number,
+    event_source_id: event_source_id,
+    event_types: [MyApp.Events.OrderPlaced]
+  )
 ```
 
-`append_many_with_result/3` returns every assigned sequence number in order. A rejection is
-`{:error, %AppendResult{}}` carrying `:constraint_violations` (each with `:constraint_name`,
-`:message`, `:event_type_id`, `:sequence_number` and `:details`), `:concurrency_violations` (each
-with `:event_source_id`, `:expected_sequence_number` and `:actual_sequence_number`) and `:errors`.
-Transport failures stay plain `{:error, reason}` terms.
-
-To wait until the observers have processed what you appended, call
-`Chronicle.EventSequences.AppendResult.wait_for_completion/2` on a successful result.
+The list holds the generated contract structs,
+`%Cratis.Chronicle.Contracts.Sequences.AppendedEventResponse{}`, not your event structs.
+Each carries its metadata in `Context` and the event's JSON in its content field.
 
 ## Reading typed events
 
@@ -221,6 +129,32 @@ end
 An event of a type this client does not know has `event: nil` and the decoded payload in `:raw`;
 a redacted event has `redacted?: true` and a `:redaction` with the reason. Nested structs,
 lists of structs and maps decode as described in `Chronicle.Serialization`.
+
+## Sequence numbers
+
+`get_tail_sequence_number/2` returns the sequence number of the last appended event.
+`get_next_sequence_number/2` mirrors it but returns the number that will be assigned to the
+**next** appended event — it distinguishes "the log is empty" (returns `0`) from "the tail
+is at sequence `0`" (returns `1`), which `get_tail_sequence_number/2` alone cannot do.
+Mirrors the C# and TypeScript clients' `GetNextSequenceNumber()`.
+
+Leaving `:event_source_type` and `:event_stream_type` out looks across every source and stream type. Version 3.5.0 narrowed an omitted value to `"Default"` and returned `{:ok, 0}` however many events were stored; upgrade to 3.5.1 or later.
+
+```elixir
+{:ok, tail} = Chronicle.EventSequences.EventLog.get_tail_sequence_number(event_source_id)
+{:ok, next} = Chronicle.EventSequences.EventLog.get_next_sequence_number(event_source_id)
+```
+
+`get_tail_sequence_number_for_observer/2` scopes the tail lookup to only the event types a
+reactor or reducer module subscribes to (its `@handles` declarations), instead of every
+event type. Mirrors the C# client's `GetTailSequenceNumberForObserver()`.
+
+```elixir
+{:ok, tail} =
+  Chronicle.EventSequences.EventLog.get_tail_sequence_number_for_observer(
+    MyApp.Reactors.OrderNotifier
+  )
+```
 
 ## Event context
 
@@ -310,6 +244,36 @@ call (or one unit of work) are rejected before anything is sent:
 Equal duplicates (the same guard declared more than once) are accepted and collapse to a single
 entry.
 
+## Filtering by stream
+
+`get_for_event_source/2` and `get_tail_sequence_number/2` also accept `:event_source_type`,
+`:event_stream_type`, and `:event_stream_id` options, narrowing either call to a specific
+non-default stream instead of silently ignoring these dimensions:
+
+```elixir
+{:ok, events} =
+  Chronicle.EventSequences.EventLog.get_for_event_source(event_source_id,
+    event_stream_type: "audit-trail",
+    event_stream_id: "2024"
+  )
+```
+
+## Completing a stream
+
+`complete_stream/3` closes a named, non-default stream so that no further events can be
+appended to it. The default stream can never be completed.
+
+```elixir
+case Chronicle.EventSequences.EventLog.complete_stream("audit-trail", "2024") do
+  {:ok, _tail_sequence_number} -> :ok
+  {:error, :default_stream_cannot_be_completed} -> :error
+  {:error, :already_completed} -> :ok
+  {:error, reason} -> {:error, reason}
+end
+```
+
+The last clause covers transport errors such as `{:error, :not_connected}`.
+
 ## Streams, metadata and verification
 
 `Chronicle.EventSequences.Streams` closes, reopens and inspects stream scopes, reads event
@@ -351,16 +315,16 @@ bound to the client, namespace and event sequence that prepared it. Reuse it wit
 useful when you need to verify stored content against exactly what you intended to send, or when
 preparing is itself expensive (large payloads, custom serialization):
 
+Appending a prepared event through a different client, namespace, or event sequence than the one
+that prepared it returns `{:error, :prepared_event_belongs_to_another_sequence}`. Unlike the .NET
+client, single use is not enforced - a prepared event can be appended more than once, exactly like
+appending the same event struct twice.
+
 ```elixir
 {:ok, prepared} = EventLog.prepare(%MyApp.Events.PeriodClosed{period: "2024"})
 :ok = EventLog.append_prepared("acc-1", prepared)
 {:ok, :equal} = Streams.verify_content(sequence_number, prepared)
 ```
-
-Appending a prepared event through a different client, namespace, or event sequence than the one
-that prepared it returns `{:error, :prepared_event_belongs_to_another_sequence}`. Unlike the .NET
-client, single use is not enforced - a prepared event can be appended more than once, exactly like
-appending the same event struct twice.
 
 ## Unknown event types
 
@@ -386,4 +350,45 @@ observer shares, so the client now checks first and returns
 reports the reduction as failed instead. Raise or disable the guard with
 `config :cratis_chronicle, max_payload_bytes: 8 * 1024 * 1024` (or `:infinity`) if your kernel is
 configured for larger messages.
+
+## Redacting events
+
+Redaction permanently erases an event's content, for example to honor a GDPR erasure
+request. It works on events, not on keys: [compliance](/chronicle/compliance/) encrypts
+PII and makes it unreadable by deleting a subject's key, while redaction overwrites the
+stored event itself. Neither can be undone. Mirrors the C# and TypeScript clients' `IEventSequence.Redact()`.
+
+Redact a single event by its sequence number, with a reason:
+
+```elixir
+:ok = Chronicle.EventSequences.EventLog.redact(sequence_number, "Customer requested erasure")
+```
+
+Redact every event for an event source in one call — for example, to erase all data for a
+specific user:
+
+```elixir
+:ok =
+  Chronicle.EventSequences.EventLog.redact_for_event_source(
+    event_source_id,
+    "Account closed under GDPR"
+  )
+```
+
+Narrow a bulk redaction to specific event types by passing a list of event type modules as
+the third argument:
+
+```elixir
+:ok =
+  Chronicle.EventSequences.EventLog.redact_for_event_source(
+    event_source_id,
+    "Email address was captured in error",
+    [MyApp.Events.EmailChanged]
+  )
+```
+
+Both functions accept `:client`, `:namespace` and `:event_sequence_id`, plus the
+`:correlation_id`, `:identity` and `:causation` context overrides described in
+[Context management](context.md). They ignore the other `append/3` options, such as
+`:tags`, `:subject` and `:concurrency_scope`.
 
