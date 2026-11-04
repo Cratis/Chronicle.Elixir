@@ -24,6 +24,9 @@ defmodule Chronicle.Events.EventContext do
     * `:appended_generation` — the generation that was actually appended, regardless of
       which generation the handler is written against. `0` means unknown: an older kernel
       that doesn't send this field, or an event appended outside a registered event source.
+    * `:compensation_for` — the sequence number of the event this event compensates, or
+      `nil` when it is not a compensation. The wire cannot tell a compensation of sequence
+      number `0` from no compensation, so `0` also reads as `nil`.
     * `:observation_state` — the observation state; `:replaying?` is `true` while the observer is replaying
     * `:delivery_id` — reactors only; see `delivery_id/1`
   """
@@ -50,6 +53,7 @@ defmodule Chronicle.Events.EventContext do
             hash: "",
             subject: "",
             appended_generation: 0,
+            compensation_for: nil,
             observation_state: 0,
             replaying?: false,
             delivery_id: nil
@@ -86,6 +90,7 @@ defmodule Chronicle.Events.EventContext do
       hash: Map.get(ctx, :Hash, ""),
       subject: Map.get(ctx, :Subject, ""),
       appended_generation: Map.get(ctx, :AppendedGeneration, 0),
+      compensation_for: compensation_for(Map.get(ctx, :CompensationFor, 0)),
       observation_state: Map.get(ctx, :ObservationState, 0),
       replaying?: Map.get(ctx, :ObservationState, 0) in [:Replay, 2]
     }
@@ -95,6 +100,11 @@ defmodule Chronicle.Events.EventContext do
       reactor_id -> %{context | delivery_id: delivery_id(context, reactor_id)}
     end
   end
+
+  # Unset (0) and the unavailable sequence number both mean "not a compensation".
+  defp compensation_for(value) when value in [0, 18_446_744_073_709_551_615], do: nil
+  defp compensation_for(value) when is_integer(value), do: value
+  defp compensation_for(_), do: nil
 
   @doc """
   The stable identity of one delivery of an event to a reactor.

@@ -35,6 +35,20 @@ defmodule Chronicle.EventSequences.EventSequence do
   end
 
   @doc """
+  Appends a compensating event for the event at the given sequence number. See
+  `Chronicle.EventSequences.EventLog.compensate/3`.
+  """
+  @spec compensate(t(), non_neg_integer(), struct(), keyword()) ::
+          {:ok, Chronicle.EventSequences.AppendResult.t()} | {:error, term()}
+  def compensate(%__MODULE__{} = event_sequence, compensation_for, event, opts \\ []) do
+    Chronicle.EventSequences.EventLog.compensate(
+      compensation_for,
+      event,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
   Appends multiple events to the event sequence.
   """
   @spec append_many(t(), String.t(), [struct()], keyword()) :: :ok | {:error, term()}

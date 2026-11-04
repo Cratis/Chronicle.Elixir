@@ -76,6 +76,33 @@ Narrow the copy to specific event types by passing a list of event type modules:
 It accepts `:client`, `:namespace` and `:event_sequence_id`. It is not available in the
 in-memory test kernel.
 
+## Compensating events
+
+`compensate/3` appends a compensating event for an event that is already in the sequence. Pass the
+sequence number of the event being compensated; the kernel appends the compensation to that
+event's own event source and stream, so you give no event source id. The compensated event stays
+untouched.
+
+```elixir
+{:ok, %{sequence_number: sequence_number}} =
+  Chronicle.EventSequences.EventLog.compensate(
+    registered_sequence_number,
+    %MyApp.Events.CustomerRegisteredInError{reason: "duplicate"}
+  )
+```
+
+The event type declares what it compensates with `compensation_for:` (see
+[Events](events.md)); the kernel validates the pairing. It returns an
+`Chronicle.EventSequences.AppendResult` like `append_with_result/3`: `{:ok, result}` on success,
+`{:error, result}` for a kernel rejection and `{:error, reason}` for transport or client errors.
+It accepts `:client`, `:namespace`, `:event_sequence_id`, `:timeout`, `:occurred`, `:tags`,
+`:correlation_id`, `:identity` and `:causation`. A compensation is always sent immediately, never
+buffered into a unit of work, and it is not available in the in-memory test kernel.
+
+An observer sees the link on the event context: `context.compensation_for` is the sequence number
+of the compensated event, or `nil` for an event that is not a compensation (the wire cannot tell a
+compensation of sequence number `0` from none).
+
 ## Reading forward from a sequence number
 
 `get_from_sequence_number/2` returns events from (and including) a given sequence number
@@ -248,7 +275,7 @@ lists of structs and maps decode as described in `Chronicle.Serialization`.
 Reactors, reducers and `decode: true` reads all give you a `Chronicle.Events.EventContext`:
 the event type and source, sequence number, `occurred`, event store and namespace,
 `correlation_id`, the identity that caused the event (`caused_by`, with `on_behalf_of`), the
-`causation` chain, `tags`, `hash`, `subject` and `appended_generation` (the generation that was
+`causation` chain, `tags`, `hash`, `subject` and `compensation_for` (the compensated sequence number, or `nil`) and `appended_generation` (the generation that was
 actually appended, regardless of which generation a reactor or reducer is written against; `0`
 means unknown). See [Context management](context.md) for how to set the correlation id, identity
 and causation on the way in.
