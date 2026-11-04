@@ -39,6 +39,7 @@ defmodule Chronicle.EventSequences.EventLog do
     AppendRequest,
     Causation,
     CompleteStreamRequest,
+    CopyEventsForEventSourceRequest,
     EventSequences,
     EventSourceConcurrencyScope,
     EventType,
@@ -796,6 +797,42 @@ defmodule Chronicle.EventSequences.EventLog do
   end
 
   @doc """
+  Copies the events of one event source onto another event source in the same
+  event sequence, optionally filtered to specific event types. The copy runs as
+  a durable job in the kernel; the originals are left untouched. An empty
+  `event_types` list copies events of every type.
+
+  Returns `{:ok, job_id}` with the id (a UUID string) of the job that was started.
+
+  ## Options
+
+  Same as `redact/3`.
+  """
+  @spec copy(String.t(), String.t(), [module()], keyword()) ::
+          {:ok, String.t()} | {:error, term()}
+  def copy(source_id, target_id, event_types \\ [], opts \\ []) do
+    with {:ok, channel, config} <- resolve_channel(opts) do
+      namespace = Keyword.get(opts, :namespace, config.namespace)
+      event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+
+      request =
+        struct(CopyEventsForEventSourceRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          EventSequenceId: event_sequence_id,
+          SourceId: source_id,
+          TargetId: target_id,
+          EventTypes: Enum.map(event_types, & &1.__chronicle_event_type__(:id))
+        )
+
+      with {:ok, envelope} <- EventSequences.Stub.copy_events_for_event_source(channel, request),
+           {:ok, job_id} <- WireResult.unwrap(envelope) do
+        {:ok, guid_to_string(job_id)}
+      end
+    end
+  end
+
+  @doc """
   Checks whether an event sequence has events for an event source id.
 
   ## Options
@@ -1408,6 +1445,18 @@ defmodule Chronicle.EventSequences.EventLog do
       <<first::little-32, second::little-16, third::little-16, remaining::binary>>
 
     struct(BclGuid, lo: lo, hi: hi)
+  end
+
+  defp guid_to_string(%BclGuid{lo: lo, hi: hi}) do
+    # Inverse of the protobuf-net Guid encoding used for correlation ids.
+    <<first::little-32, second::little-16, third::little-16, remaining::binary-size(8)>> =
+      <<lo::little-64, hi::little-64>>
+
+    <<first::32, second::16, third::16, remaining::binary>>
+    |> Base.encode16(case: :lower)
+    |> then(fn <<a::binary-8, b::binary-4, c::binary-4, d::binary-4, e::binary-12>> ->
+      Enum.join([a, b, c, d, e], "-")
+    end)
   end
 
   defp build_identity(opts) do
