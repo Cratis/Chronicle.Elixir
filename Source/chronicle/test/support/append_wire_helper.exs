@@ -110,6 +110,15 @@ defmodule Chronicle.AppendWireCase do
             }
           )
 
+        %Wire.CopyEventsForEventSourceRequest{} ->
+          struct(
+            stream.response_mod,
+            Keyword.merge(
+              [IsAuthorized: true, Response: Map.get(responses, :copy_job_id)],
+              Map.get(responses, :envelope, [])
+            )
+          )
+
         %Wire.MetadataAtRequest{} ->
           struct(stream.response_mod, IsAuthorized: true, Data: Map.get(responses, :metadata, []))
 

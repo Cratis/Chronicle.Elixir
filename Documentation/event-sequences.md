@@ -55,6 +55,27 @@ Both functions accept `:client`, `:namespace` and `:event_sequence_id`, plus the
 [Context management](context.md). They ignore the other `append/3` options, such as
 `:tags`, `:subject` and `:concurrency_scope`.
 
+## Copying events
+
+`copy/4` copies the events of one event source onto another event source in the same event
+sequence. The kernel runs the copy as a durable job and the originals stay untouched. The call
+returns `{:ok, job_id}` with the id of the job that was started; an empty type list copies
+events of every type.
+
+```elixir
+{:ok, job_id} = Chronicle.EventSequences.EventLog.copy(source_id, target_id)
+```
+
+Narrow the copy to specific event types by passing a list of event type modules:
+
+```elixir
+{:ok, job_id} =
+  Chronicle.EventSequences.EventLog.copy(source_id, target_id, [MyApp.Events.AddressChanged])
+```
+
+It accepts `:client`, `:namespace` and `:event_sequence_id`. It is not available in the
+in-memory test kernel.
+
 ## Reading forward from a sequence number
 
 `get_from_sequence_number/2` returns events from (and including) a given sequence number

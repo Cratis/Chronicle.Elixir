@@ -43,7 +43,7 @@ defmodule Chronicle.MixProject do
 
   defp deps do
     [
-      {:cratis_chronicle_contracts, "~> 19.122"},
+      {:cratis_chronicle_contracts, "~> 19.123"},
       {:grpc, "~> 1.0"},
       {:mint, "~> 1.11"},
       {:telemetry, "~> 1.0"},
@@ -112,8 +112,6 @@ defmodule Chronicle.MixProject do
         Observers: [
           Chronicle.Reactors.Reactor,
           Chronicle.Reducers.Reducer,
-          Chronicle.Observers.EventBatch,
-          Chronicle.Observers.BatchContext,
           Chronicle.EventStoreSubscriptions,
           Chronicle.EventStoreSubscriptions.Subscription,
           Chronicle.EventStoreSubscriptions.Definition,

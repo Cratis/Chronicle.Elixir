@@ -190,6 +190,21 @@ defmodule Chronicle.EventSequences.EventSequence do
   end
 
   @doc """
+  Copies the events of one event source onto another, optionally filtered to
+  specific event types. Returns `{:ok, job_id}` for the durable job that was started.
+  """
+  @spec copy(t(), String.t(), String.t(), [module()], keyword()) ::
+          {:ok, String.t()} | {:error, term()}
+  def copy(%__MODULE__{} = event_sequence, source_id, target_id, event_types \\ [], opts \\ []) do
+    Chronicle.EventSequences.EventLog.copy(
+      source_id,
+      target_id,
+      event_types,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
   Checks whether the event sequence has events for the given event source id.
   """
   @spec has_events_for?(t(), String.t(), keyword()) :: {:ok, boolean()} | {:error, term()}
