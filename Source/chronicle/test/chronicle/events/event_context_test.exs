@@ -57,6 +57,15 @@ defmodule Chronicle.Events.EventContextTest do
     assert ctx.namespace == "ns"
   end
 
+  test "reads the compensated sequence number, treating unset as nil" do
+    assert EventContext.from_wire(wire()).compensation_for == nil
+
+    assert EventContext.from_wire(Map.put(wire(), :CompensationFor, 12)).compensation_for == 12
+
+    unavailable = Map.put(wire(), :CompensationFor, 18_446_744_073_709_551_615)
+    assert EventContext.from_wire(unavailable).compensation_for == nil
+  end
+
   test "delivery id is stable and matches the .NET derivation" do
     ctx = EventContext.from_wire(wire(), event_sequence_id: "event-log", reactor_id: "my-reactor")
 
