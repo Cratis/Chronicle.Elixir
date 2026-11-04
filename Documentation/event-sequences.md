@@ -11,8 +11,10 @@ Event sequences are a shared Chronicle concept. Use the shared docs for the even
 - [Appending events](/chronicle/events/appending/)
 - [Elixir client setup](./get-started.md)
 
-The sections below cover `Chronicle.EventSequences.EventLog` APIs that are new to the
-Elixir client and not yet covered by the shared docs above.
+Choose an [append result](#append-results) and decide whether to
+[wait for observers](#appending-and-waiting-for-observer-completion) before the next step.
+Then [read events](#reading-typed-events) or use the concurrency and stream APIs below.
+[Redaction](#redacting-events) is a separate advanced task; read its warnings before acting.
 
 ## Redacting events
 
@@ -183,6 +185,9 @@ The last clause covers transport errors such as `{:error, :not_connected}`.
 seconds) for every observer affected by the append — reactors, reducers, projections — to
 either reach the appended sequence number or fail, instead of returning as soon as the
 event is durably stored. Mirrors the C# client's `AppendResult.WaitForCompletion()`.
+
+An error can follow a stored append if the wait fails. Read the three outcomes below before
+running this example; don't retry an append blindly on an error.
 
 ```elixir
 case Chronicle.EventSequences.EventLog.append_and_wait_for_completion(
