@@ -17,6 +17,10 @@ observer can't handle one of its events. In the Elixir client that happens when:
 A failed partition stops advancing while the rest of the observer continues. Mirrors the C#
 and Kotlin clients' `IFailedPartitions`.
 
+Inspect failures in the selected client's event store and namespace before choosing a recovery operation.
+Use [Recovering a partition](observers.md#recovering-a-partition) for the recovery request; a lookup is not recovery.
+Review messages and stack traces before sharing diagnostics.
+
 ## Starting point
 
 Start `Chronicle.Client` first:
