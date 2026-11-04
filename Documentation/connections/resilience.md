@@ -3,9 +3,9 @@ title: Resilience and the connection lifecycle
 description: How the Elixir client connects, registers artifacts, detects a dead session, reconnects, and what your code sees while it does.
 ---
 
-A Chronicle client is a small supervision tree of processes that all depend on one live connection to the kernel. Reactors, reducers, projections, seeders, webhooks and subscriptions all need that connection, and they all need it to come *back* after it drops. Instead of letting each of them retry on its own, which races and registers observers before the kernel knows their definitions, the client drives every part through one connection lifecycle. The design follows the .NET client's connection lifecycle.
+A Chronicle client is a small supervision tree whose processes depend on one live connection to the kernel. Reactors, reducers, projections, seeders, webhooks and subscriptions need that connection to come back after it drops. The client drives them through one connection lifecycle rather than letting each retry independently and race to register observers before the kernel knows their definitions. The design follows the .NET client's connection lifecycle.
 
-This page explains that lifecycle and, more importantly for your code, what calls return while it is not ready.
+For your application, the first distinction is between a channel that can carry calls and a client that has finished registering. Use that distinction when waiting for startup, then inspect registration if the client does not become ready.
 
 ## The three phases
 
@@ -48,7 +48,7 @@ end
 
 ## What happens on connect
 
-On every connect, first or not, the client runs the same ordered registration:
+On every connection, including after a reconnect, the client runs the same ordered registration:
 
 1. Ensure the event store and namespace exist.
 2. Register event types, including their migrations.
@@ -58,7 +58,36 @@ On every connect, first or not, the client runs the same ordered registration:
 6. Advance to `:registered`.
 7. Reactors and reducers open their observation streams, webhook and subscription registrars register, and seeders run.
 
-Steps 1 to 5 finish before step 7, so observers never register against definitions that don't exist yet. If any registration step fails, the client logs `Chronicle registration failed` with the reason, stays in `:connected`, and retries every five seconds. A registration that never succeeds, such as a rejected event type schema, therefore shows up as a client that never reaches `:registered`. Check the log for that message.
+Steps 1 to 5 finish before step 7, so observers never register against definitions that don't exist yet. If a registration step fails, the client logs `Chronicle registration failed` with the reason and stays in `:connected`. Retryable failures use a five-second delay by default; permanent rejections are not retried. A rejected event type schema can therefore leave the client short of `:registered` rather than retrying indefinitely. Check the log for the reason, then inspect registration as described below.
+
+## Awaiting and inspecting registration
+
+Use the registration methods to wait for completion or inspect why it has not finished:
+
+```elixir
+:ok = Chronicle.Client.await_registration()                       # waits up to 30 seconds
+{:error, {:failed, status}} = Chronicle.Client.await_registration()  # the kernel rejected something for good
+%{state: :registering, attempts: 2, error: error, next_retry_in: ms} = Chronicle.Client.registration_status()
+```
+
+`registration_status/1` reports `:pending`, `:registering`, `:registered` or `:failed`. A rejection the kernel will never accept — a validation failure, an invalid argument — is `:failed` at once and is not retried. Retryable failures use backoff, but retrying also stops when a configured attempt limit is reached. Tune it with the client's `:registration` option:
+
+```elixir
+{Chronicle.Client,
+ registration: [initial_delay: 1_000, max_delay: 30_000, multiplier: 2, jitter: 0.2, max_attempts: 10]}
+```
+
+The default keeps the fixed five-second delay with no attempt limit for retryable failures. Permanent failures still stop registration.
+
+## Watchdog
+
+For a client that stays short of `:registered`, the watchdog reconnects it after the configured interval:
+
+```elixir
+{Chronicle.Client, watchdog: [unregistered_for: 60_000]}
+```
+
+The default is 60 seconds when enabled with `watchdog: true`. This replaces a hand-written supervisor-of-the-client watchdog.
 
 ## What happens on disconnect
 
@@ -73,7 +102,7 @@ The channel reconnects with exponential backoff, starting at one second and capp
 
 The `:retry_attempts` option is accepted for backward compatibility and ignored; reconnection doesn't give up.
 
-The session runs on its own HTTP/2 connection to the same server as everything else. The gRPC transport queues outgoing data for a connection in one queue, so on a shared connection a large reactor or reducer result waiting on flow control would also hold back the keepalive answers. On its own connection the session stays alive while observers work through large batches. To use one connection for everything, set `dedicated_session_channel: false`.
+The session runs on its own HTTP/2 connection to the same server as everything else. The gRPC transport queues outgoing data for a connection in one queue. On a shared connection, a large reactor or reducer result waiting on flow control would also hold back the keepalive answers. On its own connection the session stays alive while observers work through large batches. To use one connection for everything, set `dedicated_session_channel: false`.
 
 The five seconds match the kernel's `connectedClients.staleThresholdSeconds`. To tolerate longer gaps, raise the kernel setting and the client's `:keepalive_timeout` option (in milliseconds) together.
 
@@ -87,58 +116,24 @@ Appends and queries are not queued or retried while the client is disconnected. 
 - A call that races a dying channel returns `{:error, %GRPC.RPCError{status: 14}}` (unavailable). A reply the gRPC transport can't read, such as the kernel rejecting an unauthenticated call, returns `{:error, %GRPC.RPCError{status: 13}}`. Version 3.5.0 raised or exited in the caller in both cases.
 - A successful `:ok` means Chronicle stored the event. An error from a call that timed out doesn't prove the write failed; see [Event sequences](../event-sequences.md#appending-and-waiting-for-observer-completion).
 
+## Expired and rotated tokens
+
+The client attaches a fresh bearer token to every call and refreshes it ahead of expiry. If the kernel answers a call with `Unauthenticated` — it restarted with new signing keys, say — the client drops its cached token and repeats that call once with a new one, instead of presenting the rejected token until it expires. Every reconnect also starts from a fresh token.
+
 ## Seeding waits for registration
 
 Seeders run each time the lifecycle reaches `:registered`: at startup and again after every reconnect. A failed seeding run is retried every five seconds. The kernel remembers which seed entries it applied, so running it again after a reconnect applies nothing new. See [Seeding](../seeding.md#how-it-runs).
 
 ## Failure isolation
 
-Each reactor and reducer manages its own observation stream. If one stream fails while the connection is healthy, only that stream reopens, after a short delay. Failing to send a result, for example because the connection is too busy to accept it in time, counts as a stream failure: the handler logs it, emits `[:chronicle, :observer, :result, :send_failed]` telemetry and reopens its stream, and Chronicle redelivers the events. A failing observer never takes down the connection or its siblings. Failures inside your handlers are reported to Chronicle as [failed partitions](../failed-partitions.md).
+A failed observation stream is a different problem from losing the client's session. Each reactor and reducer manages its own observation stream. If one stream fails while the connection is healthy, only that stream reopens, after a short delay.
+
+Failing to send a result, for example because the connection is too busy to accept it in time, counts as a stream failure: the handler logs it, emits `[:chronicle, :observer, :result, :send_failed]` telemetry and reopens its stream, and Chronicle redelivers the events. A failing observer never takes down the connection or its siblings. Failures inside your handlers are reported to Chronicle as [failed partitions](../failed-partitions.md).
+
+## Silent observers
+
+Check observer progress separately from whether appends succeed. A kernel can evict a client's connection while appends keep working: observers stop receiving events and nothing fails. Watch their [lag](../observers.md#lag) with `observer_lag: [interval: 15_000]` and the `[:chronicle, :observer, :lag]` telemetry event.
 
 ## What you manage
 
 You don't write reconnect code. The client re-establishes the session, re-registers artifacts and re-attaches observers on its own. What you do own is how your code behaves while the client is not `:registered`: wait for readiness before the first call, and handle `{:error, reason}` from every call.
-
-## Awaiting and inspecting registration
-
-Registration retries on its own, but your code often needs to know when it is done:
-
-```elixir
-:ok = Chronicle.Client.await_registration()                       # waits up to 30 seconds
-{:error, {:failed, status}} = Chronicle.Client.await_registration()  # the kernel rejected something for good
-%{state: :registering, attempts: 2, error: error, next_retry_in: ms} = Chronicle.Client.registration_status()
-```
-
-`registration_status/1` reports `:pending`, `:registering`, `:registered` or `:failed`. A rejection the
-kernel will never accept - a validation failure, an invalid argument - is `:failed` at once and is not
-retried; anything else is retried with backoff. Tune it with the client's `:registration` option:
-
-```elixir
-{Chronicle.Client,
- registration: [initial_delay: 1_000, max_delay: 30_000, multiplier: 2, jitter: 0.2, max_attempts: 10]}
-```
-
-The default keeps the historical fixed five-second delay and never gives up.
-
-## Expired and rotated tokens
-
-The client attaches a fresh bearer token to every call and refreshes it ahead of expiry. If the
-kernel answers a call with `Unauthenticated` - it restarted with new signing keys, say - the client
-drops its cached token and repeats that call once with a new one, instead of presenting the rejected
-token until it expires. Every reconnect also starts from a fresh token.
-
-## Watchdog
-
-```elixir
-{Chronicle.Client, watchdog: [unregistered_for: 60_000]}
-```
-
-Reconnects a client that has been stuck short of `:registered` for that long (default 60 seconds
-when enabled with `watchdog: true`). It replaces a hand-written supervisor-of-the-client watchdog.
-
-## Silent observers
-
-A kernel can evict a client's connection while appends keep working: observers stop receiving
-events and nothing fails. Watch their [lag](../observers.md#lag) with `observer_lag: [interval: 15_000]`
-and the `[:chronicle, :observer, :lag]` telemetry event.
-

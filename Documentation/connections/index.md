@@ -3,13 +3,9 @@ title: Connections
 description: How the Elixir client holds a long-lived gRPC connection to a Chronicle kernel, and where to configure credentials, TLS and recovery.
 ---
 
-A Chronicle client keeps one long-lived gRPC connection to a Chronicle kernel. Everything the client does flows over it: appending events, registering projections, running reactors and reducers, seeding. Because it is long-lived, it *will* be interrupted: kernels restart, networks blip, load balancers recycle connections. The client treats those interruptions as normal and recovers from them without losing observers.
+A Chronicle client keeps one long-lived gRPC connection to a Chronicle kernel. Appending events, registering projections, running reactors and reducers, and seeding all use that connection. Kernels restart, networks fail and load balancers recycle connections; the client handles those interruptions and recovers without losing observers.
 
-## Guides
-
-- [Connection strings](connection-strings.md): the `chronicle://` and `chronicle+srv://` formats, client credentials and API keys, TLS validation, and the other options.
-- [Resilience and the connection lifecycle](resilience.md): how the client connects, registers your artifacts, detects a dead session and reconnects, and what your calls return while it does.
-- [Keep credentials out of crash reports](crash-reports.md): when gRPC and Mint crash reports can print an API key or bearer token, and the production Logger setup that keeps them out of your logs.
+Configure the client in your supervision tree, then wait for registration before making your first call. The client owns the connection and its recovery; your application chooses how to handle calls while it is not ready.
 
 ## At a glance
 
@@ -33,3 +29,9 @@ alias Chronicle.Connections.Lifecycle
 ```
 
 You never manage the socket, the session, or re-registration yourself.
+
+## Guides
+
+- [Connection strings](connection-strings.md): choose credentials and TLS settings for your kernel, using the `chronicle://` or `chronicle+srv://` format, then keep the connection string in application configuration.
+- [Resilience and the connection lifecycle](resilience.md): distinguish an open channel from completed registration, inspect a client that is not ready, and handle calls while the client reconnects. For observers that stop progressing, use the lag and failure diagnostics described there.
+- [Keep credentials out of crash reports](crash-reports.md): understand what the client redacts, what can still reach logs, and when to add a filter for other Mint users in your application.
