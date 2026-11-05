@@ -5,6 +5,14 @@ description: List the event stores on a Chronicle kernel and the namespaces in a
 
 Chronicle Elixir provides APIs to query information about available event stores and their namespaces from the Chronicle kernel. This is useful for administrative tasks, multi-tenant applications, and debugging. See [Event Store](/chronicle/concepts/event-store/) and [Namespaces](/chronicle/concepts/namespaces/) for what these concepts mean and how they relate to multi-tenancy — this page covers the Elixir-specific discovery APIs for listing and verifying them at runtime.
 
+Use discovery to list names, not to switch the client used by reads and appends.
+The `:client` option names a running `Chronicle.Client`; for setup and multiple stores,
+see [Get started](get-started.md) and [Multi-Store Operations](#multi-store-operations).
+`get_namespaces/1` can inspect a store through its `:event_store` option.
+Confirm the intended store, namespace, and authority for your operation before using an application example.
+
+Passing a `:client` name that no running client uses raises `ArgumentError` (`no persistent term stored with this key`) instead of returning an error tuple.
+
 ## Getting Event Stores
 
 Query all event store names from the Chronicle kernel:
@@ -59,6 +67,8 @@ end
 ```
 
 ## Typical Usage
+
+Choose an application example for the task you have; these are alternatives, not a sequence to run.
 
 ### Multi-Tenant Admin Interface
 
@@ -197,8 +207,6 @@ case Chronicle.get_namespaces() do
     IO.puts("Error: #{inspect(reason)}")
 end
 ```
-
-Passing a `:client` name that no running client uses raises `ArgumentError` (`no persistent term stored with this key`) instead of returning an error tuple.
 
 ## See Also
 

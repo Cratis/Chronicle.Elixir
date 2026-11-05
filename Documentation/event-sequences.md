@@ -11,8 +11,10 @@ Event sequences are a shared Chronicle concept. Use the shared docs for the even
 - [Appending events](/chronicle/events/appending/)
 - [Elixir client setup](./get-started.md)
 
-The sections below cover `Chronicle.EventSequences.EventLog` APIs that are new to the
-Elixir client and not yet covered by the shared docs above.
+Choose an [append result](#append-results) and decide whether to
+[wait for observers](#appending-and-waiting-for-observer-completion) before the next step.
+Then [read events](#reading-typed-events) or use the concurrency and stream APIs below.
+[Redaction](#redacting-events) is a separate advanced task; read its warnings before acting.
 
 ## Redacting events
 
@@ -75,6 +77,33 @@ Narrow the copy to specific event types by passing a list of event type modules:
 
 It accepts `:client`, `:namespace` and `:event_sequence_id`. It is not available in the
 in-memory test kernel.
+
+## Compensating events
+
+`compensate/3` appends a compensating event for an event that is already in the sequence. Pass the
+sequence number of the event being compensated; the kernel appends the compensation to that
+event's own event source and stream, so you give no event source id. The compensated event stays
+untouched.
+
+```elixir
+{:ok, %{sequence_number: sequence_number}} =
+  Chronicle.EventSequences.EventLog.compensate(
+    registered_sequence_number,
+    %MyApp.Events.CustomerRegisteredInError{reason: "duplicate"}
+  )
+```
+
+The event type declares what it compensates with `compensation_for:` (see
+[Events](events.md)); the kernel validates the pairing. It returns an
+`Chronicle.EventSequences.AppendResult` like `append_with_result/3`: `{:ok, result}` on success,
+`{:error, result}` for a kernel rejection and `{:error, reason}` for transport or client errors.
+It accepts `:client`, `:namespace`, `:event_sequence_id`, `:timeout`, `:occurred`, `:tags`,
+`:correlation_id`, `:identity` and `:causation`. A compensation is always sent immediately, never
+buffered into a unit of work, and it is not available in the in-memory test kernel.
+
+An observer sees the link on the event context: `context.compensation_for` is the sequence number
+of the compensated event, or `nil` for an event that is not a compensation (the wire cannot tell a
+compensation of sequence number `0` from none).
 
 ## Reading forward from a sequence number
 
@@ -156,6 +185,9 @@ The last clause covers transport errors such as `{:error, :not_connected}`.
 seconds) for every observer affected by the append — reactors, reducers, projections — to
 either reach the appended sequence number or fail, instead of returning as soon as the
 event is durably stored. Mirrors the C# client's `AppendResult.WaitForCompletion()`.
+
+An error can follow a stored append if the wait fails. Read the three outcomes below before
+running this example; don't retry an append blindly on an error.
 
 ```elixir
 case Chronicle.EventSequences.EventLog.append_and_wait_for_completion(
@@ -248,7 +280,7 @@ lists of structs and maps decode as described in `Chronicle.Serialization`.
 Reactors, reducers and `decode: true` reads all give you a `Chronicle.Events.EventContext`:
 the event type and source, sequence number, `occurred`, event store and namespace,
 `correlation_id`, the identity that caused the event (`caused_by`, with `on_behalf_of`), the
-`causation` chain, `tags`, `hash`, `subject` and `appended_generation` (the generation that was
+`causation` chain, `tags`, `hash`, `subject` and `compensation_for` (the compensated sequence number, or `nil`) and `appended_generation` (the generation that was
 actually appended, regardless of which generation a reactor or reducer is written against; `0`
 means unknown). See [Context management](context.md) for how to set the correlation id, identity
 and causation on the way in.

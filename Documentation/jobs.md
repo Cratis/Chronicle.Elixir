@@ -3,7 +3,7 @@ title: Jobs
 description: List, inspect, stop, resume and delete Chronicle jobs such as replays from the Elixir client.
 ---
 
-`Chronicle.Jobs` provides an idiomatic Elixir API for inspecting and controlling Chronicle jobs.
+Inspect a job's progress and steps in the selected client's event store and namespace with `Chronicle.Jobs`.
 
 Jobs represent long-running Chronicle operations such as replays, rebuilds, and other background work performed by the Chronicle Kernel.
 
@@ -63,6 +63,10 @@ Returns `{:ok, nil}` when the job does not exist.
 Each step is returned as `%Chronicle.Jobs.JobStep{}`.
 
 ### Stop, resume, and delete
+
+Choose stop, resume or delete for the job you inspected; these are alternatives, not a sequence to run.
+Confirm the job id, client/namespace and authority before a control request, then inspect status again.
+A successful request is not a promise that background work has completed or that cancellation has finished.
 
 ```elixir
 :ok = Chronicle.Jobs.stop(job_id)

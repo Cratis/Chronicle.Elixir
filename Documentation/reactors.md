@@ -12,6 +12,12 @@ Reactors are documented in the shared Chronicle docs with synchronized examples 
 
 Use the [Elixir get started page](/chronicle/clients/elixir/get-started/) for client startup and supervision setup.
 
+Before deploying a handler with external side effects, consider
+[replay](#replay-once-only-and-replay-handlers),
+[initial catch-up](#starting-at-the-tail), and
+[duplicate delivery](#delivery-identity). Read about
+[pinning the id](#pinning-the-id) before moving or renaming a reactor module.
+
 ## Side-effect appending
 
 `handle/2` can return `{:ok, event_or_events}` in addition to `:ok`/`{:error, reason}`, and
@@ -44,38 +50,6 @@ atomically across all their event source ids in one call.
 
 If appending the side effect fails, `handle/2`'s overall result becomes
 `{:error, reason}` — reported the same way as a plain `{:error, reason}` return.
-
-## Replay lifecycle hooks
-
-Implement any of `on_replay_begin/0`, `on_replay_end/0`, `on_partition_replay_begin/1`, or
-`on_partition_replay_end/1` to be notified when Chronicle starts or finishes replaying this
-reactor — either as a whole, or for a single partition (event source). All four are
-optional. Mirrors C#'s `ICanBeNotifiedWhenReplay` / `ICanBeNotifiedWhenPartitionReplayed`.
-
-```elixir
-defmodule MyApp.Reactors.ReplayAwareNotifier do
-  use Chronicle.Reactors.Reactor
-
-  require Logger
-
-  alias MyApp.Events.OrderPlaced
-
-  @handles OrderPlaced
-
-  @impl true
-  def handle(%OrderPlaced{}, _context), do: :ok
-
-  @impl true
-  def on_replay_begin, do: Logger.info("Replay starting")
-
-  @impl true
-  def on_replay_end, do: Logger.info("Replay finished")
-end
-```
-
-These are notifications, not events to handle — they run outside normal `handle/2`
-dispatch, are not subject to failed-partition tracking, and a raised exception is logged
-and swallowed rather than reported to Chronicle.
 
 ## Replay: once-only and replay handlers
 
@@ -123,6 +97,73 @@ reactor, which starts at the tail again. An explicit replay still replays from t
 the Chronicle server and this client must support it; a server that predates it ignores the request
 and the reactor catches up from the beginning.
 
+## Pinning the id
+
+`use Chronicle.Reactors.Reactor` defaults the reactor's id to its full module name. Renaming
+or moving the module then changes that id, and Chronicle treats it as a *different* reactor —
+its observation position resets, replaying events the previous name had already handled.
+Pin the id explicitly so the module can be renamed or moved freely:
+
+```elixir
+use Chronicle.Reactors.Reactor, id: "order-notifier"
+```
+
+A reactor relying on the module-name default gets a one-time warning (per module, for the life
+of the BEAM node) from [discovery](./discovery.md), naming the module and showing this fix. Pass
+`warn_defaulted_ids: false` to `Chronicle.Client` to suppress it. See
+[Discovery and artifact identity drift](./discovery.md).
+
+## Delivery identity
+
+Every reactor invocation context carries `delivery_id`: a stable identity of *this delivery of this
+event to this reactor*, the same value each time the event is redelivered. It is derived like the
+.NET `ReactorDelivery.Id`: the reactor id, event store, namespace, event sequence id, event source
+id and sequence number joined with `#`. Use it as the key of whatever records that the side effect
+happened:
+
+```elixir
+def handle(%OrderPlaced{} = event, %{delivery_id: delivery_id}) do
+  case Receipts.insert_once(delivery_id) do
+    :inserted -> Mailer.send_confirmation(event)
+    :already_there -> :ok
+  end
+end
+```
+
+The id identifies the delivery; it does not make the external effect atomic with the receipt.
+
+## Replay lifecycle hooks
+
+Implement any of `on_replay_begin/0`, `on_replay_end/0`, `on_partition_replay_begin/1`, or
+`on_partition_replay_end/1` to be notified when Chronicle starts or finishes replaying this
+reactor — either as a whole, or for a single partition (event source). All four are
+optional. Mirrors C#'s `ICanBeNotifiedWhenReplay` / `ICanBeNotifiedWhenPartitionReplayed`.
+
+```elixir
+defmodule MyApp.Reactors.ReplayAwareNotifier do
+  use Chronicle.Reactors.Reactor
+
+  require Logger
+
+  alias MyApp.Events.OrderPlaced
+
+  @handles OrderPlaced
+
+  @impl true
+  def handle(%OrderPlaced{}, _context), do: :ok
+
+  @impl true
+  def on_replay_begin, do: Logger.info("Replay starting")
+
+  @impl true
+  def on_replay_end, do: Logger.info("Replay finished")
+end
+```
+
+These are notifications, not events to handle — they run outside normal `handle/2`
+dispatch, are not subject to failed-partition tracking, and a raised exception is logged
+and swallowed rather than reported to Chronicle.
+
 ## Pinned generation delivery
 
 By default (`:compatibility`), Chronicle upgrades every event to the handled module's own
@@ -151,22 +192,6 @@ A client-wide default applies to every reactor that doesn't set its own `:genera
 A reactor's own option always wins over the client default. With `:pinned`, a reactor handling two
 generations of the same event type id has no single generation to pin to and raises
 `Chronicle.Observers.MultipleGenerationsOfEventTypeInObserver` on start.
-
-## Pinning the id
-
-`use Chronicle.Reactors.Reactor` defaults the reactor's id to its full module name. Renaming
-or moving the module then changes that id, and Chronicle treats it as a *different* reactor —
-its observation position resets, replaying events the previous name had already handled.
-Pin the id explicitly so the module can be renamed or moved freely:
-
-```elixir
-use Chronicle.Reactors.Reactor, id: "order-notifier"
-```
-
-A reactor relying on the module-name default gets a one-time warning (per module, for the life
-of the BEAM node) from [discovery](./discovery.md), naming the module and showing this fix. Pass
-`warn_defaulted_ids: false` to `Chronicle.Client` to suppress it. See
-[Discovery and artifact identity drift](./discovery.md).
 
 ## Handling events in batches
 
@@ -261,25 +286,6 @@ A reactor handles batches for different event sources at the same time, up to 16
 Because of this, `handle/2` can run in several processes at once. Keep shared state in something built for concurrent access, such as a database, an ETS table or a `GenServer`, and not in the process dictionary or module attributes. Tune the limit with the `:max_concurrent_partitions` client option. Set it to `1` to handle every batch one after another, as versions before 3.16 did. Reducers follow the same rules, per read model instance.
 
 Each batch Chronicle sends also says how long Chronicle waits for its result. If a batch only gets its turn after that time, Chronicle has already given up on it and will send the events again, so the client answers it as failed right away instead of handling it. The `[:chronicle, :observer, :batch, :expired]` telemetry event reports when that happens. A Chronicle server before 19.114 sends no deadline, and every batch is handled.
-
-## Delivery identity
-
-Every reactor invocation context carries `delivery_id`: a stable identity of *this delivery of this
-event to this reactor*, the same value each time the event is redelivered. It is derived like the
-.NET `ReactorDelivery.Id`: the reactor id, event store, namespace, event sequence id, event source
-id and sequence number joined with `#`. Use it as the key of whatever records that the side effect
-happened:
-
-```elixir
-def handle(%OrderPlaced{} = event, %{delivery_id: delivery_id}) do
-  case Receipts.insert_once(delivery_id) do
-    :inserted -> Mailer.send_confirmation(event)
-    :already_there -> :ok
-  end
-end
-```
-
-The id identifies the delivery; it does not make the external effect atomic with the receipt.
 
 ## Middleware
 

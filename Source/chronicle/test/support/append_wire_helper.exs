@@ -124,9 +124,10 @@ defmodule Chronicle.AppendWireCase do
 
         _ ->
           payload_module =
-            if match?(%Wire.AppendRequest{}, request),
-              do: Wire.AppendResponse,
-              else: Wire.AppendManyResponse
+            if match?(%Wire.AppendRequest{}, request) or
+                 match?(%Wire.CompensateRequest{}, request),
+               do: Wire.AppendResponse,
+               else: Wire.AppendManyResponse
 
           payload = struct(payload_module, Map.get(responses, :append_payload, IsSuccess: true))
 

@@ -7,6 +7,10 @@ description: Register HTTP and database external service definitions with Chroni
 
 External services let the Chronicle kernel talk to systems outside the event store — an HTTP API or a MsSql/PostgreSql database — under a name other kernel features (such as [captures](captures.md)) can reference. They are usually configured in the Workbench, but the Elixir client also exposes a programmatic API.
 
+Definitions are registered against the selected client's event store, not a namespace.
+Choose an HTTP or database definition and confirm the endpoint and authority before registration.
+Keep credentials and connection details out of shared diagnostics.
+
 ## Registering an HTTP service
 
 Register an HTTP endpoint with bearer-token authentication and a custom header:
@@ -47,6 +51,17 @@ Use `Chronicle.ExternalServices.DefinitionBuilder.ms_sql/6` instead for a Micros
 
 `Chronicle.ExternalServices.DefinitionBuilder` is immutable and pipeline-friendly.
 
+The scope argument of `with_oauth/5` is optional. Omit it and no scope is requested from the authority. It applies to the outbound OAuth client-credentials call only, not to the client's own connection to the kernel.
+
+- `http/2` configures an HTTP endpoint.
+- `ms_sql/6` and `postgre_sql/6` configure a database endpoint — mutually exclusive with `http/2` and each other; the last call wins.
+- `with_basic_auth/3`, `with_bearer_token/2`, and `with_oauth/4` (or `with_oauth/5` with an optional scope) are mutually exclusive with each other and only meaningful for HTTP endpoints.
+- `with_header/3` adds or replaces an HTTP header sent with every request.
+- `with_option/3` adds a provider-specific option to a database endpoint's connection configuration.
+
+The authentication setters in this catalog are alternatives, not a cumulative pipeline to run.
+Choose basic, bearer or OAuth; a later authentication setter replaces the earlier choice.
+
 ```elixir
 builder
 |> DefinitionBuilder.http("https://api.example.com")
@@ -55,14 +70,6 @@ builder
 |> DefinitionBuilder.with_oauth("https://login.example.com", "client-id", "client-secret", "api.read")
 |> DefinitionBuilder.with_header("x-tenant", "acme")
 ```
-
-The scope argument of `with_oauth/5` is optional. Omit it and no scope is requested from the authority. It applies to the outbound OAuth client-credentials call only, not to the client's own connection to the kernel.
-
-- `http/2` configures an HTTP endpoint.
-- `ms_sql/6` and `postgre_sql/6` configure a database endpoint — mutually exclusive with `http/2` and each other; the last call wins.
-- `with_basic_auth/3`, `with_bearer_token/2`, and `with_oauth/4` (or `with_oauth/5` with an optional scope) are mutually exclusive with each other and only meaningful for HTTP endpoints.
-- `with_header/3` adds or replaces an HTTP header sent with every request.
-- `with_option/3` adds a provider-specific option to a database endpoint's connection configuration.
 
 ## Using a named client
 

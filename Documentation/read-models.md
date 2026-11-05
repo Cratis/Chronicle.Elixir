@@ -11,6 +11,11 @@ Read models are shared Chronicle concepts. Querying, snapshots, watching, and co
 - [Getting read model collections](/chronicle/read-models/getting-collection-instances/)
 - [Elixir client setup](./get-started.md)
 
+Use [`watch/2`](#watching-for-live-changes) for changesets on a dedicated stream,
+[`subscribe/2`](#shared-subscriptions) to share a watch between processes, or
+[`observe/2`](#observing-a-collection) for a page of instances. For a shared watch,
+reconnection does not replay changes missed while disconnected.
+
 ## Missing and not-yet-projected read models
 
 `Chronicle.read_model/3`, and `Chronicle.ReadModels.get/3` which it calls, return `{:ok, nil}`
@@ -82,6 +87,36 @@ On top of `watch/2`'s messages, a subscriber also gets:
 **Changes made while the stream is down are not replayed.** The shared watcher closes its stream
 once its last subscriber unsubscribes, or exits.
 
+## Observing a collection
+
+`Chronicle.ReadModels.observe/2` sends the calling process the page of instances now and again each
+time it changes:
+
+```elixir
+{:ok, observer} = Chronicle.ReadModels.observe(MyApp.ReadModels.AccountInfo, page_size: 25)
+
+receive do
+  {:chronicle_read_model_instances, MyApp.ReadModels.AccountInfo, %{instances: accounts}} -> accounts
+end
+
+Chronicle.ReadModels.unobserve(observer)
+```
+
+An error arrives as `{:chronicle_read_model_observe_error, model, reason}` and ends the observation;
+call `observe/2` again to resume. Use `watch/2` or `subscribe/2` for changesets rather than a
+page of instances.
+
+Pass `:filter`/`:sort` to keep and order only matching instances in each delivered page — same shape
+as [`query/2`'s filter and sort](#filtering-and-sorting). `total_count` then counts the matches
+within that page, not the whole read model. `observe_stream/2` wraps `observe/2` as an Elixir
+`Stream` of `%Chronicle.ReadModels.QueryResult{}`:
+
+```elixir
+MyApp.ReadModels.AccountInfo
+|> Chronicle.ReadModels.observe_stream(page_size: 25)
+|> Enum.each(fn result -> IO.inspect(result.instances) end)
+```
+
 ## Dehydrating a session
 
 A read-model session (created implicitly whenever you read with a `:session_id`) normally
@@ -121,35 +156,6 @@ filter them, so the client pages through the read model and evaluates the filter
 right for read models of modest size. A read model with more than `:max_scan` instances (default
 `10_000`) returns `{:error, {:scan_limit_exceeded, max_scan}}` rather than a silently partial
 answer. For large data, give the question its own projection.
-
-## Observing a collection
-
-`Chronicle.ReadModels.observe/2` sends the calling process the page of instances now and again each
-time it changes:
-
-```elixir
-{:ok, observer} = Chronicle.ReadModels.observe(MyApp.ReadModels.AccountInfo, page_size: 25)
-
-receive do
-  {:chronicle_read_model_instances, MyApp.ReadModels.AccountInfo, %{instances: accounts}} -> accounts
-end
-
-Chronicle.ReadModels.unobserve(observer)
-```
-
-An error arrives as `{:chronicle_read_model_observe_error, model, reason}` and ends the observation;
-call `observe/2` again to resume. `watch/2` remains the tool for the changes of one instance.
-
-Pass `:filter`/`:sort` to keep and order only matching instances in each delivered page — same shape
-as [`query/2`'s filter and sort](#filtering-and-sorting). `total_count` then counts the matches
-within that page, not the whole read model. `observe_stream/2` wraps `observe/2` as an Elixir
-`Stream` of `%Chronicle.ReadModels.QueryResult{}`:
-
-```elixir
-MyApp.ReadModels.AccountInfo
-|> Chronicle.ReadModels.observe_stream(page_size: 25)
-|> Enum.each(fn result -> IO.inspect(result.instances) end)
-```
 
 ## Read model reactors
 

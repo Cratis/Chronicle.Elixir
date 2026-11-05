@@ -38,6 +38,7 @@ defmodule Chronicle.EventSequences.EventLog do
     AppendManyForEventSourcesRequest,
     AppendRequest,
     Causation,
+    CompensateRequest,
     CompleteStreamRequest,
     CopyEventsForEventSourceRequest,
     EventSequences,
@@ -828,6 +829,86 @@ defmodule Chronicle.EventSequences.EventLog do
       with {:ok, envelope} <- EventSequences.Stub.copy_events_for_event_source(channel, request),
            {:ok, job_id} <- WireResult.unwrap(envelope) do
         {:ok, guid_to_string(job_id)}
+      end
+    end
+  end
+
+  @doc """
+  Appends a compensating event for the event at `compensation_for`, the sequence number of
+  the event being compensated. The kernel appends it to the compensated event's own event
+  source and stream, so no event source id is given. Mirrors the .NET client's
+  `Compensate`.
+
+  The event type should declare the event it compensates with the `:compensation_for`
+  option of `use Chronicle.Events.EventType`; the kernel validates the pairing. The
+  compensated event stays in the sequence untouched. A compensation is never buffered into a
+  `Chronicle.Transactions.UnitOfWork`; it is always sent immediately.
+
+  Returns `{:ok, result}` with a `Chronicle.EventSequences.AppendResult`, or
+  `{:error, result}` for a kernel rejection and `{:error, reason}` for transport and client
+  errors, like `append_with_result/3`.
+
+  ## Options
+
+  `:client`, `:namespace`, `:event_sequence_id`, `:timeout`, `:occurred`, `:tags`,
+  `:correlation_id`, `:identity` and `:causation`, as for `append/3`. Subject, routing and
+  concurrency options do not apply.
+  """
+  @spec compensate(non_neg_integer(), struct(), keyword()) ::
+          {:ok, AppendResult.t()} | {:error, AppendResult.t() | term()}
+  def compensate(compensation_for, event, opts \\ [])
+      when is_integer(compensation_for) and compensation_for >= 0 do
+    client = Keyword.get(opts, :client, Chronicle.Client)
+    event_sequence_id = Keyword.get(opts, :event_sequence_id, @event_log_id)
+
+    attributes =
+      client
+      |> append_span_attributes(event_sequence_id, nil, opts)
+      |> Map.put("cratis.event_type.id", event_type_id(event))
+
+    Tracing.with_telemetry_span(
+      [:cratis, :chronicle, :client, :append],
+      %{event_sequence_id: event_sequence_id, event_count: 1},
+      "cratis.chronicle.client.event_sequence.compensate",
+      Map.put(attributes, :kind, :client),
+      fn -> send_compensate(compensation_for, event, event_sequence_id, opts) end
+    )
+  end
+
+  defp send_compensate(compensation_for, event, event_sequence_id, opts) do
+    entry =
+      ""
+      |> build_event_for_event_source_id(event, opts, :append)
+      |> apply_event_type_defaults()
+
+    with :ok <- check_event_type(event),
+         :ok <- check_payload_size([entry]),
+         {:ok, channel, config} <- resolve_append_channel(opts) do
+      namespace = Keyword.get(opts, :namespace, config.namespace)
+
+      request =
+        struct(CompensateRequest,
+          EventStore: config.event_store,
+          Namespace: namespace,
+          EventSequenceId: event_sequence_id,
+          CompensationFor: compensation_for,
+          EventType: build_event_type(event),
+          Content: encode_event(event),
+          CorrelationId: build_correlation_id(opts),
+          Tags: entry.tags || [],
+          Occurred: datetime_offset_for(entry.occurred),
+          Causation: causation_entries_to_proto(entry.causation),
+          CausedBy: identity_to_proto(entry.identity)
+        )
+
+      case EventSequences.Stub.compensate(channel, request, timeout: append_timeout(opts)) do
+        {:ok, envelope} ->
+          with {:ok, response} <- unwrap_append_response(envelope, config) do
+            result_for(response, opts)
+          end
+
+        {:error, reason} ->
+          {:error, reason}
       end
     end
   end
