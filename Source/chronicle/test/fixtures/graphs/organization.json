@@ -1,0 +1,183 @@
+{
+  "projection": {
+    "eventSequenceId": "event-log",
+    "graph": {
+      "edges": {
+        "MEMBER_OF": {
+          "from": {
+            "member-added+1": {
+              "identity": "",
+              "properties": {
+                "since": "$eventContext(occurred)"
+              },
+              "sourceKey": "personId",
+              "targetKey": "groupId"
+            }
+          },
+          "removedWith": {
+            "member-removed+1": {
+              "identity": "",
+              "sourceKey": "personId",
+              "targetKey": "groupId"
+            }
+          }
+        },
+        "VISITED": {
+          "from": {
+            "place-visited+1": {
+              "identity": "visitId",
+              "properties": {
+                "times": "$count"
+              },
+              "sourceKey": "personId",
+              "targetKey": "placeId"
+            }
+          },
+          "removedWith": {}
+        }
+      },
+      "nodes": {
+        "Group": {
+          "from": {
+            "group-created+1": {
+              "key": "groupId",
+              "properties": {
+                "name": "name"
+              },
+              "updateOnly": false
+            },
+            "member-added+1": {
+              "key": "groupId",
+              "properties": {
+                "memberCount": "$increment"
+              },
+              "updateOnly": false
+            },
+            "member-removed+1": {
+              "key": "groupId",
+              "properties": {
+                "memberCount": "$decrement"
+              },
+              "updateOnly": false
+            }
+          },
+          "removedWith": {}
+        },
+        "Person": {
+          "from": {
+            "person-registered+1": {
+              "key": "personId",
+              "properties": {
+                "name": "name"
+              },
+              "updateOnly": false
+            }
+          },
+          "removedWith": {
+            "person-removed+1": {
+              "detach": true,
+              "key": "personId"
+            }
+          }
+        },
+        "Place": {
+          "from": {
+            "place-visited+1": {
+              "key": "placeId",
+              "properties": {},
+              "updateOnly": false
+            }
+          },
+          "removedWith": {}
+        }
+      }
+    },
+    "identifier": "Organization",
+    "initialModelState": "{}",
+    "isActive": true,
+    "isRewindable": true,
+    "readModel": "Organization"
+  },
+  "readModel": {
+    "containerName": "Organization",
+    "displayName": "Organization",
+    "observerIdentifier": "Organization",
+    "schema": {
+      "properties": {
+        "Group": {
+          "properties": {
+            "groupId": {
+              "type": "string"
+            },
+            "memberCount": {
+              "type": "number"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "type": "object",
+          "x-graph-key": "groupId",
+          "x-graph-kind": "Node"
+        },
+        "MEMBER_OF": {
+          "properties": {
+            "since": {
+              "type": "string"
+            }
+          },
+          "type": "object",
+          "x-graph-kind": "Edge",
+          "x-graph-source": "Person",
+          "x-graph-target": "Group"
+        },
+        "Person": {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "personId": {
+              "type": "string"
+            }
+          },
+          "type": "object",
+          "x-graph-key": "personId",
+          "x-graph-kind": "Node"
+        },
+        "Place": {
+          "properties": {
+            "placeId": {
+              "type": "string"
+            }
+          },
+          "type": "object",
+          "x-graph-key": "placeId",
+          "x-graph-kind": "Node"
+        },
+        "VISITED": {
+          "properties": {
+            "times": {
+              "type": "number"
+            },
+            "visitId": {
+              "type": "string"
+            }
+          },
+          "type": "object",
+          "x-graph-identity": "visitId",
+          "x-graph-kind": "Edge",
+          "x-graph-source": "Person",
+          "x-graph-target": "Place"
+        }
+      },
+      "title": "Organization",
+      "type": "object",
+      "x-graph": true
+    },
+    "sinkTypeId": "Neo4j",
+    "type": {
+      "generation": 1,
+      "identifier": "Organization"
+    }
+  }
+}

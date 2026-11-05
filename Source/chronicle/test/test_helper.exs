@@ -4,3 +4,5 @@ exclude =
 
 ExUnit.start(exclude: exclude)
 Code.require_file("support/append_wire_helper.exs", __DIR__)
+Code.require_file("support/graph_fixtures.exs", __DIR__)
+Code.require_file("support/graph_definition_snapshot.exs", __DIR__)
