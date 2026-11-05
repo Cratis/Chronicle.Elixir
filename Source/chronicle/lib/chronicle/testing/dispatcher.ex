@@ -21,6 +21,7 @@ defmodule Chronicle.Testing.Dispatcher do
 
   require Logger
 
+  alias Chronicle.Observers.BatchFunctions
   alias Chronicle.Reactors.Dispatch, as: ReactorDispatch
   alias Chronicle.Reducers.Dispatch, as: ReducerDispatch
 
@@ -85,13 +86,39 @@ defmodule Chronicle.Testing.Dispatcher do
   def handle_info(_other, state), do: {:noreply, state}
 
   defp run_reactors(state, events) do
-    Enum.reduce(state.reactors, state, fn {_module, reactor_state}, state ->
-      Enum.reduce(events, state, fn event, state ->
-        case ReactorDispatch.dispatch_event(reactor_state, event) do
-          :ok -> state
-          {:error, reason} -> record_failure(state, {:reactor, reactor_state.module, reason})
-        end
+    Enum.reduce(state.reactors, state, fn
+      {_module, %{batch_functions: []} = reactor_state}, state ->
+        Enum.reduce(events, state, fn event, state ->
+          case ReactorDispatch.dispatch_event(reactor_state, event) do
+            :ok -> state
+            {:error, reason} -> record_failure(state, {:reactor, reactor_state.module, reason})
+          end
+        end)
+
+      {_module, reactor_state}, state ->
+        run_reactor_page(state, reactor_state, events)
+    end)
+  end
+
+  # A reactor with batch functions gets the append as one live page, as the kernel delivers it.
+  defp run_reactor_page(state, reactor_state, events) do
+    partitions =
+      events
+      |> Enum.chunk_by(&get_in(&1, [:Context, :EventSourceId]))
+      |> Enum.map(fn [first | _] = chunk ->
+        %{Partition: get_in(first, [:Context, :EventSourceId]), Events: chunk}
       end)
+
+    page = %{Partitions: partitions, Origin: :Live, DeliveryId: 0}
+
+    reactor_state
+    |> ReactorDispatch.dispatch_page(page)
+    |> Enum.reject(&(&1.state == :success))
+    |> Enum.reduce(state, fn outcome, state ->
+      record_failure(
+        state,
+        {:reactor, reactor_state.module, {outcome.partition, outcome.messages}}
+      )
     end)
   end
 
@@ -150,6 +177,7 @@ defmodule Chronicle.Testing.Dispatcher do
     %{
       module: module,
       event_type_map: event_type_map,
+      batch_functions: BatchFunctions.validate!(:reactor, module).batch,
       append_fun: fn operation -> ReactorDispatch.default_append(operation, client) end
     }
   end
@@ -165,6 +193,7 @@ defmodule Chronicle.Testing.Dispatcher do
     %{
       module: module,
       event_type_map: event_type_map,
+      batch_functions: BatchFunctions.validate!(:reducer, module).batch,
       model_module: module.__chronicle_reducer__(:model)
     }
   end

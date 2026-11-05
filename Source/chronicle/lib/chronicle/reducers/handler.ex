@@ -16,9 +16,10 @@ defmodule Chronicle.Reducers.Handler do
 
   alias Chronicle.Connections.{Connection, Lifecycle, Status}
   alias Chronicle.Reducers.Dispatch
-  alias Chronicle.Observers.BatchRunner
+  alias Chronicle.Observers.{BatchFunctions, BatchRunner, PageDeliveryOptions}
 
   alias Cratis.Chronicle.Contracts.Observation.Reducers.{
+    PageDelivery,
     Reducers,
     ReducerMessage,
     ReducerDefinition,
@@ -44,6 +45,9 @@ defmodule Chronicle.Reducers.Handler do
   @impl true
   def init(opts) do
     module = Keyword.fetch!(opts, :module)
+    # Raises when the reducer mixes a batch function with reduce/3, or has two batch functions,
+    # so a mixed-up reducer never registers.
+    functions = BatchFunctions.validate!(:reducer, module)
     event_type_modules = module.__chronicle_reducer__(:handles)
 
     generation_delivery =
@@ -66,6 +70,9 @@ defmodule Chronicle.Reducers.Handler do
       event_store: Keyword.fetch!(opts, :event_store),
       namespace: Keyword.fetch!(opts, :namespace),
       event_type_map: event_type_map,
+      batch_functions: functions.batch,
+      max_concurrency:
+        PageDeliveryOptions.max_concurrency(module.__chronicle_reducer__(:batch_size)),
       generation_delivery: generation_delivery,
       model_module: module.__chronicle_reducer__(:model),
       default_sink_type_id: Keyword.get(opts, :default_sink_type_id, "MongoDB"),
@@ -137,13 +144,14 @@ defmodule Chronicle.Reducers.Handler do
 
   # Operations for different read models run concurrently, each read model's in
   # order; replay notifications keep their place relative to the operations around them.
+  # A page that spans several read models runs on its own.
   def handle_info({:reduce_operation, reduce_op, received_at}, state) do
     partition = Map.get(reduce_op, :Partition, "")
 
     state =
       case replay_state(reduce_op) do
         :none ->
-          BatchRunner.batch(state, partition, reduce_op, received_at, hooks())
+          BatchRunner.delivery(state, reduce_op, received_at, hooks())
 
         signal when signal in [:begin_replay, :end_replay] ->
           BatchRunner.barrier(state, {:replay, signal, partition}, hooks())
@@ -262,6 +270,12 @@ defmodule Chronicle.Reducers.Handler do
               ConnectionId: conn_id,
               EventStore: state.event_store,
               Namespace: state.namespace,
+              # Opts in to pages; a kernel that predates them ignores the field.
+              PageDelivery:
+                PageDeliveryOptions.to_wire(
+                  PageDelivery,
+                  state.module.__chronicle_reducer__(:batch_size)
+                ),
               Reducer:
                 struct(ReducerDefinition,
                   ReducerId: reducer_id,

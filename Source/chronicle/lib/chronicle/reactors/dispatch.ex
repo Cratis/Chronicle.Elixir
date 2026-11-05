@@ -14,73 +14,236 @@ defmodule Chronicle.Reactors.Dispatch do
 
   alias Chronicle.Diagnostics.Tracing
   alias Chronicle.EventSequences.{EventForEventSourceId, EventLog}
+  alias Chronicle.Observers.{BatchContext, EventBatch, PageMessages, PartitionSettlement}
 
-  alias Cratis.Chronicle.Contracts.Observation.Reactors.{ReactorMessage, ReactorResult}
+  alias Cratis.Chronicle.Contracts.Observation.Reactors.{
+    PartitionResult,
+    ReactorMessage,
+    ReactorResult
+  }
 
   alias Cratis.Chronicle.Contracts.Observation.Reactors.OneOf_RegisterReactor_ReactorResult,
     as: OneOf
 
   @doc """
-  Builds the `ReactorMessage` result for one batch of observed events, dispatching each
-  through the reactor module's handler and appending any side effect it returns.
+  Builds the `ReactorMessage` result for one delivery: a single partition from a kernel that
+  predates pages, or a page of partitions. Batch functions are called once with the events they
+  observe; the other events go to `handle/2` in order, partition by partition. Each partition
+  is then settled at its earliest failure or deferral.
   """
   @spec build_result(map(), map()) :: struct()
-  def build_result(state, events_to_observe) do
-    partition = Map.get(events_to_observe, :Partition, "")
-    events = Map.get(events_to_observe, :Events, [])
-
-    {observation_state, exception_messages, stack_trace} =
-      Enum.reduce_while(events, {:success, [], ""}, fn appended_event, _acc ->
-        case dispatch_event(state, appended_event) do
-          :ok -> {:cont, {:success, [], ""}}
-          {:error, reason} -> {:halt, {:failed, [inspect(reason)], format_stack_trace(reason)}}
-        end
-      end)
-
-    last_seq =
-      case List.last(events) do
-        nil -> 0
-        event -> Map.get(Map.get(event, :Context, %{}), :SequenceNumber, 0)
-      end
-
-    struct(ReactorMessage,
-      Content:
-        struct(OneOf,
-          Value1:
-            struct(ReactorResult,
-              Partition: partition,
-              State: encode_observation_state(observation_state),
-              LastSuccessfulObservation: last_seq,
-              ExceptionMessages: exception_messages,
-              ExceptionStackTrace: stack_trace,
-              # Echoed so the kernel completes exactly this delivery, not just the oldest one
-              # pending for the partition.
-              DeliveryId: Map.get(events_to_observe, :DeliveryId, 0) || 0
-            )
-        )
-    )
+  def build_result(state, message) do
+    encode_result(message, dispatch_page(state, message))
   end
 
   @doc """
-  Builds a failed `ReactorMessage` result for a batch that is answered without being
+  Dispatches every partition of a delivery and returns how each one settled, in the order of
+  the delivery's partitions.
+  """
+  @spec dispatch_page(map(), map()) :: [PartitionSettlement.outcome()]
+  def dispatch_page(state, message) do
+    partitions = PageMessages.partitions_of(message)
+    functions = Map.get(state, :batch_functions, [])
+
+    batch_ids =
+      functions
+      |> Enum.flat_map(fn {_name, observed} -> observed end)
+      |> MapSet.new(& &1.__chronicle_event_type__(:id))
+
+    batch_problems =
+      if functions == [],
+        do: [],
+        else: run_batches(state, functions, partitions, batch_ids, message)
+
+    per_event_problems =
+      Enum.flat_map(partitions, fn partition ->
+        partition |> dispatch_partition(state, batch_ids) |> List.wrap()
+      end)
+
+    problems = batch_problems ++ per_event_problems
+
+    Enum.map(partitions, fn partition ->
+      PartitionSettlement.settle(
+        partition.partition,
+        Enum.map(partition.events, &PageMessages.sequence_number/1),
+        problems
+      )
+    end)
+  end
+
+  @doc """
+  Builds a failed `ReactorMessage` result for a delivery that is answered without being
   handled, because the kernel has already stopped waiting for it.
   """
   @spec expired_result(map(), String.t()) :: struct()
-  def expired_result(events_to_observe, reason) do
-    struct(ReactorMessage,
-      Content:
-        struct(OneOf,
-          Value1:
-            struct(ReactorResult,
-              Partition: Map.get(events_to_observe, :Partition, ""),
-              State: encode_observation_state(:failed),
-              LastSuccessfulObservation: 0,
-              ExceptionMessages: [reason],
-              ExceptionStackTrace: "",
-              DeliveryId: Map.get(events_to_observe, :DeliveryId, 0) || 0
-            )
+  def expired_result(message, reason) do
+    outcomes =
+      message
+      |> PageMessages.partitions_of()
+      |> Enum.map(fn partition ->
+        %{PartitionSettlement.outcome(partition.partition, :failed, 0) | messages: [reason]}
+      end)
+
+    encode_result(message, outcomes)
+  end
+
+  defp encode_result(message, outcomes) do
+    delivery_id = Map.get(message, :DeliveryId, 0) || 0
+
+    result =
+      if PageMessages.paged?(message) do
+        struct(ReactorResult,
+          DeliveryId: delivery_id,
+          Partitions:
+            Enum.map(outcomes, &PartitionSettlement.partition_result(PartitionResult, &1))
         )
-    )
+      else
+        [outcome] = outcomes
+
+        struct(ReactorResult,
+          Partition: outcome.partition,
+          State: PartitionSettlement.legacy_state(outcome),
+          LastSuccessfulObservation: outcome.last_successful_observation,
+          ExceptionMessages: outcome.messages,
+          ExceptionStackTrace: outcome.stack_trace,
+          # Echoed so the kernel completes exactly this delivery, not just the oldest one
+          # pending for the partition.
+          DeliveryId: delivery_id
+        )
+      end
+
+    struct(ReactorMessage, Content: struct(OneOf, Value1: result))
+  end
+
+  # Runs the events of one partition that no batch function observes through handle/2, in
+  # order, stopping at the first failure. Returns the problem, or nil.
+  defp dispatch_partition(partition, state, batch_ids) do
+    partition.events
+    |> Enum.reject(&MapSet.member?(batch_ids, PageMessages.event_type_id(&1)))
+    |> Enum.reduce_while(nil, fn appended_event, nil ->
+      case dispatch_event(state, appended_event) do
+        :ok ->
+          {:cont, nil}
+
+        {:error, reason} ->
+          at = PageMessages.sequence_number(appended_event)
+          {:halt, PartitionSettlement.failed(partition.partition, at, reason)}
+      end
+    end)
+  end
+
+  # Calls each batch function once with the page's events of the types it observes, in
+  # sequence order, and collects the problems it reports.
+  defp run_batches(state, functions, partitions, batch_ids, message) do
+    reactor_id = state.module.__chronicle_reactor__(:id)
+
+    context =
+      BatchContext.for_message(message,
+        observer_id: reactor_id,
+        event_store: Map.get(state, :event_store, ""),
+        namespace: Map.get(state, :namespace, ""),
+        event_sequence_id: "event-log"
+      )
+
+    {entries, decode_problems} = decode_batch_events(state, partitions, batch_ids, reactor_id)
+
+    entries =
+      entries
+      |> Enum.sort_by(fn {_partition, _module, _event, ctx} -> ctx.sequence_number end)
+      |> Enum.reject(fn {_partition, module, _event, ctx} ->
+        replay_action(state.module, module, replay_context(ctx, context)) == :skip
+      end)
+
+    decode_problems ++
+      Enum.flat_map(functions, fn {name, observed} ->
+        case Enum.filter(entries, fn {_p, module, _e, _c} -> module in observed end) do
+          [] -> []
+          observed_entries -> invoke_batch(state, name, observed_entries, context)
+        end
+      end)
+  end
+
+  defp decode_batch_events(state, partitions, batch_ids, reactor_id) do
+    for partition <- partitions,
+        appended_event <- partition.events,
+        event_type_id = PageMessages.event_type_id(appended_event),
+        MapSet.member?(batch_ids, event_type_id),
+        reduce: {[], []} do
+      {entries, problems} ->
+        module = Map.fetch!(state.event_type_map, event_type_id)
+        wire_context = Map.get(appended_event, :Context, %{})
+
+        case decode_event(module, Map.get(appended_event, :Content, "")) do
+          {:ok, event} ->
+            ctx =
+              build_context(wire_context, event_sequence_id: "event-log", reactor_id: reactor_id)
+
+            {[{partition.partition, module, event, ctx} | entries], problems}
+
+          {:error, reason} ->
+            at = PageMessages.sequence_number(appended_event)
+            problem = PartitionSettlement.failed(partition.partition, at, {:decode, reason})
+            {entries, [problem | problems]}
+        end
+    end
+  end
+
+  defp replay_context(ctx, %BatchContext{origin: :replay}), do: %{ctx | replaying?: true}
+  defp replay_context(ctx, _context), do: ctx
+
+  defp invoke_batch(state, name, entries, context) do
+    batch =
+      EventBatch.new(
+        Enum.map(entries, fn {partition, _module, event, ctx} -> {partition, event, ctx} end),
+        context.can_defer?
+      )
+
+    reactor_id = state.module.__chronicle_reactor__(:id)
+
+    result =
+      Tracing.with_telemetry_span(
+        [:cratis, :chronicle, :client, :reactor, :handle_batch],
+        %{reactor_id: reactor_id, function: name, event_count: EventBatch.count(batch)},
+        "cratis.chronicle.client.reactor.handle_batch",
+        %{
+          "cratis.event_sequence.id" => "event-log",
+          "cratis.observer.id" => reactor_id,
+          kind: :consumer
+        },
+        fn ->
+          try do
+            apply(state.module, name, [batch, context])
+          rescue
+            e -> {:error, e}
+          end
+        end
+      )
+
+    case result do
+      :ok ->
+        []
+
+      %EventBatch{} = reported ->
+        reported |> EventBatch.outcomes() |> Enum.map(&PartitionSettlement.from_batch_outcome/1)
+
+      {:error, reason} ->
+        fail_every_partition(batch, reason)
+
+      other ->
+        fail_every_partition(
+          batch,
+          "#{inspect(state.module)}.#{name}/2 returned #{inspect(other)}; a reactor batch function " <>
+            "returns :ok, the EventBatch or {:error, reason}, and returning events is not supported"
+        )
+    end
+  end
+
+  defp fail_every_partition(batch, reason) do
+    batch.entries
+    |> Enum.uniq_by(fn {partition, _event, _ctx} -> partition end)
+    |> Enum.map(fn {partition, _event, ctx} ->
+      PartitionSettlement.failed(partition, ctx.sequence_number, reason)
+    end)
   end
 
   @doc false
@@ -269,11 +432,4 @@ defmodule Chronicle.Reactors.Dispatch do
 
   @doc false
   def build_context(ctx, opts \\ []), do: Chronicle.Events.EventContext.from_wire(ctx, opts)
-
-  # ObservationState enum: Success = 1, Failed = 2
-  defp encode_observation_state(:success), do: 1
-  defp encode_observation_state(:failed), do: 2
-
-  defp format_stack_trace(%{__exception__: true} = exception), do: Exception.message(exception)
-  defp format_stack_trace(reason), do: inspect(reason)
 end
