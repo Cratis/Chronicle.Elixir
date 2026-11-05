@@ -32,6 +32,8 @@ string identifier for custom sink types. The kernel must be configured with the 
 | `:sql` | `"SQL"` | SQL database |
 | `:in_memory` | `"InMemory"` | In-process memory only |
 | `:none` | `"None"` | No sink: the read model is not persisted |
+| `:neo4j` | `"Neo4j"` | Neo4j graph; the default for [graph projections](./graph-projections.md) |
+| `:in_memory_graph` | `"InMemoryGraph"` | In-process graph memory, for development and tests |
 
 The configured sink applies to the projections and reducers that client registers, with one exception: a read model declared with `passive: true` is registered with the `None` sink, because it is computed on demand rather than stored. There is no other per-read-model sink override. An unknown atom raises `ArgumentError` when the client starts.
 

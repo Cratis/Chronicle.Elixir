@@ -24,6 +24,8 @@
   href: captures.md
 - name: Failed Partitions
   href: failed-partitions.md
+- name: Graph Projections
+  href: graph-projections.md
 - name: Sinks
   href: sinks.md
 - name: Seeding

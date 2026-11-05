@@ -48,6 +48,7 @@ See [Limits and gaps](limits-and-gaps.md) for the kernel limits, the consistency
 - [Connections](connections/index.md): connection strings, credentials, TLS, and how the client recovers from dropped connections
 - [Context management](context.md): process-scoped correlation ids, identities, and causation chains
 - [Concepts](concepts.md): strongly typed values and PII classification with `Chronicle.Concept`
+- [Graph projections](graph-projections.md): projecting events onto nodes and edges of a property graph
 - [Seeding](seeding.md): seeders and when seed data is appended
 - [Sinks](sinks.md): choosing where read models are stored, and running several clients
 - [Event store discovery](event-stores.md): listing event stores and namespaces
