@@ -7,9 +7,15 @@ description: Register Chronicle webhooks from Elixir, as discoverable modules or
 
 Webhooks let Chronicle push observed events to external HTTP endpoints.
 
+Registration, listing and removal below target the selected client's event store; `:namespace` does not narrow these requests.
+Discoverable and imperative registration are alternatives; choose the method your application needs.
+Confirm event types, target URL and authority before registering.
+
 ## Discoverable webhooks
 
 Discoverable webhooks follow the same pattern as projections and constraints: define them as modules and Chronicle exposes metadata through `__chronicle_webhook__/1`.
+
+If you don't select any event types, the webhook uses the event types the client was given in `:event_types` or discovered in your application. When that list is empty, for example with `discover: false` and no `:event_types`, it falls back to every event type module loaded in the VM. Select event types explicitly to control exactly what the webhook receives.
 
 ```elixir
 defmodule MyApp.WebHooks.AccountEvents do
@@ -71,6 +77,14 @@ Register a webhook without defining a module:
 
 `Chronicle.WebHooks.DefinitionBuilder` is immutable and pipeline-friendly.
 
+The scope argument of `with_oauth/5` is optional. Omit it and no scope is requested from the authority. It applies to the outbound OAuth client-credentials call only, not to the client's own connection to the kernel.
+
+`not_replayable()` and `not_active()` need Chronicle kernel 19.33.0 or later. An older kernel ignores
+these flags and treats the webhook as replayable and active regardless.
+
+The authentication setters in this catalog are alternatives, not a cumulative pipeline to run.
+Choose basic, bearer or OAuth; a later authentication setter replaces the earlier choice.
+
 ```elixir
 builder
 |> DefinitionBuilder.on_event_sequence("audit-sequence")
@@ -83,14 +97,12 @@ builder
 |> DefinitionBuilder.not_active()
 ```
 
-The scope argument of `with_oauth/5` is optional. Omit it and no scope is requested from the authority. It applies to the outbound OAuth client-credentials call only, not to the client's own connection to the kernel.
-
-If you don't select any event types, the webhook uses the event types the client was given in `:event_types` or discovered in your application. When that list is empty, for example with `discover: false` and no `:event_types`, it falls back to every event type module loaded in the VM. Select event types explicitly to control exactly what the webhook receives.
-
-`not_replayable()` and `not_active()` need Chronicle kernel 19.33.0 or later. An older kernel ignores
-these flags and treats the webhook as replayable and active regardless.
-
 ## Query and remove webhooks
+
+Inspect metadata and choose removal separately; listing is not an instruction to remove a webhook.
+Confirm the id, target store and authority before removal, and review metadata before sharing it.
+
+Chronicle doesn't return credentials when you read webhooks back, so `:authorization` is always `nil` on definitions from `Chronicle.WebHooks.all/1`.
 
 ```elixir
 {:ok, webhooks} = Chronicle.WebHooks.all()
@@ -118,8 +130,6 @@ When you build a definition locally, authorization is one of:
 - `{:bearer, %{token: ...}}`
 - `{:oauth, %{authority: ..., client_id: ..., client_secret: ...}}`
 - `nil`
-
-Chronicle doesn't return credentials when you read webhooks back, so `:authorization` is always `nil` on definitions from `Chronicle.WebHooks.all/1`.
 
 ## Manual discovery
 

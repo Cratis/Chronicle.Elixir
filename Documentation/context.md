@@ -7,6 +7,68 @@ Every event Chronicle stores records which operation it belonged to, who caused 
 
 All three live in the calling process's dictionary. Set them once at the start of a request or job, and every append from that process carries them. You can override each one on a single call. Because they are process-scoped, they don't follow work into spawned processes; see [Async/spawn considerations](#asyncspawn-considerations).
 
+Complete client setup in [Get started](get-started.md) before using these snippets.
+Use [Typical Usage Pattern](#typical-usage-pattern) at a request or job boundary, or
+[Async/Spawn Considerations](#asyncspawn-considerations) when starting work in another process.
+These examples are alternatives to adapt, followed by the individual context APIs.
+
+## Typical Usage Pattern
+
+Set the context at the boundary of each request or job, and reset it when the work ends, whether it succeeded or not. Some web servers reuse one process for several requests on a connection, so context left behind can leak into the next request.
+
+This Phoenix controller action is an excerpt: it assumes an authentication plug has put `:current_user` and `:request_id` in `conn.assigns`.
+
+```elixir
+defmodule MyAppWeb.AccountController do
+  use MyAppWeb, :controller
+
+  alias Chronicle.{Auditing.CausationManager, Correlation.CorrelationId, Identity}
+
+  def create(conn, %{"account_id" => account_id, "owner" => owner}) do
+    user = conn.assigns.current_user
+
+    Chronicle.set_correlation_id(CorrelationId.create())
+    Chronicle.set_identity(Identity.new(user.id, user.name, user.user_name))
+    CausationManager.clear()
+    CausationManager.define_root(%{request_id: conn.assigns.request_id})
+    CausationManager.add("MyApp.Commands.OpenAccount", %{account_id: account_id})
+
+    try do
+      case Chronicle.append(account_id, %MyApp.Events.AccountOpened{owner: owner, balance: 0}) do
+        :ok -> send_resp(conn, 201, "")
+        {:error, reason} -> send_resp(conn, 422, inspect(reason))
+      end
+    after
+      Chronicle.clear_correlation_id()
+      Chronicle.clear_identity()
+      CausationManager.clear()
+    end
+  end
+end
+```
+
+## Async/Spawn Considerations
+
+In this example, only the captured correlation id and identity are passed into the task;
+the task defines its own causation root rather than copying the caller's causation chain.
+
+Context lives in the process dictionary, so spawned processes, including `Task` processes, don't inherit it. Capture it before spawning and set it again inside:
+
+```elixir
+alias Chronicle.Auditing.CausationManager
+
+correlation_id = Chronicle.current_correlation_id()
+identity = Chronicle.current_identity()
+
+Task.start(fn ->
+  Chronicle.set_correlation_id(correlation_id)
+  Chronicle.set_identity(identity)
+  CausationManager.define_root(%{source: "background-task"})
+
+  Chronicle.append("account-42", %MyApp.Events.FundsDeposited{amount: 100})
+end)
+```
+
 ## Correlation IDs
 
 A correlation id groups the events that one user action or job produced, so you can trace it across services.
@@ -204,60 +266,6 @@ causation = [
 ]
 
 :ok = Chronicle.append("resource-42", event, causation: causation)
-```
-
-## Typical Usage Pattern
-
-Set the context at the boundary of each request or job, and reset it when the work ends, whether it succeeded or not. Some web servers reuse one process for several requests on a connection, so context left behind can leak into the next request.
-
-This Phoenix controller action is an excerpt: it assumes an authentication plug has put `:current_user` and `:request_id` in `conn.assigns`.
-
-```elixir
-defmodule MyAppWeb.AccountController do
-  use MyAppWeb, :controller
-
-  alias Chronicle.{Auditing.CausationManager, Correlation.CorrelationId, Identity}
-
-  def create(conn, %{"account_id" => account_id, "owner" => owner}) do
-    user = conn.assigns.current_user
-
-    Chronicle.set_correlation_id(CorrelationId.create())
-    Chronicle.set_identity(Identity.new(user.id, user.name, user.user_name))
-    CausationManager.clear()
-    CausationManager.define_root(%{request_id: conn.assigns.request_id})
-    CausationManager.add("MyApp.Commands.OpenAccount", %{account_id: account_id})
-
-    try do
-      case Chronicle.append(account_id, %MyApp.Events.AccountOpened{owner: owner, balance: 0}) do
-        :ok -> send_resp(conn, 201, "")
-        {:error, reason} -> send_resp(conn, 422, inspect(reason))
-      end
-    after
-      Chronicle.clear_correlation_id()
-      Chronicle.clear_identity()
-      CausationManager.clear()
-    end
-  end
-end
-```
-
-## Async/Spawn Considerations
-
-Context lives in the process dictionary, so spawned processes, including `Task` processes, don't inherit it. Capture it before spawning and set it again inside:
-
-```elixir
-alias Chronicle.Auditing.CausationManager
-
-correlation_id = Chronicle.current_correlation_id()
-identity = Chronicle.current_identity()
-
-Task.start(fn ->
-  Chronicle.set_correlation_id(correlation_id)
-  Chronicle.set_identity(identity)
-  CausationManager.define_root(%{source: "background-task"})
-
-  Chronicle.append("account-42", %MyApp.Events.FundsDeposited{amount: 100})
-end)
 ```
 
 ## See Also

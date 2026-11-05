@@ -3,7 +3,9 @@ title: Keep credentials out of crash reports
 description: When gRPC and Mint crash reports can print your API key or bearer token, and the production Logger setup that keeps them out of shipped logs.
 ---
 
-The client authenticates every call with an API key or an OAuth bearer token, sent as request headers. The gRPC and Mint libraries underneath it keep those headers in process state. When one of those processes crashes, OTP writes its state, last message and stacktrace arguments to the log at `:error` level, so an unprotected crash report can contain your credentials in clear text. Chronicle's own processes hide their credentials from crash reports, and the client installs a primary Logger filter that does the same for the dependency processes. You don't need an application-level filter for the report shapes below.
+The client installs a primary Logger filter for gRPC and Mint crash reports. You don't need an application-level filter for the report shapes below. Chronicle's own processes also hide their credentials from crash reports.
+
+Those safeguards matter because the client authenticates every call with an API key or an OAuth bearer token, sent as request headers. The gRPC and Mint libraries keep those headers in process state. When one of those processes crashes, OTP writes its state, last message and stacktrace arguments to the log at `:error` level, so an unprotected crash report can contain your credentials in clear text.
 
 ## What the client redacts
 
@@ -19,9 +21,9 @@ The client authenticates every call with an API key or an OAuth bearer token, se
 
 A redacted part is printed as a placeholder such as `:"[redacted: GRPC.Client.Adapters.Mint.ConnectionProcess.State holds request headers]"` or as `[redacted]`.
 
-Why the filter has to look at several shapes: the `StreamResponseProcess` state holds the whole `%GRPC.Client.Stream{}`, including the channel's `api-key` header and the per-call `authorization` header. Mint's HTTP/2 connection keeps the headers it has sent in its HPACK encode table, and `api-key` is not in the static table, so the value is stored there; that is in the `ConnectionProcess` state. `GRPC.Client.Connection` holds the channel and its headers. The client also sends `enable_push: false` to Mint, which removes the route where a server `PUSH_PROMISE` frame crashes `ConnectionProcess`.
+To scrub free-form text, the client remembers the credential values it uses in memory. The list holds at most 16 values, keeping the newest so a rotating token cannot grow it. Those values are never logged or written anywhere else. Values shorter than eight characters are ignored, because scrubbing them would mangle unrelated log text.
 
-The client remembers the credential values it uses only in memory, in a list of at most 16 values (the newest win, so a rotating token cannot grow it), so it can scrub them from free-form text. They are never logged or written anywhere else. Values shorter than eight characters are ignored, because scrubbing them would mangle unrelated log text.
+The dependency state needs several kinds of redaction. The `StreamResponseProcess` state holds the whole `%GRPC.Client.Stream{}`, including the channel's `api-key` header and the per-call `authorization` header. Mint's HTTP/2 connection keeps the headers it has sent in its HPACK encode table, and `api-key` is not in the static table, so the value is stored there; that is in the `ConnectionProcess` state. `GRPC.Client.Connection` holds the channel and its headers. The client also sends `enable_push: false` to Mint, which removes the route where a server `PUSH_PROMISE` frame crashes `ConnectionProcess`.
 
 ## What can still reach a log
 
@@ -34,13 +36,9 @@ The filter is a client-side safeguard, not a guarantee:
 
 If you need more than that, keep `handle_sasl_reports` at its default `false`, restrict who can read production logs, and rotate an API key or client secret that has appeared in one.
 
-## The root fix is upstream
-
-Redacting in the client works around the library, and it works for the shapes known today. The complete fix is in `grpc`: implementing `format_status/1` on `StreamResponseProcess`, `ConnectionProcess` and `GRPC.Client.Connection` so request headers are redacted from crash reports, and not crashing on a malformed `grpc-status`. That change belongs to elixir-grpc. When a release contains it, the client's filter becomes a second layer rather than the only one.
-
 ## Optional: also protect other Mint users
 
-The client's filter is credential-aware. It does not hide the crashes of other processes in your application that use Mint, such as an HTTP client with its own secrets. If you want one filter for all of them, install your own primary filter that replaces matching reports with a notice, and keep it separate from the client's:
+The client's filter is credential-aware. It does not hide the crashes of other processes in your application that use Mint, such as an HTTP client with its own secrets. To cover those processes, install your own primary filter and keep it separate from the client's. The example below replaces matching reports with a notice rather than redacting individual fields:
 
 ```elixir
 defmodule MyApp.MintCrashReportFilter do
@@ -73,3 +71,7 @@ end
 ```
 
 Two blunter settings also keep reports out, at a cost: `config :logger, handle_otp_reports: false` drops every OTP report including those of your own processes, and a Logger `level` of `:critical` drops every `:error` log.
+
+## The root fix is upstream
+
+The client's redaction works around the library for the report shapes known today. The complete fix is in `grpc`: implementing `format_status/1` on `StreamResponseProcess`, `ConnectionProcess` and `GRPC.Client.Connection` so request headers are redacted from crash reports, and not crashing on a malformed `grpc-status`. That change belongs to elixir-grpc. When a release contains it, the client's filter becomes a second layer rather than the only one.
