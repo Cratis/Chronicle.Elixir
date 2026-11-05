@@ -29,7 +29,7 @@ defmodule Chronicle.Observers.BatchRunner do
   #   * `[:chronicle, :observer, :queue]` — `queue_depth` and `in_flight`
   #     measurements whenever work starts or finishes.
 
-  alias Chronicle.Observers.{PartitionScheduler, ResultSender}
+  alias Chronicle.Observers.{PageMessages, PartitionScheduler, ResultSender}
 
   @default_max_concurrent_partitions 16
   @expired_message "Delivery expired before handling: the kernel stopped waiting for its result"
@@ -55,6 +55,30 @@ defmodule Chronicle.Observers.BatchRunner do
     state
     |> enqueue({:batch, partition, {message, received_at}})
     |> run(hooks)
+  end
+
+  @doc """
+  Queues a page that spans several partitions, received at `received_at`. It runs
+  once everything before it has finished, and nothing after it starts until it has.
+  """
+  @spec exclusive(map(), map(), integer(), map()) :: map()
+  def exclusive(state, message, received_at, hooks) do
+    state
+    |> enqueue({:exclusive, {message, received_at}})
+    |> run(hooks)
+  end
+
+  @doc """
+  Queues a delivery under the partition it is scheduled by (see
+  `Chronicle.Observers.PageMessages.scheduling_partition/1`): one partition runs
+  as a batch, several as an exclusive page.
+  """
+  @spec delivery(map(), map(), integer(), map()) :: map()
+  def delivery(state, message, received_at, hooks) do
+    case PageMessages.scheduling_partition(message) do
+      {:partition, partition} -> batch(state, partition, message, received_at, hooks)
+      :page -> exclusive(state, message, received_at, hooks)
+    end
   end
 
   @doc "Queues an item to run in the handler once `partition`'s earlier batches have finished."
@@ -220,7 +244,7 @@ defmodule Chronicle.Observers.BatchRunner do
       observer: state.module,
       kind: hooks.kind,
       partition: partition,
-      batch_size: length(Map.get(message, :Events, []) || [])
+      batch_size: PageMessages.event_count(message)
     }
   end
 
