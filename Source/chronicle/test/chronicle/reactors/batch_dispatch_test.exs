@@ -313,12 +313,16 @@ defmodule Chronicle.Reactors.BatchDispatchTest do
           event_store: "store",
           namespace: "Default",
           lifecycle: lifecycle,
-          establish_fun: fn _state, _connection_id -> {:ok, :fake_stream, nil} end,
+          establish_fun: fn _state, connection_id ->
+            send(test, {:established, connection_id})
+            {:ok, :fake_stream, nil}
+          end,
           send_fun: fn _stream, result -> send(test, {:sent, result}) end
         )
 
       Lifecycle.connected(lifecycle, "conn-1")
       Lifecycle.registered(lifecycle)
+      assert_receive {:established, "conn-1"}, 1_000
       _ = :sys.get_state(handler)
       %{handler: handler}
     end
