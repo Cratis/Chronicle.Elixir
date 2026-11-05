@@ -52,20 +52,38 @@ defmodule Chronicle.Graphs.SchemaWriter do
     schema = module |> JsonSchemaGenerator.generate(key_transform: :camel) |> Jason.decode!()
 
     properties =
-      for %{field: field} <- Compiler.struct_fields(module) do
+      for %{field: field, default: default} <- Compiler.struct_fields(module) do
         name = Compiler.property_name(field)
-        {name, schema |> get_in(["properties", name]) |> order_schema()}
+        {name, schema |> get_in(["properties", name]) |> numeric(default) |> order_schema()}
       end
 
     [{"type", "object"}, {"properties", ordered(properties)}]
   end
 
+  # The .NET client writes a number with the format of its CLR type. An Elixir integer default
+  # is described as the .NET int, a float default as the .NET double, so a graph registers the
+  # same schema from either client. (The generic read model schema keeps its plain "number".)
+  defp numeric(_schema, value) when is_integer(value),
+    do: %{"type" => "integer", "format" => "int32"}
+
+  defp numeric(_schema, value) when is_float(value),
+    do: %{"type" => "number", "format" => "double"}
+
+  defp numeric(%{"type" => "array", "items" => _} = schema, [first | _]),
+    do: %{schema | "items" => numeric(schema["items"], first)}
+
+  defp numeric(schema, _value), do: schema
+
   defp order_schema(%{"type" => type} = schema) do
-    rest = schema |> Map.delete("type") |> Enum.sort() |> Enum.map(&order_value/1)
+    rest = schema |> Map.delete("type") |> Enum.sort_by(&sort_key/1) |> Enum.map(&order_value/1)
     ordered([{"type", type} | rest])
   end
 
   defp order_schema(schema), do: schema
+
+  # "format" directly follows "type", as NJsonSchema writes it.
+  defp sort_key({"format", _}), do: {0, "format"}
+  defp sort_key({key, _}), do: {1, key}
 
   defp order_value({key, %{} = value}), do: {key, order_schema(value)}
   defp order_value(pair), do: pair

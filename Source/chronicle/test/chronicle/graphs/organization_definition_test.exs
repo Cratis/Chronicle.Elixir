@@ -12,8 +12,8 @@ defmodule Chronicle.Graphs.OrganizationDefinitionTest do
   # Source/Clients/DotNET.Specs/Projections/Graphs/for_GraphDefinitionBuilder), written out with
   # the wire names of the contract: the graph target as `x-graph-*` annotations in the read model
   # schema, and the graph projection keyed by `<event type id>+<generation>`. Properties are
-  # strings and counters here; the numeric schema type is the one the Elixir client gives every
-  # number (see Chronicle.Schemas.JsonSchemaGenerator), where .NET writes integer/int32.
+  # strings and int counters here; an integer default is written as the .NET int
+  # (integer/int32) and a float default as the .NET double (number/double).
   @fixture "test/fixtures/graphs/organization.json"
            |> Path.expand(File.cwd!())
            |> File.read!()
@@ -41,10 +41,10 @@ defmodule Chronicle.Graphs.OrganizationDefinitionTest do
     assert schema ==
              ~s({"type":"object","title":"Organization","x-graph":true,"properties":{) <>
                ~s("Person":{"type":"object","properties":{"personId":{"type":"string"},"name":{"type":"string"}},"x-graph-kind":"Node","x-graph-key":"personId"},) <>
-               ~s("Group":{"type":"object","properties":{"groupId":{"type":"string"},"name":{"type":"string"},"memberCount":{"type":"number"}},"x-graph-kind":"Node","x-graph-key":"groupId"},) <>
+               ~s("Group":{"type":"object","properties":{"groupId":{"type":"string"},"name":{"type":"string"},"memberCount":{"type":"integer","format":"int32"}},"x-graph-kind":"Node","x-graph-key":"groupId"},) <>
                ~s("Place":{"type":"object","properties":{"placeId":{"type":"string"}},"x-graph-kind":"Node","x-graph-key":"placeId"},) <>
                ~s("MEMBER_OF":{"type":"object","properties":{"since":{"type":"string"}},"x-graph-kind":"Edge","x-graph-source":"Person","x-graph-target":"Group"},) <>
-               ~s("VISITED":{"type":"object","properties":{"visitId":{"type":"string"},"times":{"type":"number"}},"x-graph-kind":"Edge","x-graph-source":"Person","x-graph-target":"Place","x-graph-identity":"visitId"}}})
+               ~s("VISITED":{"type":"object","properties":{"visitId":{"type":"string"},"times":{"type":"integer","format":"int32"}},"x-graph-kind":"Edge","x-graph-source":"Person","x-graph-target":"Place","x-graph-identity":"visitId"}}})
   end
 
   test "lists every event type the graph handles, once" do
@@ -66,5 +66,33 @@ defmodule Chronicle.Graphs.OrganizationDefinitionTest do
   test "the graph sinks resolve from atoms" do
     assert WellKnownSinkTypes.resolve(:neo4j) == "Neo4j"
     assert WellKnownSinkTypes.resolve(:in_memory_graph) == "InMemoryGraph"
+  end
+
+  defmodule Measured do
+    use Chronicle.Graphs.Node
+    defstruct id: "", ratio: 0.0, count: 0, scores: [1], flag: true
+  end
+
+  defmodule Measurements do
+    use Chronicle.Graphs.Graph, id: "Measurements"
+    node(Chronicle.Graphs.OrganizationDefinitionTest.Measured, key: :id)
+  end
+
+  test "writes numbers with the format of the .NET type they correspond to" do
+    properties =
+      Measurements
+      |> SchemaWriter.write()
+      |> Jason.decode!()
+      |> get_in(["properties", "Measured", "properties"])
+
+    assert properties["ratio"] == %{"type" => "number", "format" => "double"}
+    assert properties["count"] == %{"type" => "integer", "format" => "int32"}
+
+    assert properties["scores"] == %{
+             "type" => "array",
+             "items" => %{"type" => "integer", "format" => "int32"}
+           }
+
+    assert properties["flag"] == %{"type" => "boolean"}
   end
 end

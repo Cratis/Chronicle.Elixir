@@ -110,7 +110,8 @@
               "type": "string"
             },
             "memberCount": {
-              "type": "number"
+              "type": "integer",
+ "format": "int32"
             },
             "name": {
               "type": "string"
@@ -157,7 +158,8 @@
         "VISITED": {
           "properties": {
             "times": {
-              "type": "number"
+              "type": "integer",
+ "format": "int32"
             },
             "visitId": {
               "type": "string"
