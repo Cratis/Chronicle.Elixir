@@ -15,7 +15,7 @@ Shared Chronicle concepts and workflows live in the main Chronicle docs and show
 |---|---|
 | Package | [`cratis_chronicle`](https://hex.pm/packages/cratis_chronicle) on Hex. |
 | Elixir | 1.18 or later. CI uses Elixir 1.19.5 on Erlang/OTP 28.5. |
-| Dependencies | `grpc ~> 1.0`, Mint 1.11 or later, `opentelemetry_api ~> 1.4`, and `cratis_chronicle_contracts ~> 19.125`. |
+| Dependencies | `grpc ~> 1.0`, Mint 1.11 or later, `opentelemetry_api ~> 1.4`, and `cratis_chronicle_contracts ~> 19.129`. |
 | Kernel | A kernel whose gRPC contracts match the `cratis_chronicle_contracts` version in your `mix.lock`. A mismatch returns `{:error, {:incompatible_server, ...}}`; see [Get started](get-started.md#troubleshooting). |
 | API reference | [HexDocs](https://hexdocs.pm/cratis_chronicle) |
 
