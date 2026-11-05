@@ -10,6 +10,7 @@ Projections are shared Chronicle read-model behavior. Use the shared docs for pr
 - [Choosing a read model style](/chronicle/projections/choosing-a-read-model-style/)
 - [Model-bound projections](/chronicle/projections/model-bound/)
 - [Declarative projections](/chronicle/projections/declarative/)
+- [Graph projections](./graph-projections.md) - project events onto nodes and edges
 - [Elixir client setup](./get-started.md)
 
 ## Child collections

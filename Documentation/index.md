@@ -15,7 +15,7 @@ Shared Chronicle concepts and workflows live in the main Chronicle docs and show
 |---|---|
 | Package | [`cratis_chronicle`](https://hex.pm/packages/cratis_chronicle) on Hex. |
 | Elixir | 1.18 or later. CI uses Elixir 1.19.5 on Erlang/OTP 28.5. |
-| Dependencies | `grpc ~> 1.0`, Mint 1.11 or later, `opentelemetry_api ~> 1.4`, and `cratis_chronicle_contracts ~> 19.125`. |
+| Dependencies | `grpc ~> 1.0`, Mint 1.11 or later, `opentelemetry_api ~> 1.4`, and `cratis_chronicle_contracts ~> 19.129`. |
 | Kernel | A kernel whose gRPC contracts match the `cratis_chronicle_contracts` version in your `mix.lock`. A mismatch returns `{:error, {:incompatible_server, ...}}`; see [Get started](get-started.md#troubleshooting). |
 | API reference | [HexDocs](https://hexdocs.pm/cratis_chronicle) |
 
@@ -48,6 +48,7 @@ See [Limits and gaps](limits-and-gaps.md) for the kernel limits, the consistency
 - [Connections](connections/index.md): connection strings, credentials, TLS, and how the client recovers from dropped connections
 - [Context management](context.md): process-scoped correlation ids, identities, and causation chains
 - [Concepts](concepts.md): strongly typed values and PII classification with `Chronicle.Concept`
+- [Graph projections](graph-projections.md): projecting events onto nodes and edges of a property graph
 - [Seeding](seeding.md): seeders and when seed data is appended
 - [Sinks](sinks.md): choosing where read models are stored, and running several clients
 - [Event store discovery](event-stores.md): listing event stores and namespaces

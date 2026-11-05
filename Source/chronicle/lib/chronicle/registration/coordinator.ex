@@ -23,6 +23,7 @@ defmodule Chronicle.Registration.Coordinator do
   alias Chronicle.Events.Constraints
   alias Chronicle.Events.EventTypes
   alias Chronicle.EventSources
+  alias Chronicle.Graphs.DefinitionBuilder
   alias Chronicle.Schemas.JsonSchemaGenerator
   alias Chronicle.Sinks.WellKnownSinkTypes
 
@@ -117,9 +118,12 @@ defmodule Chronicle.Registration.Coordinator do
       reactors: Keyword.get(opts, :reactors, []),
       reducers: Keyword.get(opts, :reducers, []),
       projections: Keyword.get(opts, :projections, []),
+      graphs: Keyword.get(opts, :graphs, []),
       global_handlers: Keyword.get(opts, :global_handlers, []),
       constraints: Keyword.get(opts, :constraints, []),
       default_sink_type_id: Keyword.get(opts, :default_sink_type_id, "MongoDB"),
+      default_graph_sink_type_id:
+        Keyword.get(opts, :default_graph_sink_type_id, WellKnownSinkTypes.neo4j()),
       register_fun: Keyword.get(opts, :register_fun, &default_register/1),
       policy: RetryPolicy.new(Keyword.get(opts, :registration)),
       drift_policy: Keyword.get(opts, :drift_policy, :warn),
@@ -290,12 +294,16 @@ defmodule Chronicle.Registration.Coordinator do
           (proj.__chronicle_projection__(:removed_with_join) |> Enum.map(&elem(&1, 0)))
       end)
 
+    # Collect event types from graph projections
+    graph_event_types = Enum.flat_map(state.graphs, & &1.__chronicle_graph__(:events))
+
     all_event_types =
       Enum.uniq(
         state.event_types ++
           read_model_event_types ++
           reducer_event_types ++
-          declarative_projection_event_types
+          declarative_projection_event_types ++
+          graph_event_types
       )
 
     with :ok <- ensure_event_store(channel, state.event_store),
@@ -523,8 +531,15 @@ defmodule Chronicle.Registration.Coordinator do
         )
       end)
 
+    graph_definitions =
+      Enum.map(
+        state.graphs,
+        &DefinitionBuilder.read_model_definition(&1, state.default_graph_sink_type_id)
+      )
+
     all_definitions =
-      projection_definitions ++ reducer_definitions ++ declarative_projection_definitions
+      projection_definitions ++
+        reducer_definitions ++ declarative_projection_definitions ++ graph_definitions
 
     if Enum.empty?(all_definitions) do
       :ok
@@ -575,7 +590,7 @@ defmodule Chronicle.Registration.Coordinator do
   defp sink_type_id(_state, true), do: WellKnownSinkTypes.none()
   defp sink_type_id(state, false), do: state.default_sink_type_id
 
-  defp register_projections(_channel, %{read_models: [], projections: []}), do: :ok
+  defp register_projections(_channel, %{read_models: [], projections: [], graphs: []}), do: :ok
 
   defp register_projections(channel, state) do
     model_bound_entries =
@@ -605,7 +620,7 @@ defmodule Chronicle.Registration.Coordinator do
       Chronicle.Projections.VariantReclassifier.apply(
         model_bound_entries ++ declarative_entries,
         state.global_handlers
-      )
+      ) ++ Enum.map(state.graphs, &DefinitionBuilder.projection_definition/1)
 
     if Enum.empty?(definitions) do
       :ok

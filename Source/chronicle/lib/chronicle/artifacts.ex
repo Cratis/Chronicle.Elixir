@@ -13,6 +13,7 @@ defmodule Chronicle.Artifacts do
     * `__chronicle_reactor__/1`
     * `__chronicle_reducer__/1`
     * `__chronicle_read_model__/1`
+    * `__chronicle_graph__/1`
     * `__chronicle_webhook__/1`
     * `__chronicle_event_store_subscription__/1`
     * `__chronicle_migration__/1`
@@ -29,6 +30,7 @@ defmodule Chronicle.Artifacts do
           reducers: [module()],
           read_models: [module()],
           projections: [module()],
+          graphs: [module()],
           seeders: [module()],
           webhooks: [module()],
           event_store_subscriptions: [module()],
@@ -60,6 +62,7 @@ defmodule Chronicle.Artifacts do
         reducers: [],
         read_models: [],
         projections: [],
+        graphs: [],
         seeders: [],
         webhooks: [],
         event_store_subscriptions: [],
@@ -93,6 +96,7 @@ defmodule Chronicle.Artifacts do
             module,
             function_exported?(module, :__chronicle_projection__, 1)
           )
+          |> maybe_put(:graphs, module, function_exported?(module, :__chronicle_graph__, 1))
           |> maybe_put(:seeders, module, function_exported?(module, :__chronicle_seeder__, 1))
           |> maybe_put(:webhooks, module, function_exported?(module, :__chronicle_webhook__, 1))
           |> maybe_put(
@@ -145,6 +149,7 @@ defmodule Chronicle.Artifacts do
         reducers: [],
         read_models: [],
         projections: [],
+        graphs: [],
         seeders: [],
         webhooks: [],
         event_store_subscriptions: [],
@@ -177,6 +182,7 @@ defmodule Chronicle.Artifacts do
           module,
           function_exported?(module, :__chronicle_projection__, 1)
         )
+        |> maybe_put(:graphs, module, function_exported?(module, :__chronicle_graph__, 1))
         |> maybe_put(:seeders, module, function_exported?(module, :__chronicle_seeder__, 1))
         |> maybe_put(:webhooks, module, function_exported?(module, :__chronicle_webhook__, 1))
         |> maybe_put(

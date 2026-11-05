@@ -43,7 +43,7 @@ defmodule Chronicle.MixProject do
 
   defp deps do
     [
-      {:cratis_chronicle_contracts, "~> 19.125"},
+      {:cratis_chronicle_contracts, "~> 19.129"},
       {:grpc, "~> 1.0"},
       {:mint, "~> 1.11"},
       {:telemetry, "~> 1.0"},
@@ -119,6 +119,11 @@ defmodule Chronicle.MixProject do
           Chronicle.EventStoreSubscriptions.EventType
         ],
         "Read Models": [Chronicle.ReadModels.ReadModel, Chronicle.ReadModels],
+        "Graph Projections": [
+          Chronicle.Graphs.Graph,
+          Chronicle.Graphs.Node,
+          Chronicle.Graphs.Edge
+        ],
         Sinks: [Chronicle.Sinks.WellKnownSinkTypes],
         Jobs: [
           Chronicle.Jobs,

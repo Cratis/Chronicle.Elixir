@@ -14,6 +14,10 @@ defmodule Chronicle.Sinks.WellKnownSinkTypes do
     * `:sql` — persists read models into a SQL database
     * `:in_memory` — persists read models in memory only
     * `:none` — no sink configured (used by passive projections)
+    * `:neo4j` — stores graph projections in Neo4j (the default for graphs, see
+      `Chronicle.Graphs.Graph`)
+    * `:in_memory_graph` — stores graph projections in the kernel's memory, for development
+      and tests
 
   ## Example
 
@@ -28,6 +32,8 @@ defmodule Chronicle.Sinks.WellKnownSinkTypes do
   @sql "SQL"
   @in_memory "InMemory"
   @none "None"
+  @neo4j "Neo4j"
+  @in_memory_graph "InMemoryGraph"
 
   @doc "Sink type identifier for MongoDB."
   @spec mongodb() :: String.t()
@@ -45,10 +51,18 @@ defmodule Chronicle.Sinks.WellKnownSinkTypes do
   @spec none() :: String.t()
   def none, do: @none
 
+  @doc "Sink type identifier for Neo4j, the default graph sink."
+  @spec neo4j() :: String.t()
+  def neo4j, do: @neo4j
+
+  @doc "Sink type identifier for the in-memory graph sink."
+  @spec in_memory_graph() :: String.t()
+  def in_memory_graph, do: @in_memory_graph
+
   @doc """
   Resolves an atom sink type name to its string identifier.
 
-  Accepts `:mongodb`, `:sql`, `:in_memory`, or `:none`.
+  Accepts `:mongodb`, `:sql`, `:in_memory`, `:none`, `:neo4j`, or `:in_memory_graph`.
   Raises `ArgumentError` for unknown values.
   """
   @spec resolve(atom() | String.t()) :: String.t()
@@ -56,11 +70,13 @@ defmodule Chronicle.Sinks.WellKnownSinkTypes do
   def resolve(:sql), do: @sql
   def resolve(:in_memory), do: @in_memory
   def resolve(:none), do: @none
+  def resolve(:neo4j), do: @neo4j
+  def resolve(:in_memory_graph), do: @in_memory_graph
   def resolve(value) when is_binary(value), do: value
 
   def resolve(other) do
     raise ArgumentError,
           "Unknown sink type: #{inspect(other)}. " <>
-            "Use :mongodb, :sql, :in_memory, or :none, or pass a string identifier directly."
+            "Use :mongodb, :sql, :in_memory, :none, :neo4j, or :in_memory_graph, or pass a string identifier directly."
   end
 end

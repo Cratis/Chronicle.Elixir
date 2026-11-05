@@ -13,6 +13,7 @@ Event sourcing for Elixir — the idiomatic client for [Cratis Chronicle](https:
 
 - **`use Chronicle.Events.EventType`** — annotate structs as event types with stable IDs
 - **`use Chronicle.ReadModels.ReadModel`** — declare model-bound projections executed server-side
+- **`use Chronicle.Graphs.Graph`** — project events onto a property graph with `node` and `edge`
 - **`use Chronicle.Reactors.Reactor`** — react to events with side effects
 - **`use Chronicle.Reducers.Reducer`** — fold events into read models in your own process
 - **`use Chronicle.Seeding.Seeder`** — seed event stores with baseline events at startup

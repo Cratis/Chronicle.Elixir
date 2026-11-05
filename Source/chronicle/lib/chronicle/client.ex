@@ -96,6 +96,9 @@ defmodule Chronicle.Client do
     * `:projections` — list of declarative projection modules (each
       `use Chronicle.Projections.Projection`). These are standalone projection definitions
       that reference a separate read model module.
+    * `:graphs` — list of graph projection modules (each `use Chronicle.Graphs.Graph`). Each
+      is registered as a read model stored by the graph sink and as the projection that fills
+      it (also discovered automatically).
     * `:constraints` — list of standalone constraint modules (each
       `use Chronicle.Events.Constraint`). These are merged with model-bound constraints
       declared on registered event types.
@@ -117,6 +120,9 @@ defmodule Chronicle.Client do
       projections and reducers. Accepts an atom (`:mongodb`, `:sql`,
       `:in_memory`, `:none`) or a raw sink type string. Defaults to
       `:mongodb`. See `Chronicle.Sinks.WellKnownSinkTypes`.
+    * `:default_graph_sink_type_id` — the sink type that stores graph projections. Accepts
+      `:neo4j`, `:in_memory_graph` or a raw sink type string. Defaults to `:neo4j`; use
+      `:in_memory_graph` for development and tests. See `Chronicle.Sinks.WellKnownSinkTypes`.
     * `:drift_policy` — `:ignore`, `:warn` (default) or `:fail`. Controls what happens when
       the artifacts about to be registered look like they've drifted from what the kernel
       already has — an event type generation whose schema changed without a bumped
@@ -278,6 +284,9 @@ defmodule Chronicle.Client do
     default_sink_type_id =
       opts |> Keyword.get(:default_sink_type_id, :mongodb) |> WellKnownSinkTypes.resolve()
 
+    default_graph_sink_type_id =
+      opts |> Keyword.get(:default_graph_sink_type_id, :neo4j) |> WellKnownSinkTypes.resolve()
+
     discovered =
       if discover? do
         case Keyword.get(opts, :otp_app) do
@@ -293,6 +302,7 @@ defmodule Chronicle.Client do
           reducers: [],
           read_models: [],
           projections: [],
+          graphs: [],
           seeders: [],
           webhooks: [],
           event_store_subscriptions: [],
@@ -314,6 +324,7 @@ defmodule Chronicle.Client do
     reducers = Enum.uniq(Keyword.get(opts, :reducers, []) ++ discovered.reducers)
     read_models = Enum.uniq(Keyword.get(opts, :read_models, []) ++ discovered.read_models)
     projections = Enum.uniq(Keyword.get(opts, :projections, []) ++ discovered.projections)
+    graphs = Enum.uniq(Keyword.get(opts, :graphs, []) ++ discovered.graphs)
 
     global_handlers =
       Enum.uniq(Keyword.get(opts, :global_handlers, []) ++ discovered.global_handlers)
@@ -404,6 +415,7 @@ defmodule Chronicle.Client do
       event_store: event_store,
       namespace: namespace,
       default_sink_type_id: default_sink_type_id,
+      default_graph_sink_type_id: default_graph_sink_type_id,
       event_generation_delivery: Keyword.get(opts, :event_generation_delivery, :compatibility),
       max_concurrent_partitions: Keyword.get(opts, :max_concurrent_partitions)
     ]
@@ -494,6 +506,7 @@ defmodule Chronicle.Client do
            reactors: reactors,
            reducers: reducers,
            projections: projections,
+           graphs: graphs,
            global_handlers: global_handlers,
            constraints: constraints,
            drift_policy: Keyword.get(opts, :drift_policy, :warn)
