@@ -1,5 +1,6 @@
 ---
 sharedTopicBridge: true
+description: Define previous event generations and migration upcasts and downcasts in the Chronicle Elixir client, and validate generation IDs and migration gaps.
 ---
 
 # Migrations
