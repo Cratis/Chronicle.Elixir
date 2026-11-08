@@ -1,6 +1,6 @@
 ---
 title: Captures
-description: Define Chronicle captures with the Elixir DSL, register them, and manage their lifecycle.
+description: Define Chronicle captures with the Elixir DSL, then register, start, stop, delete, list and validate them through the Chronicle.Captures API.
 ---
 
 `Chronicle.Captures.Capture` provides a DSL for defining Chronicle captures, and `Chronicle.Captures` provides an idiomatic Elixir API for registering, starting, stopping, deleting, listing, and validating them.

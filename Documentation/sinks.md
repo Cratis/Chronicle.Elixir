@@ -1,6 +1,6 @@
 ---
 title: Sinks
-description: Choose where the Elixir client's projections and reducers store read models, and run clients with different sinks.
+description: Choose where the Elixir client's projections and reducers store read models, set a default sink per client, and run clients with different sinks.
 ---
 
 See [Sinks](/chronicle/sinks/) for what a sink is and the storage backends Chronicle ships with. This page covers Elixir-specific configuration: setting the default sink per client, running multiple clients with different sinks, and the `Chronicle.Sinks.WellKnownSinkTypes` reference.

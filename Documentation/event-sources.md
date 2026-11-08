@@ -1,6 +1,6 @@
 ---
 title: Event sources and streams
-description: Declare named event sources and streams, register them at startup, and append through them from Elixir.
+description: Declare named event sources and streams in Elixir, register them at startup, and append events through them with the Chronicle client.
 ---
 
 # Event sources and streams

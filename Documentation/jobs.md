@@ -1,6 +1,6 @@
 ---
 title: Jobs
-description: List, inspect, stop, resume and delete Chronicle jobs such as replays from the Elixir client.
+description: List, inspect, stop, resume and delete Chronicle jobs such as replays from Elixir, and follow a job's progress and steps in an event store.
 ---
 
 Inspect a job's progress and steps in the selected client's event store and namespace with `Chronicle.Jobs`.

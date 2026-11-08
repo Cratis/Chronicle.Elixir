@@ -1,6 +1,6 @@
 ---
 title: Seeding
-description: Define Elixir seeders that append baseline events when the client registers, and understand when seed data is skipped.
+description: Define Elixir seeders that append baseline events when the client registers, and learn when Chronicle skips seed data that already exists.
 ---
 
 Seeding gives a fresh event store the events it needs to be useful, such as reference data or demo accounts, without a separate script. This page shows how to seed events with the Chronicle Elixir client. See [Event seeding](/chronicle/event-seeding/) for the concept this page assumes, or [Plan seed data](/chronicle/clients/elixir/seeding/overview/) to decide what belongs in your baseline.

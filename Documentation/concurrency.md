@@ -1,6 +1,6 @@
 ---
 title: Optimistic concurrency from Elixir
-description: Guard Elixir appends with an expected sequence number and handle a conflict before deciding whether to retry.
+description: Guard Elixir appends with an expected sequence number, detect a concurrency conflict, and decide whether to retry the append or give up.
 sharedTopicBridge: true
 ---
 

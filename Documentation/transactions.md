@@ -1,4 +1,5 @@
 ---
+description: Run Elixir code in a unit of work with Chronicle.decide/2, commit its events together, and guard the commit with a decision read.
 sharedTopicBridge: true
 ---
 

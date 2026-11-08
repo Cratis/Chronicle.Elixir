@@ -1,3 +1,7 @@
+---
+description: List the reactors, reducers and projections Chronicle has registered for an event sequence from Elixir, and remove an observer whose code is gone.
+---
+
 # Observers
 
 `Chronicle.Observers` provides an idiomatic Elixir API for working with Chronicle observers.

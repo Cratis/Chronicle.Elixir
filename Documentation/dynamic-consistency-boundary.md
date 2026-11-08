@@ -1,6 +1,6 @@
 ---
 title: Dynamic Consistency Boundary
-description: Guard a decision with a decision read so a concurrent append can never invalidate it silently.
+description: Use decision reads in Elixir to guard a decision with the Dynamic Consistency Boundary, so a concurrent append cannot silently invalidate what you decided.
 ---
 
 Dynamic Consistency Boundary (DCB) in Chronicle, decision reads, and event sources and the DCB

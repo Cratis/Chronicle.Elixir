@@ -1,6 +1,6 @@
 ---
 title: Discovery and artifact identity drift
-description: See what Chronicle.Elixir discovered at startup, and catch an artifact identity that silently drifted from the kernel.
+description: See which event types, reactors, reducers and projections Chronicle.Elixir discovered at startup, and catch artifact identities that drifted from the kernel.
 ---
 
 `Chronicle.Client` discovers your event types, reactors, reducers, projections, read models,
