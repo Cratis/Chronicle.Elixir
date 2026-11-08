@@ -1,6 +1,6 @@
 ---
 title: Failed partitions
-description: Find the event sources where a reactor or reducer failed, and read each failed attempt, from Elixir.
+description: Find the event sources where a reactor or reducer failed, then read each failed attempt and its error details from Elixir to diagnose the problem.
 ---
 
 `Chronicle.FailedPartitions` provides an idiomatic Elixir API for inspecting Chronicle's

@@ -1,6 +1,6 @@
 ---
 title: Event store discovery
-description: List the event stores on a Chronicle kernel and the namespaces in an event store from the Elixir client.
+description: List the event stores on a Chronicle kernel and the namespaces inside an event store from Elixir, and verify they exist at runtime.
 ---
 
 Chronicle Elixir provides APIs to query information about available event stores and their namespaces from the Chronicle kernel. This is useful for administrative tasks, multi-tenant applications, and debugging. See [Event Store](/chronicle/concepts/event-store/) and [Namespaces](/chronicle/concepts/namespaces/) for what these concepts mean and how they relate to multi-tenancy — this page covers the Elixir-specific discovery APIs for listing and verifying them at runtime.

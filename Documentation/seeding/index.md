@@ -1,6 +1,6 @@
 ---
 title: Plan seed data
-description: Decide which baseline events your Elixir application needs before implementing a Chronicle seeder.
+description: Decide which baseline events, such as reference data or demo accounts, your Elixir application needs before you write a Chronicle seeder.
 ---
 
 A fresh event store may need reference data before the application can handle its first request. Decide which facts belong in that baseline before writing a seeder. Keep user-driven changes in the application's normal append flow rather than treating them as startup data.

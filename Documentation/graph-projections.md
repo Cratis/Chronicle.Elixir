@@ -1,6 +1,6 @@
 ---
 title: Graph projections
-description: Project events onto a property graph with the Elixir client's node and edge DSL, and register the graph with Chronicle.
+description: Project events onto a property graph with the Elixir client's node and edge DSL, see what the compiler checks, and register the graph with Chronicle.
 ---
 
 See [Graph projections](/chronicle/projections/graph-projections/) for what a graph projection is: how nodes, edges and their properties are projected, the five idempotent operations a graph sink applies, redelivery and replay, and the sinks. This page covers the Elixir client: the `node` and `edge` DSL, what the compiler checks, and how a graph is registered.

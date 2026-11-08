@@ -1,6 +1,6 @@
 ---
 title: "Context management: correlation, identity, and causation"
-description: Set process-scoped correlation ids, identities and causation chains that the Elixir client records with every append.
+description: Set process-scoped correlation ids, identities and causation chains from Elixir so every event the client appends records who did what and why.
 ---
 
 Every event Chronicle stores records which operation it belonged to, who caused it, and the chain of steps that led to it. [Correlation, identity, and causation](/chronicle/concepts/correlation-identity-causation/) explains what the three mean and why Chronicle tracks them. This page covers how you set them from Elixir.

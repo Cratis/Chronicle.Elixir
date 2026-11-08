@@ -1,6 +1,6 @@
 ---
 title: Event store subscriptions
-description: Import selected events from another event store's outbox with discoverable or imperative Elixir subscriptions.
+description: Import selected events from another event store's outbox into yours using discoverable modules or imperative Elixir event store subscriptions.
 ---
 
 Chronicle.Elixir supports event store subscriptions for importing events from one event store into another event store.

@@ -1,6 +1,6 @@
 ---
 title: Webhooks
-description: Register Chronicle webhooks from Elixir, as discoverable modules or at runtime, and inspect the registered webhooks.
+description: Register Chronicle webhooks from Elixir as discoverable modules or at runtime, and inspect which webhooks are registered with the kernel.
 ---
 
 `Chronicle.WebHooks` provides an idiomatic Elixir API for registering and inspecting Chronicle webhooks.

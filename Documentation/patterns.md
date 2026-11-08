@@ -1,6 +1,6 @@
 ---
 title: Behavior patterns
-description: Ask what a scope usually does, using the behavior patterns Chronicle mined from the event history of an event store.
+description: Query the behavior patterns Chronicle mined from event history to learn what a scope usually does, using the Elixir Chronicle.Patterns API.
 ---
 
 `Chronicle.Patterns` provides an idiomatic Elixir API over the behavior patterns Chronicle mines from the event history of an event store — recurring combinations of facets (`Day`, `TimeBucket`, `CommandType`, `AggregateType`, and so on) that survived its support and confidence thresholds.
