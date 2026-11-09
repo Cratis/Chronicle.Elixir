@@ -82,10 +82,69 @@ back to no value. The target field must default to `nil`: a field whose default 
 value (such as `""`) is not nullable to the kernel, and clearing it writes the type default back
 instead of no value.
 
+### Ordering new children
+
+New children are appended by default. `prepend: true` inserts each new child first, and
+`order_by` inserts it in order of a child property — `order_by: :priority` (ascending),
+`order_by: [asc: :priority]` or `order_by: [desc: :priority]`:
+
+```elixir
+children :tasks, identified_by: :task_id, order_by: [desc: :priority] do
+  from MyApp.Events.TaskAdded, key: :task_id
+end
+```
+
+Ordering only places new children: updating a child never moves it. Use one of `prepend` and
+`order_by` per collection; both, or a malformed `order_by`, is a compile-time error. Registering
+an ordering needs a `cratis_chronicle_contracts` version that carries `ChildrenOrderingDefinition`
+and a Chronicle server that supports children ordering; with an older contracts package
+registration raises instead of silently appending.
+
 A few mistakes are caught at compile time rather than at registration: a `children` collection
 without `:identified_by`, a root `join/2` without `:on`, the same target property assigned twice
 by one event's mapping, and a `from`/`join` target or `children` name that is not a field of the
 read model's struct.
+
+## Dictionary entries keyed by the event
+
+A map field can hold one entry per value an event carries. A key source names where the key comes
+from: `{:event_content, :sku}` (an atom is sent camelCase, so it matches the event's wire name; a
+string such as `"customer.id"` is used as written and is case-sensitive), `{:event_context, :type}`
+or `{:caused_by, :subject | :name | :user_name}`.
+
+```elixir
+from MyApp.Events.PriceSet,
+  set: [prices: {:entry, {:event_content, :sku}, :price}]
+
+from MyApp.Events.PriceWithdrawn,
+  remove: [prices: {:event_content, :sku}]
+
+from MyApp.Events.ItemSold,
+  add: [units: {:entry, {:event_content, :sku}, :quantity}],
+  count: [sales_by_user: {:caused_by, :subject}]
+```
+
+`:set`, `:set_once`, `:add` and `:subtract` take `{:entry, key_source, expression}`; `:count`,
+`:increment`, `:decrement` and `:remove` take the key source itself. The kernel checks at
+registration that an event content key exists on the event.
+
+## Setting a value only once
+
+`set_once:` sets a field, or a dictionary entry, only while it has no value yet, so the first
+event wins and later ones leave it alone:
+
+```elixir
+from MyApp.Events.DocumentRevised,
+  set_once: [original_title: :title, created_by: {:caused_by, :subject}, created: :occurred],
+  set: [title: :title]
+```
+
+## Projection or reducer
+
+Keeping the first value an event supplies, adding and removing dictionary entries keyed by an event
+value, and keeping children newest first or sorted are projection operations. None of them alone is
+a reason to write a reducer: reach for a [reducer](./reducers.md) when the next state depends on
+logic a declaration cannot express.
 
 ## Pinning the id
 
@@ -142,3 +201,7 @@ number, or returns `{:error, :timeout}`:
 
 `:occurred` maps to the event's occurred time (`$eventContext(Occurred)`). The old `$occurred`
 spelling was rejected by the kernel and is now translated.
+
+`:caused_by` maps to the identity that caused the event (`$causedBy`), and
+`{:caused_by, :subject | :name | :user_name}` to one of its properties. Because `:caused_by` is
+reserved for this, an event field named `caused_by` has to be mapped with the string `"causedBy"`.

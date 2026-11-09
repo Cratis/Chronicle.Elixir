@@ -127,8 +127,12 @@ event source, decoded into `Chronicle.Events.AppendedEvent` structs.
 
 `Chronicle.Testing.Projections` evaluates the supported subset of a
 `Chronicle.ReadModels.ReadModel`'s embedded declarations — `from/2` (`:set`,
-`:add`, `:subtract`, `:count`, `:increment`, `:decrement`, `:clear`, auto-map) and
-`removed_with/2` — against a single event, without a kernel:
+`:set_once`, `:add`, `:subtract`, `:count`, `:increment`, `:decrement`, `:remove`,
+`:clear`, auto-map) and `removed_with/2` — against a single event, without a kernel.
+Dictionary entries keyed by `{:event_content, property}` are evaluated; keys and
+values that need the event context (`{:event_context, _}`, `:caused_by`) raise
+`Chronicle.Testing.UnsupportedProjectionOperation`, because `apply_event/4` has no
+event context:
 
 `join/2`, `children/2`, `from_every/1` and `removed_with_join/2` need the
 server-side projection engine and raise
