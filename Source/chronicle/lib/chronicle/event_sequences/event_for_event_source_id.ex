@@ -25,9 +25,31 @@ defmodule Chronicle.EventSequences.EventForEventSourceId do
   and the first resolved entry identity wins over the batch identity option.
   Transaction commits use the first entry's causation and the same resolved-entry
   identity precedence.
+
+  ## Imported events
+
+  An import (`Chronicle.Imports`) keeps everything the source says about an event, so an
+  entry also carries:
+
+    * `:correlation_id` — the correlation id the event was originally written under
+      (`Chronicle.Correlation.CorrelationId` or a UUID string)
+    * `:identity` — who caused the event (sent as `CausedBy`)
+    * `:causation` — the original causation chain
+    * `:generation` — the event type generation the event was written in, when it differs
+      from the generation its module declares
+    * `:source_sequence_number` — the event's sequence number in the system it is imported
+      from, kept as lineage; the event still gets a new sequence number
+    * `:idempotency_key` — a key, typically the source system's event id, that makes
+      importing the same event twice report it as already appended
+    * `:named_tags` — a map of tag name to value
+
+  Ordinary appends honor `:generation` for the event type they send. They take their
+  correlation id from the `:correlation_id` option rather than from the entry, and do not
+  use `:source_sequence_number`, `:idempotency_key` or `:named_tags`.
   """
 
   alias Chronicle.Auditing.CausationEntry
+  alias Chronicle.Correlation.CorrelationId
   alias Chronicle.Identity
   alias Chronicle.Events.ConcurrencyScope
 
@@ -46,6 +68,11 @@ defmodule Chronicle.EventSequences.EventForEventSourceId do
     :event_stream,
     :routing,
     :prepared,
+    :correlation_id,
+    :generation,
+    :source_sequence_number,
+    :idempotency_key,
+    :named_tags,
     causation: [],
     identity: nil
   ]
@@ -64,6 +91,11 @@ defmodule Chronicle.EventSequences.EventForEventSourceId do
           event_stream: String.t() | nil,
           routing: Chronicle.EventSources.Routing.t() | nil,
           prepared: %{event_type: struct(), content: String.t()} | nil,
+          correlation_id: CorrelationId.t() | String.t() | nil,
+          generation: pos_integer() | nil,
+          source_sequence_number: non_neg_integer() | nil,
+          idempotency_key: String.t() | nil,
+          named_tags: %{optional(String.t()) => String.t()} | nil,
           causation: [CausationEntry.t()],
           identity: Identity.t() | nil
         }
