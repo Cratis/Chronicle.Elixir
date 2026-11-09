@@ -195,7 +195,7 @@ defmodule Chronicle.ReadModels.ReadModel do
   | `:owner_name` | The `owner_name` field from the event |
   | `:event_source_id` | The event source identifier |
   | `:occurred` | When the event was recorded |
-  | `:caused_by` | The identity that caused the event (`{:caused_by, :subject \| :name \| :user_name}` picks one property) |
+  | `{:caused_by, :subject \| :name \| :user_name}` | A property of the identity that caused the event |
   | `1` | A literal integer constant |
   | `"$add(amount, balance)"` | An explicit Chronicle expression |
 

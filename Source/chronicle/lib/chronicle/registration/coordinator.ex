@@ -1047,7 +1047,8 @@ defmodule Chronicle.Registration.Coordinator do
   # completes); the occurred time is an event context property.
   defp resolve_expression(:occurred), do: "$eventContext(Occurred)"
   defp resolve_expression("$occurred"), do: "$eventContext(Occurred)"
-  defp resolve_expression(:caused_by), do: "$causedBy"
+  # Bare `:caused_by` stays an event field (`causedBy`) like any other atom; the identity that
+  # caused the event is only reachable through the explicit `{:caused_by, property}` form.
   defp resolve_expression({:caused_by, :subject}), do: "$causedBy(subject)"
   defp resolve_expression({:caused_by, :name}), do: "$causedBy(name)"
   defp resolve_expression({:caused_by, :user_name}), do: "$causedBy(userName)"

@@ -12,7 +12,7 @@ defmodule Chronicle.Testing.Projections do
   `:increment`, `:decrement`, `:remove`, `:clear`) and auto-map, plus
   `removed_with/2`. Dictionary entries keyed by `{:event_content, property}` are
   evaluated; keys and values from the event context (`{:event_context, _}`,
-  `:caused_by`, `{:caused_by, _}`) raise
+  `{:caused_by, _}`) raise
   `Chronicle.Testing.UnsupportedProjectionOperation`, since `apply_event/4` has
   no event context.
 
@@ -186,7 +186,7 @@ defmodule Chronicle.Testing.Projections do
     do: event_source_id
 
   defp resolve_expression(expr, _event, _event_source_id, read_model)
-       when expr == :caused_by or (is_tuple(expr) and elem(expr, 0) == :caused_by) do
+       when is_tuple(expr) and elem(expr, 0) == :caused_by do
     raise UnsupportedProjectionOperation,
       read_model: read_model,
       operation: "#{inspect(expr)} (the event context is not available in memory)"

@@ -202,6 +202,6 @@ number, or returns `{:error, :timeout}`:
 `:occurred` maps to the event's occurred time (`$eventContext(Occurred)`). The old `$occurred`
 spelling was rejected by the kernel and is now translated.
 
-`:caused_by` maps to the identity that caused the event (`$causedBy`), and
-`{:caused_by, :subject | :name | :user_name}` to one of its properties. Because `:caused_by` is
-reserved for this, an event field named `caused_by` has to be mapped with the string `"causedBy"`.
+`{:caused_by, :subject | :name | :user_name}` maps to a property of the identity that caused the
+event (`$causedBy(subject)`, `$causedBy(name)`, `$causedBy(userName)`). A bare `:caused_by` is not
+special: like any other atom it reads the event field `caused_by`.

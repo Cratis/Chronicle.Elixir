@@ -130,7 +130,7 @@ event source, decoded into `Chronicle.Events.AppendedEvent` structs.
 `:set_once`, `:add`, `:subtract`, `:count`, `:increment`, `:decrement`, `:remove`,
 `:clear`, auto-map) and `removed_with/2` — against a single event, without a kernel.
 Dictionary entries keyed by `{:event_content, property}` are evaluated; keys and
-values that need the event context (`{:event_context, _}`, `:caused_by`) raise
+values that need the event context (`{:event_context, _}`, `{:caused_by, _}`) raise
 `Chronicle.Testing.UnsupportedProjectionOperation`, because `apply_event/4` has no
 event context:
 

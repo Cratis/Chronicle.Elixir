@@ -92,17 +92,19 @@ defmodule Chronicle.Registration.DictionaryEntriesTest do
   test "caused_by expressions resolve to $causedBy" do
     assert Coordinator.build_properties(
              set: [
-               author: :caused_by,
                author_id: {:caused_by, :subject},
                author_name: {:caused_by, :name},
                author_user: {:caused_by, :user_name}
              ]
            ) == %{
-             "author" => "$causedBy",
              "author_id" => "$causedBy(subject)",
              "author_name" => "$causedBy(name)",
              "author_user" => "$causedBy(userName)"
            }
+  end
+
+  test "a bare caused_by is an event field, not the identity" do
+    assert Coordinator.build_properties(set: [author: :caused_by]) == %{"author" => "causedBy"}
   end
 
   test "an unknown caused_by property is rejected" do
