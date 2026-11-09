@@ -7,7 +7,7 @@ defmodule Chronicle.Projections.ChildrenOrderingTest do
   alias Chronicle.Projections.Children.Ordering
   alias Chronicle.Registration.Coordinator
 
-  @ordering_definition Cratis.Chronicle.Contracts.Projections.ChildrenOrderingDefinition
+  alias Cratis.Chronicle.Contracts.Projections.ChildrenOrderingDefinition
 
   defmodule EntryAdded do
     use Chronicle.Events.EventType, id: "children-ordering-entry-added"
@@ -81,19 +81,25 @@ defmodule Chronicle.Projections.ChildrenOrderingTest do
              [Placement: :Sorted, SortBy: "position", Direction: :Descending]
   end
 
-  if Code.ensure_loaded?(@ordering_definition) do
-    test "a declared ordering is registered on the children definition" do
-      assert %{Placement: :Prepend} = Map.fetch!(children_definition(Prepended), :Ordering)
+  test "prepend sends a ChildrenOrderingDefinition with Prepend placement" do
+    assert %ChildrenOrderingDefinition{Placement: :Prepend, SortBy: "", Direction: :Ascending} =
+             Map.fetch!(children_definition(Prepended), :Ordering)
+  end
 
-      assert %{Placement: :Sorted, SortBy: "position", Direction: :Descending} =
-               Map.fetch!(children_definition(SortedOneLine), :Ordering)
-    end
-  else
-    test "a declared ordering is refused when the contracts cannot carry it" do
-      assert_raise ArgumentError, ~r/no ChildrenOrderingDefinition/, fn ->
-        children_definition(Prepended)
-      end
-    end
+  test "order_by sends a ChildrenOrderingDefinition with Sorted placement, SortBy and Direction" do
+    assert %ChildrenOrderingDefinition{
+             Placement: :Sorted,
+             SortBy: "position",
+             Direction: :Descending
+           } = Map.fetch!(children_definition(SortedOneLine), :Ordering)
+  end
+
+  test "the ordering survives encoding to the wire" do
+    definition = children_definition(SortedOneLine)
+    module = definition.__struct__
+
+    assert %{Ordering: %ChildrenOrderingDefinition{Placement: :Sorted, SortBy: "position"}} =
+             definition |> module.encode() |> module.decode()
   end
 
   test "prepend and order_by together are a compile-time error" do

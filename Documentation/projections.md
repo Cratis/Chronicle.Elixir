@@ -95,10 +95,8 @@ end
 ```
 
 Ordering only places new children: updating a child never moves it. Use one of `prepend` and
-`order_by` per collection; both, or a malformed `order_by`, is a compile-time error. Registering
-an ordering needs a `cratis_chronicle_contracts` version that carries `ChildrenOrderingDefinition`
-and a Chronicle server that supports children ordering; with an older contracts package
-registration raises instead of silently appending.
+`order_by` per collection; both, or a malformed `order_by`, is a compile-time error. Children
+ordering needs Chronicle 19.150.0 or later.
 
 A few mistakes are caught at compile time rather than at registration: a `children` collection
 without `:identified_by`, a root `join/2` without `:on`, the same target property assigned twice
@@ -144,7 +142,7 @@ from MyApp.Events.DocumentRevised,
 Keeping the first value an event supplies, adding and removing dictionary entries keyed by an event
 value, and keeping children newest first or sorted are projection operations. None of them alone is
 a reason to write a reducer: reach for a [reducer](./reducers.md) when the next state depends on
-logic a declaration cannot express.
+logic a declaration cannot express. These operations need Chronicle 19.150.0 or later.
 
 ## Pinning the id
 

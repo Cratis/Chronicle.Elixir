@@ -59,8 +59,7 @@ defmodule Chronicle.Projections.Children do
       end
 
   Ordering only decides where a new child is inserted; a child that later changes keeps its place.
-  Use one of `prepend` and `order_by`. Registering an ordering needs a `cratis_chronicle_contracts`
-  version that carries `ChildrenOrderingDefinition`.
+  Use one of `prepend` and `order_by`. Ordering needs Chronicle 19.150.0 or later.
 
   ## Join `on:` inside children
 
@@ -249,7 +248,7 @@ defmodule Chronicle.Projections.Children do
       Children: build_map(nested, model_module),
       All: all
     )
-    |> Ordering.put_definition(opts, name, model_module)
+    |> Ordering.put_definition(opts)
   end
 
   defp from_entry(event, opts, model_module) do

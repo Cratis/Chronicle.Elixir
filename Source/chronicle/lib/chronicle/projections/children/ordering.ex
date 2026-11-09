@@ -15,8 +15,7 @@ defmodule Chronicle.Projections.Children.Ordering do
   # Ordering only decides where a new child is inserted; it does not re-sort when a child changes.
 
   alias Chronicle.Projections.Validation
-
-  @ordering_definition Cratis.Chronicle.Contracts.Projections.ChildrenOrderingDefinition
+  alias Cratis.Chronicle.Contracts.Projections.ChildrenOrderingDefinition
 
   @typedoc "A non-default placement for new children."
   @type t :: :prepend | {:sorted, String.t(), :ascending | :descending}
@@ -52,15 +51,11 @@ defmodule Chronicle.Projections.Children.Ordering do
   Adds the `Ordering` of a `ChildrenDefinition` when `opts` declare one, and leaves the definition
   exactly as before when they do not.
   """
-  @spec put_definition(struct(), Keyword.t(), atom(), module()) :: struct()
-  def put_definition(definition, opts, name, model_module) do
+  @spec put_definition(struct(), Keyword.t()) :: struct()
+  def put_definition(definition, opts) do
     case from_options(opts) do
-      nil ->
-        definition
-
-      ordering ->
-        ensure_contracts_support_ordering!(definition, name, model_module)
-        Map.put(definition, :Ordering, struct(@ordering_definition, fields(ordering)))
+      nil -> definition
+      ordering -> %{definition | Ordering: struct!(ChildrenOrderingDefinition, fields(ordering))}
     end
   end
 
@@ -75,17 +70,6 @@ defmodule Chronicle.Projections.Children.Ordering do
 
   defp direction_value(:ascending), do: :Ascending
   defp direction_value(:descending), do: :Descending
-
-  # The protobuf structs drop a field they do not declare without complaint, so registering with a
-  # contracts package that predates ordering would silently append every child instead.
-  defp ensure_contracts_support_ordering!(definition, name, model_module) do
-    unless Code.ensure_loaded?(@ordering_definition) and Map.has_key?(definition, :Ordering) do
-      raise ArgumentError,
-            "children #{inspect(name)} on #{inspect(model_module)} declares an ordering, but the " <>
-              "installed cratis_chronicle_contracts has no ChildrenOrderingDefinition; upgrade it " <>
-              "to a version that carries children ordering"
-    end
-  end
 
   defp ordering(opts) do
     case {Keyword.get(opts, :prepend, false), Keyword.fetch(opts, :order_by)} do
