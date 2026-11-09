@@ -62,7 +62,7 @@ Then fetch it:
 mix deps.get
 ```
 
-The client requires Elixir 1.18 or later and uses `grpc ~> 1.0`, Mint 1.11 or later, and `cratis_chronicle_contracts ~> 19.129`. If your application connects to gRPC separately, [select the Mint adapter for those connections](connections/connection-strings.md#tls) or add Gun as a direct dependency; grpc 1.x makes Gun optional.
+The client requires Elixir 1.18 or later and uses `grpc ~> 1.0`, Mint 1.11 or later, and `cratis_chronicle_contracts ~> 19.150`. If your application connects to gRPC separately, [select the Mint adapter for those connections](connections/connection-strings.md#tls) or add Gun as a direct dependency; grpc 1.x makes Gun optional.
 
 ## Define an event
 

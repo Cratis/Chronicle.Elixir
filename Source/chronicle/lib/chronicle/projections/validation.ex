@@ -4,6 +4,8 @@
 defmodule Chronicle.Projections.Validation do
   @moduledoc false
 
+  alias Chronicle.Projections.DictionaryKeys
+
   # Compile-time validation shared by `Chronicle.ReadModels.ReadModel`,
   # `Chronicle.Projections.Projection` and `Chronicle.Projections.Children`. Every function here
   # runs while the declaring module is being compiled (inside a macro, before `quote`/`unquote`
@@ -74,23 +76,14 @@ defmodule Chronicle.Projections.Validation do
 
   @doc """
   Raises a `CompileError` naming `module` and the duplicate target, when the same read-model
-  property is assigned more than once by the combined `:set`, `:add`, `:subtract`, `:count`,
-  `:increment`, `:decrement` and `:clear` options of a single event mapping. Mirrors the .NET
-  client's `DuplicatePropertyInProjection`.
+  property is assigned more than once by the combined `:set`, `:set_once`, `:add`, `:subtract`,
+  `:count`, `:increment`, `:decrement`, `:remove` and `:clear` options of a single event mapping.
+  Entries of one dictionary keyed by different key sources are different targets. Mirrors the
+  .NET client's `DuplicatePropertyInProjection`.
   """
   @spec reject_duplicate_properties!(String.t(), Keyword.t(), module(), Macro.Env.t()) :: :ok
   def reject_duplicate_properties!(event_label, opts, module, env) do
-    targets =
-      [
-        opts |> Keyword.get(:set, []) |> Keyword.keys(),
-        opts |> Keyword.get(:add, []) |> Keyword.keys(),
-        opts |> Keyword.get(:subtract, []) |> Keyword.keys(),
-        opts |> Keyword.get(:increment, []) |> Keyword.keys(),
-        opts |> Keyword.get(:decrement, []) |> Keyword.keys(),
-        opts |> Keyword.get(:clear, []) |> List.wrap(),
-        opts |> Keyword.get(:count) |> List.wrap()
-      ]
-      |> List.flatten()
+    targets = targets(opts)
 
     case targets -- Enum.uniq(targets) do
       [] ->
@@ -101,30 +94,63 @@ defmodule Chronicle.Projections.Validation do
 
         compile_error!(
           env,
-          "Property '#{duplicate}' has already been defined in the projection definition for " <>
-            "#{inspect(module)} from event #{event_label}. Each property can only be specified once."
+          "Property '#{describe_target(duplicate)}' has already been defined in the projection " <>
+            "definition for #{inspect(module)} from event #{event_label}. Each property can only " <>
+            "be specified once."
         )
     end
   end
 
   @doc """
-  Returns the unique set of read-model property targets a `set`/`add`/`subtract`/`increment`/
-  `decrement`/`clear`/`count` combination assigns, for struct-field validation.
+  Returns the unique set of read-model properties a `set`/`set_once`/`add`/`subtract`/`increment`/
+  `decrement`/`remove`/`clear`/`count` combination assigns, for struct-field validation. A dictionary
+  entry contributes its dictionary property.
   """
   @spec property_targets(Keyword.t()) :: [atom()]
   def property_targets(opts) do
-    [
-      opts |> Keyword.get(:set, []) |> Keyword.keys(),
-      opts |> Keyword.get(:add, []) |> Keyword.keys(),
-      opts |> Keyword.get(:subtract, []) |> Keyword.keys(),
-      opts |> Keyword.get(:increment, []) |> Keyword.keys(),
-      opts |> Keyword.get(:decrement, []) |> Keyword.keys(),
-      opts |> Keyword.get(:clear, []) |> List.wrap(),
-      opts |> Keyword.get(:count) |> List.wrap()
-    ]
-    |> List.flatten()
+    opts
+    |> targets()
+    |> Enum.map(fn
+      {field, _key_source} -> field
+      field -> field
+    end)
     |> Enum.uniq()
   end
+
+  @value_operations [:set, :set_once, :add, :subtract]
+  @keyed_operations [:increment, :decrement, :remove]
+
+  # A target is a property atom, or {dictionary, key_source} for a dictionary entry. Works on both
+  # macro-time AST (where a 3-tuple is {:{}, meta, elements}) and evaluated options.
+  defp targets(opts) do
+    values =
+      for operation <- @value_operations,
+          {field, value} <- Keyword.get(opts, operation, []),
+          do: value_target(field, value)
+
+    keyed =
+      for operation <- @keyed_operations,
+          {field, value} <- Keyword.get(opts, operation, []),
+          do: keyed_target(field, value)
+
+    counted = opts |> Keyword.get(:count) |> List.wrap() |> Enum.map(&count_target/1)
+
+    values ++ keyed ++ counted ++ (opts |> Keyword.get(:clear, []) |> List.wrap())
+  end
+
+  defp value_target(field, {:{}, _meta, [:entry, key_source, _value]}), do: {field, key_source}
+  defp value_target(field, {:entry, key_source, _value}), do: {field, key_source}
+  defp value_target(field, _value), do: field
+
+  defp keyed_target(field, value) do
+    if DictionaryKeys.key_source?(value), do: {field, value}, else: field
+  end
+
+  defp count_target({field, value}), do: keyed_target(field, value)
+  defp count_target(field), do: field
+
+  defp describe_target({field, key_source}), do: "#{field}[#{inspect(key_source)}]"
+  defp describe_target(field), do: to_string(field)
 
   @doc """
   Raises a `CompileError` naming `module` and `field`, unless `field` is one of `struct_fields`.
