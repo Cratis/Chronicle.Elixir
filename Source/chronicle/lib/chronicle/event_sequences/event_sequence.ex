@@ -343,6 +343,29 @@ defmodule Chronicle.EventSequences.EventSequence do
     TransactionalEventSequence.new(event_sequence)
   end
 
+  @doc """
+  Imports events into the event sequence. See `Chronicle.Imports.import/2`.
+  """
+  @spec import(t(), Enumerable.t(), keyword()) ::
+          {:ok, Chronicle.Imports.ImportResult.t()} | {:error, term()}
+  def import(%__MODULE__{} = event_sequence, events, opts \\ []),
+    do: Chronicle.Imports.import(events, merge_opts(event_sequence, opts))
+
+  @doc """
+  Imports events into the event sequence under a `Task`. See `Chronicle.Imports.import_async/2`.
+  """
+  @spec import_async(t(), Enumerable.t(), keyword()) :: Task.t()
+  def import_async(%__MODULE__{} = event_sequence, events, opts \\ []),
+    do: Chronicle.Imports.import_async(events, merge_opts(event_sequence, opts))
+
+  @doc """
+  Begins an import into the event sequence. See `Chronicle.Imports.begin/1`.
+  """
+  @spec begin_import(t(), keyword()) ::
+          {:ok, Chronicle.Imports.Session.t()} | {:error, term()}
+  def begin_import(%__MODULE__{} = event_sequence, opts \\ []),
+    do: Chronicle.Imports.begin(merge_opts(event_sequence, opts))
+
   defp merge_opts(%__MODULE__{} = event_sequence, opts) do
     event_sequence.opts
     |> Keyword.put(:event_sequence_id, event_sequence.id)

@@ -109,6 +109,13 @@ defmodule Chronicle.MixProject do
           Chronicle.EventStores
         ],
         Transactions: [Chronicle.Transactions.UnitOfWork],
+        Imports: [
+          Chronicle.Imports,
+          Chronicle.Imports.Session,
+          Chronicle.Imports.ImportResult,
+          Chronicle.Imports.ImportProgress,
+          Chronicle.Imports.ImportRejection
+        ],
         Observers: [
           Chronicle.Reactors.Reactor,
           Chronicle.Reducers.Reducer,
