@@ -8,8 +8,13 @@ defmodule Chronicle.Testing.Projections do
   assert on a projected read model without a kernel to run the real projection
   engine.
 
-  Supports `from/2` (`:set`, `:add`, `:subtract`, `:count`, `:increment`,
-  `:decrement`, `:clear`) and auto-map, plus `removed_with/2`.
+  Supports `from/2` (`:set`, `:set_once`, `:add`, `:subtract`, `:count`,
+  `:increment`, `:decrement`, `:remove`, `:clear`) and auto-map, plus
+  `removed_with/2`. Dictionary entries keyed by `{:event_content, property}` are
+  evaluated; keys and values from the event context (`{:event_context, _}`,
+  `:caused_by`, `{:caused_by, _}`) raise
+  `Chronicle.Testing.UnsupportedProjectionOperation`, since `apply_event/4` has
+  no event context.
 
   `join/2`, `children/2`, `from_every/1`, `removed_with_join/2` and their
   variants need the server-side projection engine and raise
@@ -17,6 +22,7 @@ defmodule Chronicle.Testing.Projections do
   kernel through `Chronicle.Testing.Integration.setup_isolated_client/2` instead.
   """
 
+  alias Chronicle.Testing.Projections.Dictionaries
   alias Chronicle.Testing.UnsupportedProjectionOperation
 
   @doc """
@@ -79,57 +85,55 @@ defmodule Chronicle.Testing.Projections do
 
   defp apply_from(read_model_module, instance, event, opts, event_source_id) do
     instance = instance || struct(read_model_module)
+    resolve = &resolve_expression(&1, event, event_source_id, read_model_module)
+    entry = &Dictionaries.entry(&1, &2, event, read_model_module)
 
     instance
-    |> apply_set(event, Keyword.get(opts, :set, []), event_source_id)
-    |> apply_add(event, Keyword.get(opts, :add, []), event_source_id)
-    |> apply_subtract(event, Keyword.get(opts, :subtract, []), event_source_id)
-    |> apply_count(Keyword.get(opts, :count))
-    |> apply_increment(Keyword.get(opts, :increment, []))
-    |> apply_decrement(Keyword.get(opts, :decrement, []))
+    |> apply_values(Keyword.get(opts, :set, []), entry, resolve, fn _current, value -> value end)
+    |> apply_values(Keyword.get(opts, :set_once, []), entry, resolve, &set_once/2)
+    |> apply_values(Keyword.get(opts, :add, []), entry, resolve, &add_numeric/2)
+    |> apply_values(
+      Keyword.get(opts, :subtract, []),
+      entry,
+      resolve,
+      &add_numeric(&1, negate(&2))
+    )
+    |> apply_counter(Keyword.get(opts, :count) |> List.wrap(), entry, 1)
+    |> apply_counter(Keyword.get(opts, :increment, []), entry, 1)
+    |> apply_counter(Keyword.get(opts, :decrement, []), entry, -1)
+    |> apply_remove(Keyword.get(opts, :remove, []), entry)
     |> apply_clear(Keyword.get(opts, :clear, []))
     |> apply_auto_map(read_model_module, event, opts)
   end
 
-  defp apply_set(instance, event, fields, event_source_id) do
-    Enum.reduce(fields, instance, fn {field, expr}, instance ->
-      Map.put(instance, field, resolve_expression(expr, event, event_source_id))
+  # Applies `combine.(current, value)` to every target of a set/set_once/add/subtract list. A target
+  # is a property, or one entry of a dictionary property for an {:entry, key_source, expression}.
+  defp apply_values(instance, fields, entry, resolve, combine) do
+    Enum.reduce(fields, instance, fn
+      {field, {:entry, key_source, expr}}, instance ->
+        key = entry.(field, key_source)
+        Dictionaries.update(instance, field, key, &combine.(&1, resolve.(expr)))
+
+      {field, expr}, instance ->
+        Map.put(instance, field, combine.(Map.get(instance, field), resolve.(expr)))
     end)
   end
 
-  defp apply_add(instance, event, fields, event_source_id) do
-    Enum.reduce(fields, instance, fn {field, expr}, instance ->
-      value = resolve_expression(expr, event, event_source_id)
-      Map.update(instance, field, value, &add_numeric(&1, value))
+  defp apply_counter(instance, fields, entry, step) do
+    Enum.reduce(fields, instance, fn field_or_pair, instance ->
+      case Dictionaries.counter_target(field_or_pair) do
+        {:entry, field, key_source} ->
+          Dictionaries.update(instance, field, entry.(field, key_source), &add_numeric(&1, step))
+
+        {:field, field} ->
+          Map.update(instance, field, step, &add_numeric(&1, step))
+      end
     end)
   end
 
-  defp apply_subtract(instance, event, fields, event_source_id) do
-    Enum.reduce(fields, instance, fn {field, expr}, instance ->
-      value = resolve_expression(expr, event, event_source_id)
-      Map.update(instance, field, negate(value), &add_numeric(&1, negate(value)))
-    end)
-  end
-
-  defp apply_count(instance, nil), do: instance
-
-  defp apply_count(instance, fields) do
-    fields
-    |> List.wrap()
-    |> Enum.reduce(instance, fn field, instance ->
-      Map.update(instance, field, 1, &add_numeric(&1, 1))
-    end)
-  end
-
-  defp apply_increment(instance, fields) do
-    Enum.reduce(fields, instance, fn {field, _expr}, instance ->
-      Map.update(instance, field, 1, &add_numeric(&1, 1))
-    end)
-  end
-
-  defp apply_decrement(instance, fields) do
-    Enum.reduce(fields, instance, fn {field, _expr}, instance ->
-      Map.update(instance, field, -1, &add_numeric(&1, -1))
+  defp apply_remove(instance, fields, entry) do
+    Enum.reduce(fields, instance, fn {field, key_source}, instance ->
+      Dictionaries.remove(instance, field, entry.(field, key_source))
     end)
   end
 
@@ -139,13 +143,26 @@ defmodule Chronicle.Testing.Projections do
     |> Enum.reduce(instance, fn field, instance -> Map.put(instance, field, nil) end)
   end
 
+  defp set_once(nil, value), do: value
+  defp set_once(current, _value), do: current
+
   # Mirrors the kernel's own AutoMap rule: matching field names are copied from the event
   # unless a :set/:add/:subtract/:count/:increment/:decrement/:clear mapping already set them,
   # or the field is excluded via :no_auto_map.
   defp apply_auto_map(instance, read_model_module, event, opts) do
     {auto_map, excluded} = read_model_module.__chronicle_read_model__(:no_auto_map)
-    explicit = Enum.flat_map([:set, :add, :subtract, :clear], &Keyword.get(opts, &1, []))
-    explicit_fields = MapSet.new(explicit, fn {field, _expr} -> field end)
+
+    explicit =
+      Enum.flat_map([:set, :set_once, :add, :subtract, :remove, :clear], fn operation ->
+        opts |> Keyword.get(operation, []) |> List.wrap()
+      end)
+
+    explicit_fields =
+      MapSet.new(explicit, fn
+        {field, _expr} -> field
+        field -> field
+      end)
+
     excluded = MapSet.new(excluded)
 
     if auto_map == :disabled do
@@ -165,12 +182,20 @@ defmodule Chronicle.Testing.Projections do
     end
   end
 
-  defp resolve_expression(:event_source_id, _event, event_source_id), do: event_source_id
+  defp resolve_expression(:event_source_id, _event, event_source_id, _read_model),
+    do: event_source_id
 
-  defp resolve_expression(expr, event, _event_source_id) when is_atom(expr),
+  defp resolve_expression(expr, _event, _event_source_id, read_model)
+       when expr == :caused_by or (is_tuple(expr) and elem(expr, 0) == :caused_by) do
+    raise UnsupportedProjectionOperation,
+      read_model: read_model,
+      operation: "#{inspect(expr)} (the event context is not available in memory)"
+  end
+
+  defp resolve_expression(expr, event, _event_source_id, _read_model) when is_atom(expr),
     do: Map.get(event, expr)
 
-  defp resolve_expression(value, _event, _event_source_id), do: value
+  defp resolve_expression(value, _event, _event_source_id, _read_model), do: value
 
   defp add_numeric(nil, value), do: value
 
