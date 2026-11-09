@@ -51,9 +51,32 @@ defmodule Chronicle.ReadModels.ReadModel do
       to map a key part to an event-context property path.
     * `:parent_key` — parent key for nested models
     * `:set` — keyword list of `field: expression` pairs to set directly
+    * `:set_once` — like `:set`, but only while the field (or dictionary entry) has no value yet
     * `:add` — keyword list of `field: expression` pairs to add to
     * `:subtract` — keyword list of `field: expression` pairs to subtract from
-    * `:count` — field atom to increment by 1 on each event occurrence
+    * `:count` — field atom (or list) to increment by 1 on each event occurrence
+    * `:remove` — keyword list of `dictionary: key_source` pairs; removes that dictionary entry
+
+  ### Dictionary entries
+
+  A map field can be keyed by a value from the event. A key source is
+  `{:event_content, :property}` (an atom is sent camelCase; a string such as `"customer.id"`
+  is used as written), `{:event_context, :property}` or
+  `{:caused_by, :subject | :name | :user_name}`.
+
+      from MyApp.Events.PriceSet,
+        set: [prices: {:entry, {:event_content, :sku}, :price}],
+        set_once: [first_prices: {:entry, {:event_content, :sku}, :price}]
+
+      from MyApp.Events.PriceWithdrawn, remove: [prices: {:event_content, :sku}]
+
+      from MyApp.Events.ItemSold,
+        add: [sold: {:entry, {:event_content, :sku}, :quantity}],
+        count: [sales: {:event_content, :sku}],
+        increment: [sales_by_user: {:caused_by, :user_name}]
+
+  `:set`, `:set_once`, `:add` and `:subtract` take `{:entry, key_source, expression}`;
+  `:count`, `:increment`, `:decrement` and `:remove` take the key source itself.
 
   ### `join/2`
 
@@ -172,6 +195,7 @@ defmodule Chronicle.ReadModels.ReadModel do
   | `:owner_name` | The `owner_name` field from the event |
   | `:event_source_id` | The event source identifier |
   | `:occurred` | When the event was recorded |
+  | `:caused_by` | The identity that caused the event (`{:caused_by, :subject \| :name \| :user_name}` picks one property) |
   | `1` | A literal integer constant |
   | `"$add(amount, balance)"` | An explicit Chronicle expression |
 

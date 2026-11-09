@@ -24,6 +24,7 @@ defmodule Chronicle.Registration.Coordinator do
   alias Chronicle.Events.EventTypes
   alias Chronicle.EventSources
   alias Chronicle.Graphs.DefinitionBuilder
+  alias Chronicle.Projections.DictionaryKeys
   alias Chronicle.Schemas.JsonSchemaGenerator
   alias Chronicle.Sinks.WellKnownSinkTypes
 
@@ -959,58 +960,41 @@ defmodule Chronicle.Registration.Coordinator do
   #   increment: [event_counts: {:event_context, :type}]
   # produces:
   #   {"event_counts.$eventContext.type", "$increment"}
+  # A set/set_once/add/subtract value of {:entry, key_source, expression} targets one entry of a
+  # dictionary, and remove: [prices: key_source] removes one; see Chronicle.Projections.DictionaryKeys.
   # Public so Chronicle.Projections.VariantReclassifier can build a global handler's mapping
   # entries using exactly the same property-expression rules as an ordinary from/join/from_every.
   @doc false
   def build_properties(opts) do
-    set_props =
-      opts
-      |> Keyword.get(:set, [])
-      |> Enum.map(fn {field, expr} ->
-        {to_string(field), resolve_expression(expr)}
-      end)
-
-    add_props =
-      opts
-      |> Keyword.get(:add, [])
-      |> Enum.map(fn {field, expr} ->
-        {to_string(field), "$add(#{resolve_expression(expr)})"}
-      end)
-
-    subtract_props =
-      opts
-      |> Keyword.get(:subtract, [])
-      |> Enum.map(fn {field, expr} ->
-        {to_string(field), "$subtract(#{resolve_expression(expr)})"}
-      end)
+    set_props = value_properties(opts, :set, &resolve_expression/1)
+    set_once_props = value_properties(opts, :set_once, &"$setOnce(#{resolve_expression(&1)})")
+    add_props = value_properties(opts, :add, &"$add(#{resolve_expression(&1)})")
+    subtract_props = value_properties(opts, :subtract, &"$subtract(#{resolve_expression(&1)})")
 
     count_fields =
       case Keyword.get(opts, :count) do
         nil -> []
         field when is_atom(field) -> [{to_string(field), "$count"}]
-        fields when is_list(fields) -> Enum.map(fields, fn f -> {to_string(f), "$count"} end)
+        fields when is_list(fields) -> Enum.map(fields, &operation_property(&1, "$count"))
       end
 
     increment_fields =
-      opts
-      |> Keyword.get(:increment, [])
-      |> Enum.map(fn
-        {field, {:event_context, property}} ->
-          {"#{field}.$eventContext.#{property}", "$increment"}
-
-        {field, _expr} ->
-          {to_string(field), "$increment"}
-      end)
+      opts |> Keyword.get(:increment, []) |> Enum.map(&operation_property(&1, "$increment"))
 
     decrement_fields =
-      opts
-      |> Keyword.get(:decrement, [])
-      |> Enum.map(fn
-        {field, {:event_context, property}} ->
-          {"#{field}.$eventContext.#{property}", "$decrement"}
+      opts |> Keyword.get(:decrement, []) |> Enum.map(&operation_property(&1, "$decrement"))
 
-        {field, _expr} ->
-          {to_string(field), "$decrement"}
+    remove_fields =
+      opts
+      |> Keyword.get(:remove, [])
+      |> Enum.map(fn {field, key_source} ->
+        unless DictionaryKeys.key_source?(key_source) do
+          raise ArgumentError,
+                "remove: #{inspect(field)} needs the key of the entry to remove; " <>
+                  DictionaryKeys.invalid_key_source_message(key_source)
+        end
+
+        {DictionaryKeys.entry_path(field, key_source), "$remove"}
       end)
 
     clear_fields =
@@ -1020,7 +1004,9 @@ defmodule Chronicle.Registration.Coordinator do
       |> Enum.map(fn field -> {to_string(field), "$null"} end)
 
     (set_props ++
+       set_once_props ++
        clear_fields ++
+       remove_fields ++
        add_props ++
        subtract_props ++
        count_fields ++
@@ -1028,6 +1014,29 @@ defmodule Chronicle.Registration.Coordinator do
        decrement_fields)
     |> Map.new()
   end
+
+  defp value_properties(opts, operation, to_expression) do
+    opts
+    |> Keyword.get(operation, [])
+    |> Enum.map(fn
+      {field, {:entry, key_source, expr}} ->
+        {DictionaryKeys.entry_path(field, key_source), to_expression.(expr)}
+
+      {field, expr} ->
+        {to_string(field), to_expression.(expr)}
+    end)
+  end
+
+  # A count/increment/decrement on a plain field, or on the dictionary entry its key source names.
+  defp operation_property({field, key_source}, expression) do
+    if DictionaryKeys.key_source?(key_source) do
+      {DictionaryKeys.entry_path(field, key_source), expression}
+    else
+      {to_string(field), expression}
+    end
+  end
+
+  defp operation_property(field, expression), do: {to_string(field), expression}
 
   # Atoms name event fields. Events travel as camelCase JSON (see
   # Chronicle.EventSequences.EventLog), so a multi-word field such as :owner_name has to be
@@ -1038,6 +1047,16 @@ defmodule Chronicle.Registration.Coordinator do
   # completes); the occurred time is an event context property.
   defp resolve_expression(:occurred), do: "$eventContext(Occurred)"
   defp resolve_expression("$occurred"), do: "$eventContext(Occurred)"
+  defp resolve_expression(:caused_by), do: "$causedBy"
+  defp resolve_expression({:caused_by, :subject}), do: "$causedBy(subject)"
+  defp resolve_expression({:caused_by, :name}), do: "$causedBy(name)"
+  defp resolve_expression({:caused_by, :user_name}), do: "$causedBy(userName)"
+
+  defp resolve_expression({:caused_by, property}) do
+    raise ArgumentError,
+          "{:caused_by, #{inspect(property)}} is not supported; use :subject, :name or :user_name"
+  end
+
   defp resolve_expression(bool) when is_boolean(bool), do: "$value(#{bool})"
   defp resolve_expression(atom) when is_atom(atom), do: atom |> Atom.to_string() |> camelize()
   defp resolve_expression(int) when is_integer(int), do: "$value(#{int})"
