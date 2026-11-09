@@ -25,6 +25,7 @@ Event sourcing for Elixir — the idiomatic client for [Cratis Chronicle](https:
 - **Context-aware appends** — process-scoped identity, correlation, and causation metadata
 - **Optimistic concurrency** — guard appends with scoped tail-sequence checks
 - **Transactions** — buffer and commit multi-event units of work
+- **`Chronicle.Imports`** — import large volumes of history from any `Enumerable`, chunked, resumable and validated before anything is committed
 - **Jobs and webhooks** — inspect Chronicle jobs and manage webhook registrations
 - **Resilient connection** — automatic reconnection with exponential backoff
 
