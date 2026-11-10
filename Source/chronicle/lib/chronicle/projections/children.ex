@@ -48,6 +48,19 @@ defmodule Chronicle.Projections.Children do
   This is sugar for a block with exactly one `from` statement built from the same options (minus
   `:from` and `:identified_by`, which the one-line form consumes itself).
 
+  ## Ordering
+
+  New children are appended by default. `prepend: true` inserts them first, and `order_by`
+  inserts them in order of a child property — `order_by: :position` (ascending),
+  `order_by: [asc: :position]` or `order_by: [desc: :position]`:
+
+      children :entries, identified_by: :entry_id, order_by: [desc: :occurred] do
+        from MyApp.Events.EntryAdded, key: :entry_id, set: [occurred: :occurred]
+      end
+
+  Ordering only decides where a new child is inserted; a child that later changes keeps its place.
+  Use one of `prepend` and `order_by`. Ordering needs Chronicle 19.150.0 or later.
+
   ## Join `on:` inside children
 
   Unlike a root `join/2`, a join inside a `children` block does not require `:on` — it defaults
@@ -56,6 +69,7 @@ defmodule Chronicle.Projections.Children do
   compile-time warning rather than an error, since the kernel still joins by `identified_by`.
   """
 
+  alias Chronicle.Projections.Children.Ordering
   alias Chronicle.Projections.Validation
 
   @doc """
@@ -77,6 +91,7 @@ defmodule Chronicle.Projections.Children do
 
   defp build_block(name, opts, block, env) do
     Validation.require_identified_by!(name, opts, env.module, env)
+    Ordering.validate!(name, opts, env)
     declarations = block |> block_statements() |> Enum.map(&declaration(&1, env))
 
     quote do
@@ -86,8 +101,9 @@ defmodule Chronicle.Projections.Children do
 
   defp build_one_line(name, opts, env) do
     Validation.require_identified_by!(name, opts, env.module, env)
+    Ordering.validate!(name, opts, env)
     {from_event, from_opts} = Keyword.pop!(opts, :from)
-    from_opts = Keyword.delete(from_opts, :identified_by)
+    {children_opts, from_opts} = Keyword.split(from_opts, [:identified_by | Ordering.options()])
 
     Validation.reject_duplicate_properties!(
       Macro.to_string(from_event),
@@ -96,10 +112,8 @@ defmodule Chronicle.Projections.Children do
       env
     )
 
-    identified_by = Keyword.fetch!(opts, :identified_by)
-
     quote do
-      @chronicle_projection_children {unquote(name), [identified_by: unquote(identified_by)],
+      @chronicle_projection_children {unquote(name), unquote(children_opts),
                                       [{:from, unquote(from_event), unquote(from_opts)}]}
     end
   end
@@ -120,6 +134,7 @@ defmodule Chronicle.Projections.Children do
 
   defp declaration({:children, _, [name, opts, [do: block]]}, env) do
     Validation.require_identified_by!(name, opts, env.module, env)
+    Ordering.validate!(name, opts, env)
     nested = block |> block_statements() |> Enum.map(&declaration(&1, env))
     quote do: {:children, unquote(name), unquote(opts), unquote(nested)}
   end
@@ -233,6 +248,7 @@ defmodule Chronicle.Projections.Children do
       Children: build_map(nested, model_module),
       All: all
     )
+    |> Ordering.put_definition(opts)
   end
 
   defp from_entry(event, opts, model_module) do
