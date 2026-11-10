@@ -126,7 +126,7 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
     result = GRPC.Client.Adapters.Mint.connect(channel, config_options: [client_settings: []])
     assert_receive {:mint_peer, {:ok, peer}}, 5_000
     assert peer == hd(identity[:cert])
-    if match?({:ok, _}, result), do: GRPC.Client.Adapters.Mint.disconnect(elem(result, 1))
+    if match?({:ok, _}, result), do: disconnect_quietly(elem(result, 1))
     Connection.disconnect(connection)
     send(server.pid, :close)
     assert {:ok, ^peer} = Task.await(server, 7_000)
@@ -769,7 +769,7 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
 
     channel = %GRPC.Channel{host: "localhost", port: port, scheme: "https", cred: options[:cred]}
     result = GRPC.Client.Adapters.Mint.connect(channel, adapter_opts)
-    if match?({:ok, _}, result), do: GRPC.Client.Adapters.Mint.disconnect(elem(result, 1))
+    if match?({:ok, _}, result), do: disconnect_quietly(elem(result, 1))
 
     if succeeds? do
       assert {:ok, _} = Task.await(server, 6_000)
@@ -852,7 +852,7 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
       }
 
       result = GRPC.Client.Adapters.Mint.connect(channel, config_options: [client_settings: []])
-      if match?({:ok, _}, result), do: GRPC.Client.Adapters.Mint.disconnect(elem(result, 1))
+      if match?({:ok, _}, result), do: disconnect_quietly(elem(result, 1))
     else
       assert {:ok, tls} = :ssl.connect(~c"localhost", port, [active: false] ++ ssl, 5_000)
       :ssl.close(tls)
@@ -1081,6 +1081,14 @@ defmodule Chronicle.Connections.ClientCertificateTlsTest do
       server_csr: server_csr,
       server_ext: server_ext
     }
+  end
+
+  # The test servers close the TLS connection as soon as the handshake completes, so the client may already have
+  # dropped its connection process by the time the test cleans up after it.
+  defp disconnect_quietly(channel) do
+    GRPC.Client.Adapters.Mint.disconnect(channel)
+  catch
+    :exit, _ -> :ok
   end
 
   defp openssl(args) do
