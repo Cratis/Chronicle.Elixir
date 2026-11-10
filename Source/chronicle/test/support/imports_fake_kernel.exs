@@ -82,7 +82,17 @@ defmodule Chronicle.ImportsFakeKernel do
   @doc "Everything the kernel was asked, in order, as `{rpc, request}`."
   def state(kernel), do: Agent.get(kernel, & &1)
 
-  def chunk_requests(kernel), do: kernel |> state() |> Map.get(:chunk_requests) |> Enum.reverse()
+  @doc """
+  The chunks the kernel was sent, ordered by chunk index. Several chunks are in flight at once, so the order they
+  arrive in is not the order they were cut in; attempts at the same chunk stay in the order they arrived.
+  """
+  def chunk_requests(kernel) do
+    kernel
+    |> state()
+    |> Map.get(:chunk_requests)
+    |> Enum.reverse()
+    |> Enum.sort_by(& &1."ChunkIndex")
+  end
 
   defp initial(overrides) do
     Map.merge(
