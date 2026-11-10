@@ -43,7 +43,7 @@ defmodule Chronicle.MixProject do
 
   defp deps do
     [
-      {:cratis_chronicle_contracts, "~> 19.150"},
+      {:cratis_chronicle_contracts, "~> 19.153"},
       {:grpc, "~> 1.0"},
       {:mint, "~> 1.11"},
       {:telemetry, "~> 1.0"},
@@ -109,6 +109,13 @@ defmodule Chronicle.MixProject do
           Chronicle.EventStores
         ],
         Transactions: [Chronicle.Transactions.UnitOfWork],
+        Imports: [
+          Chronicle.Imports,
+          Chronicle.Imports.Session,
+          Chronicle.Imports.ImportResult,
+          Chronicle.Imports.ImportProgress,
+          Chronicle.Imports.ImportRejection
+        ],
         Observers: [
           Chronicle.Reactors.Reactor,
           Chronicle.Reducers.Reducer,

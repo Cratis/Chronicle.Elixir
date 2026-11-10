@@ -1454,7 +1454,7 @@ defmodule Chronicle.EventSequences.EventLog do
         EventSourceType: event_to_append.event_source_type,
         EventStreamType: event_to_append.event_stream_type,
         EventStreamId: event_to_append.event_stream_id,
-        EventType: build_event_type(event_to_append.event),
+        EventType: entry_event_type(event_to_append),
         Content: encode_event(event_to_append.event),
         Tags: event_to_append.tags || []
       )
@@ -1464,6 +1464,13 @@ defmodule Chronicle.EventSequences.EventLog do
     |> maybe_put(:Subject, event_to_append.subject || "")
     |> maybe_put(:EventSource, event_source_name(event_to_append))
   end
+
+  # An entry may name the generation its event was written in (imported history, for one).
+  defp entry_event_type(%EventForEventSourceId{generation: generation, event: event})
+       when is_integer(generation) and generation > 0,
+       do: %{build_event_type(event) | Generation: generation}
+
+  defp entry_event_type(%EventForEventSourceId{event: event}), do: build_event_type(event)
 
   defp build_event_type(event) do
     module = event.__struct__
