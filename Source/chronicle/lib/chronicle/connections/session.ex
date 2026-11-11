@@ -33,13 +33,24 @@ defmodule Chronicle.Connections.Session do
   require Logger
 
   alias Chronicle.Connections.{Connection, KeepAlive, Lifecycle}
+  alias Chronicle.Observers.ReconnectBackoff
 
   alias Cratis.Chronicle.Contracts.Clients.{
     ConnectionService,
     ConnectRequest
   }
 
-  @retry_delay 3_000
+  # How long to wait before connecting again after the session dropped or a
+  # connect failed. Mirrors the .NET client's ConnectionWatchdog: the wait starts
+  # at a second and doubles while connecting keeps failing, up to thirty seconds.
+  # Unlike .NET, every wait lands at random in the upper half of its ceiling, so
+  # the clients a kernel restart dropped together do not come back together.
+  #
+  # The wait also keeps growing while sessions come up and drop again straight
+  # away - the kernel answering ClientIsNotConnected right after registration,
+  # say - and starts over only once a session stayed up for the longest wait.
+  # Starting over on the first keepalive would not do: that loop sees one too.
+  @reconnect_backoff [base_delay: 1_000, max_delay: 30_000, healthy_stream_duration: 30_000]
 
   # Mirrors the C# client: the kernel emits a keepalive every second and evicts
   # any client whose LastSeen falls more than 5 seconds behind
@@ -124,6 +135,9 @@ defmodule Chronicle.Connections.Session do
       last_keepalive: nil,
       watchdog_timer: nil,
       reconnect_timer: nil,
+      reconnect_backoff:
+        ReconnectBackoff.new(@reconnect_backoff, Keyword.take(opts, [:jitter_fun, :now_fun])),
+      send_after_fun: Keyword.get(opts, :send_after_fun, &Process.send_after(self(), &1, &2)),
       ready?: false
     }
 
@@ -151,7 +165,11 @@ defmodule Chronicle.Connections.Session do
 
   @impl true
   def handle_info(:connect, state) do
-    state = %{state | reconnect_timer: nil}
+    state = %{
+      state
+      | reconnect_timer: nil,
+        reconnect_backoff: ReconnectBackoff.stream_opened(state.reconnect_backoff)
+    }
 
     # The session runs on its own connection when the client dials one (see
     # Connection.session_channel/1), so observer traffic cannot starve keepalives.
@@ -271,7 +289,7 @@ defmodule Chronicle.Connections.Session do
       Connection.reconnect(state.connection)
     end
 
-    notify_disconnected(state)
+    notify_disconnected(state, reason)
 
     state
     |> teardown()
@@ -298,9 +316,17 @@ defmodule Chronicle.Connections.Session do
 
   # Only report a disconnect for a session that actually came up, so repeated
   # failed connect attempts don't spam observers with teardown notifications.
-  defp notify_disconnected(%{ready?: false}), do: :ok
-  defp notify_disconnected(%{lifecycle: nil}), do: :ok
-  defp notify_disconnected(%{lifecycle: lifecycle}), do: Lifecycle.disconnected(lifecycle)
+  # A lost session is always reported, even before its first keepalive: the
+  # disconnect is what rotates the connection id the kernel refused.
+  defp notify_disconnected(%{lifecycle: nil}, _reason), do: :ok
+
+  defp notify_disconnected(%{lifecycle: lifecycle}, :session_lost),
+    do: Lifecycle.disconnected(lifecycle)
+
+  defp notify_disconnected(%{ready?: false}, _reason), do: :ok
+
+  defp notify_disconnected(%{lifecycle: lifecycle}, _reason),
+    do: Lifecycle.disconnected(lifecycle)
 
   defp start_watchdog do
     Process.send_after(self(), :watchdog, @keepalive_poll_interval)
@@ -309,7 +335,8 @@ defmodule Chronicle.Connections.Session do
   defp schedule_reconnect(%{reconnect_timer: timer} = state) when not is_nil(timer), do: state
 
   defp schedule_reconnect(state) do
-    %{state | reconnect_timer: Process.send_after(self(), :connect, @retry_delay)}
+    {delay, backoff} = ReconnectBackoff.next_delay(state.reconnect_backoff)
+    %{state | reconnect_timer: state.send_after_fun.(:connect, delay), reconnect_backoff: backoff}
   end
 
   defp shutdown_task(nil), do: :ok
