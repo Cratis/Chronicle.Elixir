@@ -65,6 +65,26 @@ defmodule Chronicle.Connections.Session do
   end
 
   @doc """
+  Reports that the kernel no longer knows the session registered with
+  `connection_id` - an observation stream was refused with `ClientIsNotConnected`,
+  typically because the kernel restarted.
+
+  Retrying a stream with the same connection id can never work, so the session is
+  dropped and reconnected with a new connection id, which re-registers every
+  reactor and reducer. A report for a connection id the session no longer uses is
+  ignored, so a late report cannot drop the session that replaced it.
+  """
+  @spec session_lost(GenServer.server(), String.t() | nil) :: :ok
+  def session_lost(session, connection_id) do
+    GenServer.cast(session, {:session_lost, connection_id})
+  end
+
+  @doc false
+  @spec name_for(atom() | nil) :: atom() | nil
+  def name_for(nil), do: nil
+  def name_for(client_name), do: :"#{client_name}.Session"
+
+  @doc """
   Blocks until the session has received the first server keepalive, which means
   the server has finished calling OnClientConnected and the client is registered.
   Returns `:ok`.
@@ -118,6 +138,15 @@ defmodule Chronicle.Connections.Session do
 
   def handle_call(:ready?, _from, state) do
     {:reply, state.ready?, state}
+  end
+
+  @impl true
+  def handle_cast({:session_lost, connection_id}, state) do
+    if session_up?(state) and connection_id == state.connection_id do
+      {:noreply, drop_session(state, :session_lost)}
+    else
+      {:noreply, state}
+    end
   end
 
   @impl true
@@ -234,7 +263,7 @@ defmodule Chronicle.Connections.Session do
   # once per drop: both the keepalive loop and the task monitor can report the
   # same failure, and only the first one gets to schedule a reconnect.
   defp drop_session(state, reason) do
-    if state.keepalive_task || state.watchdog_timer do
+    if session_up?(state) do
       Logger.warning("Chronicle session dropped: #{inspect(reason)}, reconnecting...")
       # Whatever killed the session makes the channel it ran on suspect, and
       # Connection cannot always observe the death itself (see the module
@@ -248,6 +277,8 @@ defmodule Chronicle.Connections.Session do
     |> teardown()
     |> schedule_reconnect()
   end
+
+  defp session_up?(state), do: not is_nil(state.keepalive_task || state.watchdog_timer)
 
   defp teardown(state) do
     shutdown_task(state.keepalive_task)
@@ -289,9 +320,6 @@ defmodule Chronicle.Connections.Session do
   defp cancel_timer(timer), do: Process.cancel_timer(timer)
 
   defp now_ms, do: System.monotonic_time(:millisecond)
-
-  defp name_for(nil), do: nil
-  defp name_for(client_name), do: :"#{client_name}.Session"
 
   defp generate_connection_id do
     :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)

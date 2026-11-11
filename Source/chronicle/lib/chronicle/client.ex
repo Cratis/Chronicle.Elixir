@@ -158,6 +158,14 @@ defmodule Chronicle.Client do
       read model instances for a reducer) each reactor and reducer handles at the same time.
       Defaults to `16`. Batches for one partition always run one at a time and in order. Set
       to `1` to handle every batch one after another, as versions before 3.16 did.
+    * `:observation_reconnect` — how a reactor or reducer waits before opening its
+      observation stream again after it ended. Each stream that ends without having
+      worked doubles the wait, up to `:max_delay`, and every wait lands at random in the
+      upper half of it, so many observers failing together do not come back together.
+      The wait starts over at `:base_delay` once a stream delivered something or stayed
+      open for `:healthy_stream_duration`. All values are milliseconds:
+      `base_delay: 2_000`, `max_delay: 60_000` and `healthy_stream_duration: 180_000`
+      by default, matching the .NET client. A `:base_delay` of `0` reopens at once.
     * `:keepalive_timeout` — milliseconds without a keepalive from the kernel after
       which the session is treated as dead and reconnected. Defaults to `5_000`, matching
       the kernel's `connectedClients.staleThresholdSeconds` (5); raise both together.
@@ -417,7 +425,8 @@ defmodule Chronicle.Client do
       default_sink_type_id: default_sink_type_id,
       default_graph_sink_type_id: default_graph_sink_type_id,
       event_generation_delivery: Keyword.get(opts, :event_generation_delivery, :compatibility),
-      max_concurrent_partitions: Keyword.get(opts, :max_concurrent_partitions)
+      max_concurrent_partitions: Keyword.get(opts, :max_concurrent_partitions),
+      observation_reconnect: Keyword.get(opts, :observation_reconnect)
     ]
 
     reactor_children =

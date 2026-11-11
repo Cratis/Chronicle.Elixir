@@ -206,6 +206,62 @@ defmodule Chronicle.Connections.SessionTest do
     end
   end
 
+  describe "an observer reports the session lost" do
+    @describetag capture_log: true
+
+    setup %{lifecycle: lifecycle} do
+      {:ok, connection} = FakeConnection.start_link(self())
+
+      {:ok, session} =
+        Session.start_link(connection: connection, lifecycle: lifecycle, auto_connect: false)
+
+      send(session, :keepalive_received)
+      assert_receive {:chronicle_lifecycle, :connected, connection_id}, 1_000
+      # A live watchdog marks the session as running on a channel.
+      :sys.replace_state(session, fn state -> %{state | watchdog_timer: make_ref()} end)
+
+      %{session: session, connection_id: connection_id}
+    end
+
+    test "drops the session and reconnects with a new connection id", %{
+      lifecycle: lifecycle,
+      session: session,
+      connection_id: connection_id
+    } do
+      Session.session_lost(session, connection_id)
+
+      assert_receive {:chronicle_lifecycle, :disconnected, ^connection_id}, 1_000
+      # The next connect reads the lifecycle's id, which the drop rotated.
+      assert Lifecycle.connection_id(lifecycle) != connection_id
+      assert_receive :reconnect_requested, 1_000
+      assert reconnect_timers(session) == 1
+    end
+
+    test "ignores a report for a connection id it no longer uses", %{
+      lifecycle: lifecycle,
+      session: session
+    } do
+      Session.session_lost(session, "a-connection-id-from-before")
+
+      refute_receive {:chronicle_lifecycle, :disconnected, _}, 100
+      refute_received :reconnect_requested
+      assert Lifecycle.phase(lifecycle) == :connected
+    end
+
+    test "drops the session only once when several observers report it", %{
+      session: session,
+      connection_id: connection_id
+    } do
+      Session.session_lost(session, connection_id)
+      Session.session_lost(session, connection_id)
+
+      assert_receive {:chronicle_lifecycle, :disconnected, _}, 1_000
+      refute_receive {:chronicle_lifecycle, :disconnected, _}, 100
+      assert_received :reconnect_requested
+      refute_received :reconnect_requested
+    end
+  end
+
   defp backdate_last_keepalive(session, by_ms) do
     :sys.replace_state(session, fn state ->
       %{state | last_keepalive: state.last_keepalive - by_ms}
