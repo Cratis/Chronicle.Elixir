@@ -261,8 +261,9 @@ defmodule Chronicle.Connections.SessionTest do
       assert_receive {:chronicle_lifecycle, :disconnected, _}, 1_000
       settle(session, lifecycle)
       refute_received {:chronicle_lifecycle, :disconnected, _}
-      assert_received :reconnect_requested
-      refute_received :reconnect_requested
+      # The fake connection reports the reconnect from its own process.
+      assert_receive :reconnect_requested, 1_000
+      refute_receive :reconnect_requested, 200
     end
 
     test "reports the disconnect for a session lost before its first keepalive", %{
