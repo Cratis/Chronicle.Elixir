@@ -19,6 +19,9 @@ defmodule Chronicle.Observers.ReconnectBackoff do
   # after a long life therefore comes back after the base delay. A base delay of
   # zero is used as it is.
   #
+  # Chronicle.Connections.Session reuses it, with its own waits, for connecting the
+  # session again after it dropped.
+  #
   # This is a plain value threaded through the handler's state; it starts no
   # process and reads the clock and the random source only through the functions
   # it was given, so it can be driven deterministically.
@@ -39,7 +42,10 @@ defmodule Chronicle.Observers.ReconnectBackoff do
 
   @max_exponent 30
 
-  @options [:base_delay, :max_delay, :healthy_stream_duration, :jitter_fun, :now_fun]
+  @options [:base_delay, :max_delay, :healthy_stream_duration]
+
+  # Seams for driving the backoff deterministically; never public client options.
+  @seams [:jitter_fun, :now_fun]
 
   defstruct base_delay: @default_base_delay,
             max_delay: @default_max_delay,
@@ -60,27 +66,40 @@ defmodule Chronicle.Observers.ReconnectBackoff do
         }
 
   @doc """
-  Builds a backoff from the `:observation_reconnect` options.
+  Builds a backoff from the `:observation_reconnect` options, raising
+  `ArgumentError` for an unknown option or an invalid value.
 
     * `:base_delay` — milliseconds to wait after a stream that had worked (default `2_000`).
-    * `:max_delay` — the longest wait in milliseconds (default `60_000`).
+    * `:max_delay` — the longest wait in milliseconds (default `60_000`); must not be
+      below `:base_delay`.
     * `:healthy_stream_duration` — milliseconds a stream must stay open to count as
       having worked (default `180_000`).
+
+  `seams` replaces the random source and the clock:
+
     * `:jitter_fun` — returns a float in `[0, 1)` choosing where in the upper half of
       the wait this one lands (default `:rand.uniform/0`).
     * `:now_fun` — returns the current monotonic time in milliseconds.
   """
-  @spec new(keyword()) :: t()
-  def new(options \\ []) do
+  @spec new(keyword(), keyword()) :: t()
+  def new(options \\ [], seams \\ []) do
     options = Keyword.validate!(options, @options)
+    seams = Keyword.validate!(seams, @seams)
+    base_delay = non_neg!(options, :base_delay, @default_base_delay)
+    max_delay = non_neg!(options, :max_delay, @default_max_delay)
+
+    if max_delay < base_delay do
+      raise ArgumentError,
+            ":max_delay (#{max_delay}) must not be below :base_delay (#{base_delay})"
+    end
 
     %__MODULE__{
-      base_delay: non_neg!(options, :base_delay, @default_base_delay),
-      max_delay: non_neg!(options, :max_delay, @default_max_delay),
+      base_delay: base_delay,
+      max_delay: max_delay,
       healthy_stream_duration:
         non_neg!(options, :healthy_stream_duration, @default_healthy_stream_duration),
-      jitter_fun: Keyword.get(options, :jitter_fun) || (&:rand.uniform/0),
-      now_fun: Keyword.get(options, :now_fun) || fn -> System.monotonic_time(:millisecond) end
+      jitter_fun: Keyword.get(seams, :jitter_fun) || (&:rand.uniform/0),
+      now_fun: Keyword.get(seams, :now_fun) || fn -> System.monotonic_time(:millisecond) end
     }
   end
 
@@ -110,6 +129,9 @@ defmodule Chronicle.Observers.ReconnectBackoff do
     {trunc(ceiling * jitter), %{backoff | ended_without_working: ended_without_working}}
   end
 
+  # The .NET client reads a never-opened stream as opened long ago. Here it never
+  # counts as having worked; that cannot differ in practice, because the handlers
+  # call stream_opened/1 before every attempt to establish a stream.
   defp stayed_open_long_enough?(%{opened_at: nil}), do: false
 
   defp stayed_open_long_enough?(backoff),

@@ -18,9 +18,11 @@ defmodule Chronicle.Observers.ReconnectBackoffTest do
     clock = Keyword.get_lazy(options, :clock, &clock/0)
 
     ReconnectBackoff.new(
-      base_delay: Keyword.get(options, :base_delay, 1_000),
-      max_delay: Keyword.get(options, :max_delay, 8_000),
-      healthy_stream_duration: Keyword.get(options, :healthy_stream_duration, 30_000),
+      [
+        base_delay: Keyword.get(options, :base_delay, 1_000),
+        max_delay: Keyword.get(options, :max_delay, 8_000),
+        healthy_stream_duration: Keyword.get(options, :healthy_stream_duration, 30_000)
+      ],
       jitter_fun: fn -> Keyword.get(options, :jitter, 1.0) end,
       now_fun: fn -> Agent.get(clock, & &1) end
     )
@@ -136,6 +138,24 @@ defmodule Chronicle.Observers.ReconnectBackoffTest do
     test "reject a wait that is not a non-negative integer of milliseconds" do
       assert_raise ArgumentError, fn -> ReconnectBackoff.new(max_delay: -1) end
       assert_raise ArgumentError, fn -> ReconnectBackoff.new(base_delay: 1.5) end
+    end
+
+    test "reject a longest wait below the base delay" do
+      assert_raise ArgumentError, fn ->
+        ReconnectBackoff.new(base_delay: 5_000, max_delay: 1_000)
+      end
+    end
+
+    test "accept a longest wait equal to the base delay" do
+      assert {1_000, _} =
+               [base_delay: 2_000, max_delay: 2_000]
+               |> ReconnectBackoff.new(jitter_fun: fn -> 0.0 end)
+               |> ReconnectBackoff.next_delay()
+    end
+
+    test "do not take the random source or the clock" do
+      assert_raise ArgumentError, fn -> ReconnectBackoff.new(jitter_fun: fn -> 0.0 end) end
+      assert_raise ArgumentError, fn -> ReconnectBackoff.new(now_fun: fn -> 0 end) end
     end
   end
 end

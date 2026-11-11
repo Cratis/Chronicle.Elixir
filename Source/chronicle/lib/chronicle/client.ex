@@ -166,6 +166,8 @@ defmodule Chronicle.Client do
       open for `:healthy_stream_duration`. All values are milliseconds:
       `base_delay: 2_000`, `max_delay: 60_000` and `healthy_stream_duration: 180_000`
       by default, matching the .NET client. A `:base_delay` of `0` reopens at once.
+      `:max_delay` must not be below `:base_delay`. An unknown option or an invalid
+      value raises `ArgumentError` when the client starts.
     * `:keepalive_timeout` — milliseconds without a keepalive from the kernel after
       which the session is treated as dead and reconnected. Defaults to `5_000`, matching
       the kernel's `connectedClients.staleThresholdSeconds` (5); raise both together.
@@ -328,6 +330,9 @@ defmodule Chronicle.Client do
     # A duplicate event type generation or an ambiguous migrator bridge is logged; with
     # `strict_validation: true` it raises before anything connects instead.
     validate_event_types(event_types, migrations, Keyword.get(opts, :strict_validation, false))
+    # Raises for a mistyped or invalid option here, as a configuration error, rather
+    # than in every reactor and reducer until their supervisors give up.
+    Chronicle.Observers.ReconnectBackoff.new(Keyword.get(opts, :observation_reconnect) || [])
     reactors = Enum.uniq(Keyword.get(opts, :reactors, []) ++ discovered.reactors)
     reducers = Enum.uniq(Keyword.get(opts, :reducers, []) ++ discovered.reducers)
     read_models = Enum.uniq(Keyword.get(opts, :read_models, []) ++ discovered.read_models)

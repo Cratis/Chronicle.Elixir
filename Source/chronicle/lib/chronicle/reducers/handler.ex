@@ -28,7 +28,8 @@ defmodule Chronicle.Reducers.Handler do
     BatchRunner,
     PageDeliveryOptions,
     ReconnectBackoff,
-    StreamErrors
+    StreamErrors,
+    StreamReconnect
   }
 
   alias Cratis.Chronicle.Contracts.Observation.Reducers.{
@@ -94,7 +95,11 @@ defmodule Chronicle.Reducers.Handler do
           Session.session_lost(Session.name_for(client), connection_id)
         end),
       send_after_fun: Keyword.get(opts, :send_after_fun, &Process.send_after(self(), &1, &2)),
-      backoff: ReconnectBackoff.new(Keyword.get(opts, :observation_reconnect) || []),
+      backoff:
+        ReconnectBackoff.new(
+          Keyword.get(opts, :observation_reconnect) || [],
+          Keyword.take(opts, [:jitter_fun, :now_fun])
+        ),
       connection_id: nil,
       stream: nil,
       receiver_task: nil,
@@ -147,14 +152,13 @@ defmodule Chronicle.Reducers.Handler do
     {:noreply, teardown(state)}
   end
 
-  def handle_info(:reopen, state) do
-    state = %{state | reconnect_timer: nil}
-
-    if registered?(state) do
-      {:noreply, establish(teardown(state))}
-    else
+  def handle_info({:reopen, ref}, state) do
+    cond do
+      # A timer that was cancelled or replaced after it had already fired.
+      not StreamReconnect.current?(state, ref) -> {:noreply, state}
+      registered?(state) -> {:noreply, establish(teardown(state))}
       # No longer in the registered phase; the next :registered will re-establish.
-      {:noreply, state}
+      true -> {:noreply, %{state | reconnect_timer: nil}}
     end
   end
 
@@ -186,7 +190,7 @@ defmodule Chronicle.Reducers.Handler do
   def handle_info({:batch_finished, tag, outcome}, state) do
     case BatchRunner.finished(state, tag, outcome, hooks()) do
       {:ok, state} -> {:noreply, state}
-      {:send_failed, state} -> {:noreply, schedule_stream_reconnect(teardown(state))}
+      {:send_failed, state} -> {:noreply, StreamReconnect.schedule(teardown(state))}
     end
   end
 
@@ -204,7 +208,7 @@ defmodule Chronicle.Reducers.Handler do
 
   def handle_info({:DOWN, monitor, :process, _pid, reason}, state) do
     case BatchRunner.down(state, monitor, reason, hooks()) do
-      {:send_failed, state} -> {:noreply, schedule_stream_reconnect(teardown(state))}
+      {:send_failed, state} -> {:noreply, StreamReconnect.schedule(teardown(state))}
       {_, state} -> {:noreply, state}
     end
   end
@@ -227,9 +231,12 @@ defmodule Chronicle.Reducers.Handler do
         state.session_lost_fun.(connection_id)
         state
 
+      # A CANCELLED status reaching the handler came from the server: the handler
+      # kills its own receiver before it could report one. Unlike the .NET client,
+      # which stops on a cancellation it caused, the stream is reopened.
       _ ->
         Logger.warning("Reducer #{state.module} #{what}: #{inspect(reason)}")
-        schedule_stream_reconnect(teardown(state))
+        StreamReconnect.schedule(teardown(state))
     end
   end
 
@@ -244,7 +251,7 @@ defmodule Chronicle.Reducers.Handler do
 
       {:error, reason} ->
         Logger.warning("Reducer #{state.module} failed to register: #{inspect(reason)}")
-        schedule_stream_reconnect(state)
+        StreamReconnect.schedule(state)
     end
   end
 
@@ -358,23 +365,14 @@ defmodule Chronicle.Reducers.Handler do
   defp encode_generation_delivery(:pinned), do: :Pinned
   defp encode_generation_delivery(_compatibility), do: :Compatibility
 
-  defp schedule_stream_reconnect(%{reconnect_timer: timer} = state) when not is_nil(timer),
-    do: state
-
-  defp schedule_stream_reconnect(state) do
-    {delay, backoff} = ReconnectBackoff.next_delay(state.backoff)
-    timer = state.send_after_fun.(:reopen, delay)
-    %{state | reconnect_timer: timer, backoff: backoff}
-  end
-
   # Tears down the current observation stream and receiver task, returning a
   # clean state ready to (re)establish.
   defp teardown(state) do
     state = BatchRunner.reset(state)
     cleanup_stream(state)
     shutdown_task(state.receiver_task)
-    cancel_timer(state.reconnect_timer)
-    %{state | stream: nil, receiver_task: nil, reconnect_timer: nil}
+    state = StreamReconnect.cancel(state)
+    %{state | stream: nil, receiver_task: nil}
   end
 
   defp cleanup_stream(%{stream: nil}), do: :ok
@@ -392,9 +390,6 @@ defmodule Chronicle.Reducers.Handler do
   defp shutdown_task(nil), do: :ok
   defp shutdown_task(%Task{} = task), do: Task.shutdown(task, :brutal_kill)
   defp shutdown_task(_), do: :ok
-
-  defp cancel_timer(nil), do: :ok
-  defp cancel_timer(timer), do: Process.cancel_timer(timer)
 
   # ReplayState enum: None = 0, BeginReplay = 1, EndReplay = 2,
   # BeginReplayPartition = 3, EndReplayPartition = 4.
