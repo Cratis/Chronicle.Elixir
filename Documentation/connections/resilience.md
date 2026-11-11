@@ -102,6 +102,8 @@ The channel reconnects with exponential backoff, starting at one second and capp
 
 The `:retry_attempts` option is accepted for backward compatibility and ignored; reconnection doesn't give up.
 
+The session itself waits before connecting again, too. The first wait is at most one second, and each session that fails to connect or drops again straight away doubles that ceiling, up to thirty seconds, as in the .NET client. Every wait lands at random in the upper half of its ceiling, so clients that a kernel restart dropped together don't come back together. The wait starts over once a session stayed up for thirty seconds.
+
 The session runs on its own HTTP/2 connection to the same server as everything else. The gRPC transport queues outgoing data for a connection in one queue. On a shared connection, a large reactor or reducer result waiting on flow control would also hold back the keepalive answers. On its own connection the session stays alive while observers work through large batches. To use one connection for everything, set `dedicated_session_channel: false`.
 
 The five seconds match the kernel's `connectedClients.staleThresholdSeconds`. To tolerate longer gaps, raise the kernel setting and the client's `:keepalive_timeout` option (in milliseconds) together.
@@ -127,6 +129,20 @@ Seeders run each time the lifecycle reaches `:registered`: at startup and again 
 ## Failure isolation
 
 A failed observation stream is a different problem from losing the client's session. Each reactor and reducer manages its own observation stream. If one stream fails while the connection is healthy, only that stream reopens, after a short delay.
+
+The delay grows while a stream keeps ending without having worked. The first wait is at most two seconds, and each stream that ends without having worked doubles that ceiling, up to a minute. Every wait lands at random in the upper half of its ceiling, so many observers that fail together during a kernel rollout come back at different times instead of as one herd. The wait starts over at two seconds once a stream delivered something or stayed open for three minutes. The three minutes are longer than the kernel takes to give up establishing a stream against a busy observer, so slow subscribes keep backing off. The defaults match the .NET client. Tune them with the `:observation_reconnect` client option, in milliseconds:
+
+```elixir
+{Chronicle.Client,
+ connection_string: Chronicle.Connections.ConnectionString.development(),
+ event_store: "my-store",
+ otp_app: :my_app,
+ observation_reconnect: [base_delay: 2_000, max_delay: 60_000, healthy_stream_duration: 180_000]}
+```
+
+A `base_delay` of `0` reopens a stream at once, without backing off.
+
+A stream can also end because the kernel no longer knows the client's connection id, which happens when the kernel restarted and lost the session. Reopening the stream with the same connection id can never work, so the reactor or reducer asks for a full reconnect instead. The client drops the session as described in [What happens on disconnect](#what-happens-on-disconnect): the lifecycle moves to `:disconnected`, the connection id is rotated, and every reactor and reducer registers again once the new session reaches `:registered`. The session drops once, however many observers report the lost session.
 
 Failing to send a result, for example because the connection is too busy to accept it in time, counts as a stream failure: the handler logs it, emits `[:chronicle, :observer, :result, :send_failed]` telemetry and reopens its stream, and Chronicle redelivers the events. A failing observer never takes down the connection or its siblings. Failures inside your handlers are reported to Chronicle as [failed partitions](../failed-partitions.md).
 
