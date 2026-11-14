@@ -129,7 +129,9 @@ defmodule Chronicle.MixProject do
         "Graph Projections": [
           Chronicle.Graphs.Graph,
           Chronicle.Graphs.Node,
-          Chronicle.Graphs.Edge
+          Chronicle.Graphs.Edge,
+          Chronicle.Graphs.View,
+          Chronicle.Graphs.ViewDefinition
         ],
         Sinks: [Chronicle.Sinks.WellKnownSinkTypes],
         Jobs: [
