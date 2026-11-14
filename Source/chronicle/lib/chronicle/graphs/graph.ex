@@ -128,9 +128,17 @@ defmodule Chronicle.Graphs.Graph do
       MyApp.Graphs.Organization.__chronicle_graph__(:nodes)
       MyApp.Graphs.Organization.__chronicle_graph__(:edges)
       MyApp.Graphs.Organization.__chronicle_graph__(:events)
+      MyApp.Graphs.Organization.__chronicle_graph__(:views)
+
+  ## Views
+
+  `view/1` declares a read model over the graph, see `Chronicle.Graphs.View`. Views are only
+  validated and emitted as a definition, see `Chronicle.Graphs.ViewDefinition`; they do not
+  change what the graph registers.
   """
 
   alias Chronicle.Graphs.Compiler
+  alias Chronicle.Graphs.ViewCompiler
 
   @doc false
   defmacro __using__(opts) do
@@ -152,7 +160,8 @@ defmodule Chronicle.Graphs.Graph do
           from: 1,
           from: 2,
           removed_with: 1,
-          removed_with: 2
+          removed_with: 2,
+          view: 1
         ]
 
       @before_compile Chronicle.Graphs.Graph
@@ -180,6 +189,19 @@ defmodule Chronicle.Graphs.Graph do
   """
   defmacro edge(module, opts, block \\ []) do
     declare(:edge, module, opts, block, __CALLER__)
+  end
+
+  @doc """
+  Adds a view over the graph.
+
+  `module` is a module that `use Chronicle.Graphs.View`. The view is checked against the nodes and
+  edges of this graph when the graph compiles, see `Chronicle.Graphs.View`. Declare it outside the
+  `node` and `edge` blocks. A graph without `view` declarations is unaffected.
+  """
+  defmacro view(module) do
+    quote do
+      Chronicle.Graphs.Graph.__view__(__MODULE__, unquote(module), unquote(__CALLER__.line))
+    end
   end
 
   defp declare(kind, module, opts, block, caller) do
@@ -259,6 +281,25 @@ defmodule Chronicle.Graphs.Graph do
   end
 
   @doc false
+  def __view__(module, view, line) do
+    if Module.get_attribute(module, :chronicle_graph_open) do
+      raise CompileError,
+        file: file(module),
+        line: line,
+        description: "a view cannot be declared inside a node or edge"
+    end
+
+    declarations = Module.get_attribute(module, :chronicle_graph_declarations)
+
+    Module.put_attribute(
+      module,
+      :chronicle_graph_declarations,
+      declarations ++
+        [%{kind: :view, module: view, file: file(module), graph_line: line, line: line}]
+    )
+  end
+
+  @doc false
   def __add__(module, which, event, opts, line) do
     case Module.get_attribute(module, :chronicle_graph_open) do
       nil ->
@@ -293,6 +334,14 @@ defmodule Chronicle.Graphs.Graph do
     declarations = Module.get_attribute(env.module, :chronicle_graph_declarations)
     %{nodes: nodes, edges: edges} = Compiler.compile!(env, declarations)
 
+    views =
+      ViewCompiler.compile!(
+        env,
+        for(%{kind: :view} = declaration <- declarations, do: declaration),
+        nodes,
+        edges
+      )
+
     events =
       Enum.flat_map(nodes ++ edges, &(&1.from ++ &1.removed_with))
       |> Enum.map(& &1.event)
@@ -312,6 +361,9 @@ defmodule Chronicle.Graphs.Graph do
 
       @doc false
       def __chronicle_graph__(:events), do: unquote(Macro.escape(graph.events))
+
+      @doc false
+      def __chronicle_graph__(:views), do: unquote(Macro.escape(views))
     end
   end
 end

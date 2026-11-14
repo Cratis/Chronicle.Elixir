@@ -134,7 +134,60 @@ A graph is stored by a graph sink. Set the sink per client with `:default_graph_
 
 `:default_sink_type_id` keeps choosing the sink of document read models; it does not apply to graphs. See [Sinks](./sinks.md).
 
+## Read a graph with views
+
+A graph view is a read model over the graph: it is anchored at one node, and its members are properties of that node, relations along declared edges to other views, or properties of the edge that was followed. See [Graph projections](/chronicle/projections/graph-projections/) for the shared description of views and their rules.
+
+Elixir structs carry no field types, so a view is a module that `use Chronicle.Graphs.View` with the node it is anchored at, and declares its members with `property`, `relation` and `edge_property`. The graph lists its views with `view`:
+
+```elixir
+defmodule MyApp.Directory.GroupMembership do
+  use Chronicle.Graphs.View, root: MyApp.Directory.Group
+
+  property :id, source: :group_id
+  property :name
+  edge_property :since
+end
+
+defmodule MyApp.Directory.PersonWithGroups do
+  use Chronicle.Graphs.View, root: MyApp.Directory.Person
+
+  property :id, source: :person_id
+  property :name
+
+  relation :groups, MyApp.Directory.MemberOf,
+    view: MyApp.Directory.GroupMembership,
+    cardinality: :many
+end
+
+defmodule MyApp.Directory.Graph do
+  use Chronicle.Graphs.Graph, id: "Directory"
+
+  # nodes and edges ...
+
+  view MyApp.Directory.PersonWithGroups
+  view MyApp.Directory.GroupMembership
+end
+```
+
+- A member is named by the `camelCase` of its atom. `property` and `edge_property` match a property of the node or the edge by name, ignoring case, or by `source:`.
+- `relation` takes the edge module (or its type string), the target `view:` and a required `cardinality:` of `:many` or `:one`. The direction is derived from the root for an edge between two different nodes; a self edge needs `direction: :outgoing` or `direction: :incoming`.
+- A view takes its name from the last segment of its module name. `name:` chooses another one; names are unique in a graph.
+
+A view that cannot work does not compile. The `CompileError` of the graph starts its description with one of the reasons `ViewRootNotANode`, `ViewIsAlsoSchema`, `DuplicateViewName`, `UnknownNodeProperty`, `UnknownEdge`, `UnknownEdgeProperty`, `EdgeNotIncidentOnRoot`, `AmbiguousDirection`, `TargetLabelMismatch`, `RelationTargetNotAView`, `RecursiveView`, `EdgePropertyViewNotUsedAsTarget` or `EdgePropertyViewSharedAcrossEdges`, for example `UnknownEdge: relation :groups of view PersonWithGroups ...`. `Chronicle.Graphs.View` lists what each one means.
+
+The views of a graph are available as the `GraphViewDefinition` every Chronicle client emits for its views:
+
+```elixir
+Chronicle.Graphs.ViewDefinition.build(MyApp.Directory.Graph)
+Chronicle.Graphs.ViewDefinition.encode(MyApp.Directory.Graph)
+```
+
+`build/1` returns the definition as plain data and `encode/1` the canonical JSON. A graph without views has an empty definition.
+
+Views change nothing about what the graph registers: the definition is not sent to Chronicle, and a graph with views registers the same read model and projection as the graph without them. The Elixir client has no read side for views yet, so declaring a view validates it and produces its definition, but there is no function that runs a query over it.
+
 ## What the Elixir client does not do yet
 
-- Reading the graph. Applications read it with the engine driver, as the shared page describes.
+- Reading the graph, with or without views. Applications read it with the engine driver, as the shared page describes; a view is validated and emitted as a definition, not executed.
 - A test harness. `Chronicle.Testing` has no graph scenario yet, so a graph is tested by asserting the definition it registers.
