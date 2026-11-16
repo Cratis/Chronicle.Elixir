@@ -44,7 +44,7 @@ defmodule Chronicle.MixProject do
   defp deps do
     [
       {:cratis_chronicle_contracts, "~> 19.153"},
-      {:grpc, "~> 1.0"},
+      {:grpc, "~> 1.0.6"},
       {:mint, "~> 1.11"},
       {:telemetry, "~> 1.0"},
       {:opentelemetry_api, "~> 1.4"},

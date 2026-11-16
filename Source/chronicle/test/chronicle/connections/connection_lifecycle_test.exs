@@ -284,6 +284,29 @@ defmodule Chronicle.Connections.ConnectionLifecycleTest do
     refute Process.alive?(provider)
   end
 
+  test "a channel whose server closed the connection is not handed out again" do
+    {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true])
+    {:ok, {_, port}} = :inet.sockname(listener)
+    on_exit(fn -> :gen_tcp.close(listener) end)
+
+    {:ok, connection} =
+      Connection.start_link(connection_string: "chronicle://localhost:#{port}?disableTls=true")
+
+    {:ok, socket} = :gen_tcp.accept(listener, 5_000)
+    assert :ok = Connection.connect(connection, 5_000)
+    {:ok, dead} = Connection.channel(connection)
+
+    # The kernel going away: the server side of the HTTP/2 connection closes.
+    :gen_tcp.close(socket)
+
+    assert_not_handed_out(connection, dead, System.monotonic_time(:millisecond) + 5_000)
+
+    # The connection dials again rather than staying down.
+    {:ok, redial} = :gen_tcp.accept(listener, 5_000)
+    on_exit(fn -> :gen_tcp.close(redial) end)
+    assert_reconnected(connection, dead, System.monotonic_time(:millisecond) + 5_000)
+  end
+
   test "restarting Chronicle.Client closes each real Mint connection and socket" do
     {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true])
     {:ok, {_, port}} = :inet.sockname(listener)
@@ -320,6 +343,32 @@ defmodule Chronicle.Connections.ConnectionLifecycleTest do
       :gen_tcp.close(socket)
       :gen_tcp.close(session_socket)
       assert_child_count(before_count, System.monotonic_time(:millisecond) + 2_000)
+    end
+  end
+
+  defp assert_not_handed_out(connection, dead, deadline) do
+    case Connection.channel(connection) do
+      {:ok, ^dead} ->
+        assert System.monotonic_time(:millisecond) < deadline,
+               "the dead channel is still handed out"
+
+        Process.sleep(20)
+        assert_not_handed_out(connection, dead, deadline)
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp assert_reconnected(connection, dead, deadline) do
+    case Connection.channel(connection) do
+      {:ok, channel} when channel != dead ->
+        :ok
+
+      _ ->
+        assert System.monotonic_time(:millisecond) < deadline, "the connection did not redial"
+        Process.sleep(20)
+        assert_reconnected(connection, dead, deadline)
     end
   end
 

@@ -173,10 +173,10 @@ defmodule Chronicle.Connections.Connection do
   Drops the current channel and dials a fresh one.
 
   For callers with independent evidence that the channel is unusable — such as
-  the session watchdog detecting missed keepalives. A channel can die in ways
-  this process cannot observe: the gRPC adapter reports transport death to the
-  process that dialed (a completed connect task, not this server), and an
-  expired auth token fails every new RPC while the transport stays healthy.
+  the session watchdog detecting missed keepalives. A channel can stop working
+  in ways this process cannot observe: an expired auth token fails every new RPC
+  while the transport stays healthy. A transport that dies is observed here: the
+  connection process behind the channel stops, and the channel is redialed.
   Redialing re-resolves addresses and re-fetches authentication headers.
   No-op while a connect attempt is already in progress.
   """
