@@ -182,6 +182,39 @@ defmodule Chronicle.Reducers.HandlerTest do
     assert :sys.get_state(handler).stream == nil
   end
 
+  test "stops the response processes of a stream it tears down" do
+    {:ok, lifecycle} = Lifecycle.start_link([])
+    test = self()
+
+    # Runs in the handler, which the adapter links a stream's response process to.
+    establish_fun = fn _state, _connection_id ->
+      {:ok, response_process} =
+        GRPC.Client.Adapters.Mint.StreamResponseProcess.start_link(%GRPC.Client.Stream{}, false)
+
+      send(test, {:established, response_process})
+      {:ok, :fake_stream, nil, [response_process]}
+    end
+
+    {:ok, _handler} =
+      Handler.start_link(
+        module: TestReducer,
+        connection: :unused,
+        event_store: "test",
+        namespace: "Default",
+        lifecycle: lifecycle,
+        establish_fun: establish_fun
+      )
+
+    Lifecycle.connected(lifecycle, "conn-1")
+    Lifecycle.registered(lifecycle)
+    assert_receive {:established, response_process}, 1_000
+    monitor = Process.monitor(response_process)
+
+    Lifecycle.disconnected(lifecycle)
+
+    assert_receive {:DOWN, ^monitor, :process, ^response_process, _}, 1_000
+  end
+
   test "re-registers with a fresh connection id after reconnect", %{lifecycle: lifecycle} do
     Lifecycle.connected(lifecycle, "conn-1")
     Lifecycle.registered(lifecycle)
