@@ -155,6 +155,22 @@ defmodule Chronicle.Connections.SessionTest do
     refute_receive {:chronicle_lifecycle, :disconnected, _}, 200
   end
 
+  test "stops the response process of the Connect stream it drops", %{session: session} do
+    {:ok, response_process} =
+      GenServer.start(
+        GRPC.Client.Adapters.Mint.StreamResponseProcess,
+        {%GRPC.Client.Stream{}, false}
+      )
+
+    monitor = Process.monitor(response_process)
+    :sys.replace_state(session, &%{&1 | response_processes: [response_process]})
+
+    send(session, {:session_down, :closed})
+
+    assert_receive {:DOWN, ^monitor, :process, ^response_process, _}, 1_000
+    assert :sys.get_state(session).response_processes == []
+  end
+
   test "schedules only one reconnect when a drop is reported twice", %{session: session} do
     send(session, :keepalive_received)
     assert_receive {:chronicle_lifecycle, :connected, _}, 1_000
