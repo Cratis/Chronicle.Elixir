@@ -26,6 +26,7 @@ defmodule Chronicle.Reducers.Handler do
   alias Chronicle.Observers.{
     BatchFunctions,
     BatchRunner,
+    ObservationStream,
     PageDeliveryOptions,
     ReconnectBackoff,
     StreamErrors,
@@ -102,6 +103,7 @@ defmodule Chronicle.Reducers.Handler do
         ),
       connection_id: nil,
       stream: nil,
+      response_processes: [],
       receiver_task: nil,
       reconnect_timer: nil
     }
@@ -249,6 +251,15 @@ defmodule Chronicle.Reducers.Handler do
       {:ok, stream, task} ->
         %{state | stream: stream, receiver_task: task, reconnect_timer: nil}
 
+      {:ok, stream, task, response_processes} ->
+        %{
+          state
+          | stream: stream,
+            response_processes: response_processes,
+            receiver_task: task,
+            reconnect_timer: nil
+        }
+
       {:error, reason} ->
         Logger.warning("Reducer #{state.module} failed to register: #{inspect(reason)}")
         StreamReconnect.schedule(state)
@@ -258,13 +269,14 @@ defmodule Chronicle.Reducers.Handler do
   defp default_establish(state, connection_id) do
     case Connection.channel(state.connection) do
       {:ok, channel} ->
-        stream = Reducers.Stub.observe(channel)
         registration = build_registration(state, connection_id)
-        GRPC.Stub.send_request(stream, registration)
 
-        handler = self()
-        task = Task.async(fn -> receive_loop(handler, stream) end)
-        {:ok, stream, task}
+        with {:ok, stream, response_processes} <-
+               ObservationStream.open(channel, &Reducers.Stub.observe/1, registration) do
+          handler = self()
+          task = Task.async(fn -> receive_loop(handler, stream) end)
+          {:ok, stream, task, response_processes}
+        end
 
       {:error, _} = error ->
         error
@@ -367,24 +379,13 @@ defmodule Chronicle.Reducers.Handler do
 
   # Tears down the current observation stream and receiver task, returning a
   # clean state ready to (re)establish.
+  # The receiver goes first: it may be waiting on a response process the close stops.
   defp teardown(state) do
     state = BatchRunner.reset(state)
-    cleanup_stream(state)
     shutdown_task(state.receiver_task)
+    ObservationStream.close(state.stream, state.response_processes)
     state = StreamReconnect.cancel(state)
-    %{state | stream: nil, receiver_task: nil}
-  end
-
-  defp cleanup_stream(%{stream: nil}), do: :ok
-
-  defp cleanup_stream(%{stream: stream}) do
-    try do
-      GRPC.Stub.end_stream(stream)
-    rescue
-      _ -> :ok
-    catch
-      _, _ -> :ok
-    end
+    %{state | stream: nil, response_processes: [], receiver_task: nil}
   end
 
   defp shutdown_task(nil), do: :ok

@@ -10,30 +10,48 @@ defmodule Chronicle.Connections.TransportFailureInterceptor do
   #
   #   * A call racing a dying channel: the Mint adapter hands the request to its connection
   #     process with GenServer.call, and when that process has already stopped the call exits
-  #     the caller. The adapter has already started, and linked to the caller, a response
-  #     process for the call; nothing would ever reply to it, so it is stopped here.
+  #     the caller.
   #   * A reply grpc can't read, such as the trailers-only response the kernel sends when it
   #     rejects an unauthenticated call, which raises inside grpc.
   #
   # Exceptions raised outside grpc, such as a protobuf encoding error or a bug in another
   # interceptor, are re-raised unchanged. Installed as the last interceptor, which grpc-elixir
   # makes the outermost one.
+  #
+  # Before the request reaches the connection, the adapter starts a response process for the
+  # call and links it to the caller. A call that fails - it exits, raises, or returns an error
+  # because the connection was already closed - leaves that process with nobody to read it, so
+  # it is stopped here (see Chronicle.Connections.ResponseProcesses). A call that succeeds hands
+  # its responses to the caller, and the process stops once they are read.
 
   @behaviour GRPC.Client.Interceptor
 
-  @response_process GRPC.Client.Adapters.Mint.StreamResponseProcess
+  alias Chronicle.Connections.ResponseProcesses
 
   @impl GRPC.Client.Interceptor
   def init(opts), do: opts
 
   @impl GRPC.Client.Interceptor
   def call(stream, request, next, _opts) do
-    links_before = links()
+    snapshot = ResponseProcesses.snapshot()
 
     try do
-      next.(stream, request)
+      case next.(stream, request) do
+        {:error, _reason} = error ->
+          release(snapshot)
+          error
+
+        {:error, _reason, _headers} = error ->
+          release(snapshot)
+          error
+
+        result ->
+          result
+      end
     rescue
       error ->
+        release(snapshot)
+
         if raised_in_grpc?(__STACKTRACE__) do
           {:error,
            GRPC.RPCError.exception(
@@ -45,7 +63,7 @@ defmodule Chronicle.Connections.TransportFailureInterceptor do
         end
     catch
       :exit, reason ->
-        stop_orphaned_response_processes(links_before)
+        release(snapshot)
 
         {:error,
          GRPC.RPCError.exception(
@@ -54,6 +72,9 @@ defmodule Chronicle.Connections.TransportFailureInterceptor do
          )}
     end
   end
+
+  defp release(snapshot),
+    do: snapshot |> ResponseProcesses.started_since() |> ResponseProcesses.stop()
 
   # The raising frame is often a standard library function (Keyword.fetch!/2) called by grpc, so
   # the first frame outside Elixir's and Erlang's standard libraries decides who raised.
@@ -71,31 +92,6 @@ defmodule Chronicle.Connections.TransportFailureInterceptor do
     case :application.get_application(module) do
       {:ok, application} -> application
       :undefined -> nil
-    end
-  end
-
-  defp links do
-    {:links, links} = Process.info(self(), :links)
-    MapSet.new(links)
-  end
-
-  defp stop_orphaned_response_processes(links_before) do
-    links()
-    |> MapSet.difference(links_before)
-    |> Enum.filter(&(is_pid(&1) and response_process?(&1)))
-    |> Enum.each(fn pid ->
-      Process.unlink(pid)
-      Process.exit(pid, :kill)
-    end)
-  end
-
-  defp response_process?(pid) do
-    case Process.info(pid, :dictionary) do
-      {:dictionary, dictionary} ->
-        match?({@response_process, _, _}, Keyword.get(dictionary, :"$initial_call"))
-
-      nil ->
-        false
     end
   end
 end

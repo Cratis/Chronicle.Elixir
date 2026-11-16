@@ -106,6 +106,8 @@ The session itself waits before connecting again, too. The first wait is at most
 
 The session runs on its own HTTP/2 connection to the same server as everything else. The gRPC transport queues outgoing data for a connection in one queue. On a shared connection, a large reactor or reducer result waiting on flow control would also hold back the keepalive answers. On its own connection the session stays alive while observers work through large batches. To use one connection for everything, set `dedicated_session_channel: false`.
 
+The session's connection is not the only one that can go away. When the server closes the main connection while the session's connection stays up, for example when one kernel instance stops during a rollout, the client notices the closed connection and dials both connections again. The session then reconnects, and every reactor and reducer registers again. This needs `grpc` 1.0.6 or later, which the client requires: earlier versions never reported the closed connection, so reactors and reducers kept retrying on it.
+
 The five seconds match the kernel's `connectedClients.staleThresholdSeconds`. To tolerate longer gaps, raise the kernel setting and the client's `:keepalive_timeout` option (in milliseconds) together.
 
 Reactors register as replayable, and projections and reducers are rewindable. When an observer re-attaches, Chronicle resumes it from the last event it handled, so events appended while it was detached are delivered then, not skipped.

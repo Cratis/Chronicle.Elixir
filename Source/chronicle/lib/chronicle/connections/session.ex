@@ -20,11 +20,11 @@ defmodule Chronicle.Connections.Session do
   # for a stream error alone leaves a half-open session that looks connected
   # forever while observers receive nothing.
   #
-  # A dropped session also condemns the channel it ran on. `Connection` cannot
-  # always see the death itself — the gRPC adapter reports transport death to
-  # the process that dialed (a completed connect task), and an expired auth
-  # token fails every new RPC while the transport stays healthy — so retrying
-  # on the same channel can loop forever. Every drop therefore asks
+  # A dropped session also condemns the channel it ran on. `Connection` sees a
+  # transport die, but not every way a channel stops working: an expired auth
+  # token fails every new RPC while the transport stays healthy, and a kernel
+  # that evicted the session leaves the channel open — so retrying on the same
+  # channel can loop forever. Every drop therefore asks
   # `Connection.reconnect/1` for a fresh channel, which also re-resolves
   # addresses and re-fetches authentication headers.
 
@@ -32,7 +32,7 @@ defmodule Chronicle.Connections.Session do
 
   require Logger
 
-  alias Chronicle.Connections.{Connection, KeepAlive, Lifecycle}
+  alias Chronicle.Connections.{Connection, KeepAlive, Lifecycle, ResponseProcesses}
   alias Chronicle.Observers.ReconnectBackoff
 
   alias Cratis.Chronicle.Contracts.Clients.{
@@ -130,6 +130,7 @@ defmodule Chronicle.Connections.Session do
       lifecycle: Keyword.get(opts, :lifecycle),
       connection_id: generate_connection_id(),
       keepalive_task: nil,
+      response_processes: [],
       keepalive_fun: Keyword.get(opts, :keepalive_fun, &KeepAlive.answer/2),
       keepalive_timeout: Keyword.get(opts, :keepalive_timeout) || @default_keepalive_timeout,
       last_keepalive: nil,
@@ -250,8 +251,13 @@ defmodule Chronicle.Connections.Session do
           ClientType: "Elixir"
         )
 
+      # The Connect stream is abandoned without being read to the end whenever the session
+      # drops, so its response processes are recorded and stopped on teardown.
+      snapshot = ResponseProcesses.snapshot()
+
       case ConnectionService.Stub.connect(channel, request) do
         {:ok, reply_stream} ->
+          response_processes = ResponseProcesses.started_since(snapshot)
           handler = self()
           keepalive_fun = state.keepalive_fun
 
@@ -264,6 +270,7 @@ defmodule Chronicle.Connections.Session do
            %{
              state
              | keepalive_task: task,
+               response_processes: response_processes,
                connection_id: connection_id,
                last_keepalive: now_ms(),
                watchdog_timer: start_watchdog()
@@ -298,11 +305,20 @@ defmodule Chronicle.Connections.Session do
 
   defp session_up?(state), do: not is_nil(state.keepalive_task || state.watchdog_timer)
 
+  # The keepalive task goes first: it may be waiting on a response process being stopped.
   defp teardown(state) do
     shutdown_task(state.keepalive_task)
+    ResponseProcesses.stop(state.response_processes)
     cancel_timer(state.watchdog_timer)
 
-    %{state | keepalive_task: nil, watchdog_timer: nil, last_keepalive: nil, ready?: false}
+    %{
+      state
+      | keepalive_task: nil,
+        response_processes: [],
+        watchdog_timer: nil,
+        last_keepalive: nil,
+        ready?: false
+    }
   end
 
   defp current_connection_id(%{lifecycle: nil, connection_id: connection_id}), do: connection_id

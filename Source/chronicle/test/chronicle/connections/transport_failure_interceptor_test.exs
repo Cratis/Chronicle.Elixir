@@ -46,6 +46,34 @@ defmodule Chronicle.Connections.TransportFailureInterceptorTest do
     refute response_process in links
   end
 
+  test "stops the response process of a call that returned an error on a closed connection" do
+    error =
+      {:error,
+       GRPC.RPCError.exception(
+         GRPC.Status.unknown(),
+         "error occurred while receiving data: {:error, \"the connection is closed\"}"
+       )}
+
+    response_process = response_process_of(fn -> error end)
+
+    assert_stopped(response_process)
+  end
+
+  test "stops the response process of a call that raised" do
+    response_process =
+      response_process_of(fn -> GRPC.RPCError.exception(:no_such_status, "x") end)
+
+    assert_stopped(response_process)
+  end
+
+  test "leaves the response process of a stream that opened to its reader" do
+    response_process = response_process_of(fn -> {:ok, :reply_stream} end)
+
+    assert Process.alive?(response_process)
+    {:links, links} = Process.info(self(), :links)
+    assert response_process in links
+  end
+
   test "turns a raise inside grpc into an internal error" do
     assert {:error, %GRPC.RPCError{status: status, message: message}} =
              call(fn _stream, _request -> GRPC.RPCError.exception(:no_such_status, "x") end)
@@ -58,5 +86,26 @@ defmodule Chronicle.Connections.TransportFailureInterceptorTest do
     assert_raise KeyError, fn ->
       call(fn _stream, _request -> Keyword.fetch!([], :ok) end)
     end
+  end
+
+  # Runs a call that starts a response process the way the Mint adapter does, then ends with `outcome`.
+  defp response_process_of(outcome) do
+    test_pid = self()
+
+    call(fn stream, _request ->
+      {:ok, response_process} = StreamResponseProcess.start_link(stream, false)
+      send(test_pid, {:response_process, response_process})
+      outcome.()
+    end)
+
+    assert_receive {:response_process, response_process}
+    response_process
+  end
+
+  defp assert_stopped(response_process) do
+    ref = Process.monitor(response_process)
+    assert_receive {:DOWN, ^ref, :process, ^response_process, _}, 1_000
+    {:links, links} = Process.info(self(), :links)
+    refute response_process in links
   end
 end
