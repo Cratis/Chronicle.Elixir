@@ -65,6 +65,7 @@ defmodule Chronicle.Connections.Connection do
   alias Chronicle.Connections.{
     AppendCompatibility,
     AuthInterceptor,
+    CertificateAuthorities,
     ClientCertificate,
     TransportFailureInterceptor,
     ConnectionString,
@@ -203,6 +204,7 @@ defmodule Chronicle.Connections.Connection do
     CredentialRegistry.remember(connection_string.api_key)
     CredentialRegistry.remember(connection_string.password)
     client_certificate = ClientCertificate.load!(connection_string)
+    certificate_authorities = CertificateAuthorities.load!(connection_string)
     grpc_options = Keyword.get(options, :grpc_options, [])
     warn_if_insecure(connection_string)
     validate_certificate_options!(grpc_options, client_certificate)
@@ -231,7 +233,9 @@ defmodule Chronicle.Connections.Connection do
       transport_monitor: transport_monitor,
       connection_string: connection_string,
       client_certificate: client_certificate,
-      token_provider: start_token_provider(connection_string, client_certificate),
+      certificate_authorities: certificate_authorities,
+      token_provider:
+        start_token_provider(connection_string, client_certificate, certificate_authorities),
       channel: nil,
       session_channel: nil,
       dedicated_session_channel?: Keyword.get(options, :dedicated_session_channel, false),
@@ -273,6 +277,7 @@ defmodule Chronicle.Connections.Connection do
     Status.redact(status,
       connection_string: :redacted,
       client_certificate: :redacted,
+      certificate_authorities: :redacted,
       grpc_options: :redacted,
       append_check: if(state.append_check, do: :in_progress, else: nil),
       channel: if(state.channel, do: :connected, else: nil),
@@ -314,6 +319,15 @@ defmodule Chronicle.Connections.Connection do
 
   def handle_call(:channel, _from, state) do
     {:reply, {:error, :not_connected}, state}
+  end
+
+  def handle_call(
+        :append_channel,
+        _from,
+        %{connected?: true, connection_string: %ConnectionString{skip_compatibility_check: true}} =
+          state
+      ) do
+    {:reply, {:ok, state.channel}, state}
   end
 
   def handle_call(:append_channel, _from, %{connected?: true, append_compatible?: true} = state) do
@@ -539,6 +553,7 @@ defmodule Chronicle.Connections.Connection do
     round_robin_counter = state.round_robin_counter
     token_provider = state.token_provider
     client_certificate = state.client_certificate
+    certificate_authorities = state.certificate_authorities
     disconnect_fun = state.disconnect_fun
     dedicated_session_channel? = state.dedicated_session_channel?
 
@@ -561,7 +576,8 @@ defmodule Chronicle.Connections.Connection do
                 connection_string,
                 grpc_options,
                 token_provider,
-                client_certificate
+                client_certificate,
+                certificate_authorities
               )
 
             with {:ok, channel} <- connect_fun.(target, opts) do
@@ -777,7 +793,13 @@ defmodule Chronicle.Connections.Connection do
     end
   end
 
-  defp build_grpc_options(connection_string, grpc_options, token_provider, client_certificate) do
+  defp build_grpc_options(
+         connection_string,
+         grpc_options,
+         token_provider,
+         client_certificate,
+         certificate_authorities
+       ) do
     headers = auth_headers(connection_string)
 
     options =
@@ -802,7 +824,7 @@ defmodule Chronicle.Connections.Connection do
       true ->
         add_credential(
           options,
-          [verify: :verify_peer, cacerts: :public_key.cacerts_get()],
+          [verify: :verify_peer, cacerts: certificate_authorities || :public_key.cacerts_get()],
           client_certificate
         )
     end
@@ -952,7 +974,7 @@ defmodule Chronicle.Connections.Connection do
   # tokens expire and are attached per RPC by the auth interceptor instead —
   # a token baked into the channel would silently invalidate it at expiry.
   defp auth_headers(connection_string) do
-    if present?(connection_string.api_key) do
+    if present?(connection_string.api_key) and not connection_string.no_authentication do
       [{"api-key", connection_string.api_key}]
     else
       []
@@ -963,13 +985,14 @@ defmodule Chronicle.Connections.Connection do
   # lifecycle, and every dialed channel gets an interceptor that attaches a
   # fresh token to each RPC. Mirrors the api-key-wins precedence of
   # `auth_headers/1` when both are (mis)configured.
-  defp start_token_provider(connection_string, client_certificate) do
+  defp start_token_provider(connection_string, client_certificate, certificate_authorities) do
     if present?(connection_string.username) and present?(connection_string.password) and
-         not present?(connection_string.api_key) do
+         not present?(connection_string.api_key) and not connection_string.no_authentication do
       {:ok, provider} =
         TokenProvider.start_link(
           connection_string: connection_string,
-          client_certificate: client_certificate
+          client_certificate: client_certificate,
+          certificate_authorities: certificate_authorities
         )
 
       provider

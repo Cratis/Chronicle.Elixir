@@ -223,6 +223,31 @@ defmodule Chronicle.Connections.SessionTest do
     end
   end
 
+  describe "with skip_keep_alive" do
+    test "marks the lifecycle connected without waiting for a keepalive", %{lifecycle: lifecycle} do
+      {:ok, connection} = FakeConnection.start_link(self())
+
+      {:ok, session} =
+        start_session(connection: connection, lifecycle: lifecycle, skip_keep_alive: true)
+
+      assert_receive {:chronicle_lifecycle, :connected, _connection_id}, 1_000
+      assert Session.wait_until_ready(session, 1_000) == :ok
+      assert Lifecycle.phase(lifecycle) == :connected
+    end
+
+    test "runs no keepalive task or watchdog", %{lifecycle: lifecycle} do
+      {:ok, connection} = FakeConnection.start_link(self())
+
+      {:ok, session} =
+        start_session(connection: connection, lifecycle: lifecycle, skip_keep_alive: true)
+
+      assert_receive {:chronicle_lifecycle, :connected, _connection_id}, 1_000
+      state = :sys.get_state(session)
+      assert state.keepalive_task == nil
+      assert state.watchdog_timer == nil
+    end
+  end
+
   describe "an observer reports the session lost" do
     @describetag capture_log: true
 

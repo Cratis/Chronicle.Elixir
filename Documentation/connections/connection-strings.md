@@ -45,6 +45,7 @@ URL-encode reserved characters in a client id or secret, such as `@`, `:` and `/
 | Option | Default | Purpose |
 |--------|---------|---------|
 | `apiKey` | none | API key sent with every call. Takes precedence over client credentials. |
+| `auth` | none | Set to `none` to skip authentication altogether. It beats any client credentials or API key in the same connection string, so credentials left in shared configuration cannot quietly switch authentication back on. |
 | `skipTlsValidation` | `true` | Whether to skip validating the server's certificate chain. Set `false` to validate against the operating system's trust store. Applies to the gRPC channel and the token request. |
 | `disableTls` | `false` | Connect over plain HTTP/2. The kernel requires TLS on its port, so only use this behind a proxy that terminates TLS for you. |
 | `loadBalancer` | `least-connections` | How to pick among several hosts or SRV-resolved addresses: `least-connections`, `round-robin` or `random`. |
@@ -53,6 +54,10 @@ URL-encode reserved characters in a client id or secret, such as `@`, `:` and `/
 | `certificatePath` | none | Path to a PKCS#12 (`.p12`/`.pfx`) file or a PEM bundle containing a client certificate and private key. Applied to the gRPC channel and OAuth token request. An empty value is treated as absent. |
 | `certificatePassword` | none | Password for a PKCS#12 file or encrypted PEM private key. An empty value without `certificatePath` is ignored; a non-empty value without a path, or with an empty path, is rejected at startup (unlike the .NET client). |
 
+| `caCertificatePath` | none | Path to a PEM file with the certificate authorities the server certificate must chain to, in place of the operating system's trust store. Used only when `skipTlsValidation=false`, for both the gRPC channel and the token request. The file is read whenever the option is set, so a missing or unreadable file, or one without certificates, fails connection startup even while validation is skipped. |
+| `skipCompatibilityCheck` | `false` | Skip the server compatibility check. An escape hatch for a known-safe client and kernel skew; it hides every other incompatibility too. |
+| `skipKeepAlive` | `false` | Skip the long-lived keep-alive session and its watchdog. Suits short-lived processes such as command line tools and jobs. A client that skips keep-alive cannot host reactors or reducers, because the kernel has no live connection to deliver events on. |
+Option names are matched case-insensitively, like the .NET client, and unknown options are kept. An at sign anywhere in the query except in `apiKey`, `certificatePath`, `certificatePassword`, `caCertificatePath`, `loadBalancer` or `srvNameServer` is rejected: it means a separator in the user information was not percent-encoded.
 A host without a port uses `35000`. IPv6 addresses use brackets, as in `chronicle://[::1]:35000`.
 
 ## TLS
@@ -68,12 +73,12 @@ Give production kernels a certificate your operating system trusts, and add `ski
 chronicle://client-id:client-secret@chronicle.example.com:35000?skipTlsValidation=false
 ```
 
-The Elixir client does not use the configured client certificate to trust the server, unlike the .NET client's fallback. To connect to a kernel with a self-signed certificate while validating the server, provide its certificate as a trusted CA through the gRPC credential's `:cacerts` option. `skipTlsValidation=true` is for development only.
+The Elixir client does not use the configured client certificate to trust the server, unlike the .NET client's fallback. To trust a private certificate authority, or a kernel with a self-signed certificate, while still validating the server, point `caCertificatePath` at a PEM file holding that authority. `skipTlsValidation=true` is for development only.
 :::
 
 If your kernel requires mutual TLS, set `certificatePath` to a PKCS#12 (`.p12`/`.pfx`) file or a PEM file containing both the client certificate and private key. Include intermediate certificates in the bundle when the server trusts only the root. Supply `certificatePassword` when the file is password-protected. The client presents the certificate to both the gRPC channel and the OAuth token endpoint; the private key stays in a process-owned signing table rather than the channel credential.
 
-Configure server trust separately from that client identity. A client certificate does not validate the *server*. To trust a private certificate authority, install it in the operating system's trust store and set `skipTlsValidation=false`, or supply its certificate in `:cacerts` on a gRPC credential with `verify: :verify_peer`. For example, pass `grpc_options: [cred: GRPC.Credential.new(ssl: [verify: :verify_peer, cacerts: [trusted_der]])]`, where `trusted_der` is the DER-encoded trusted certificate. A gRPC credential controls server trust only for the gRPC channel: the client-credentials token request always follows `skipTlsValidation` and the system trust store. When `certificatePath` is configured, the client certificate is added to the gRPC credential even if you pass your own `:cred`.
+Configure server trust separately from that client identity. A client certificate does not validate the *server*. To trust a private certificate authority, set `caCertificatePath` (with `skipTlsValidation=false`), install it in the operating system's trust store, or supply its certificate in `:cacerts` on a gRPC credential with `verify: :verify_peer`. For example, pass `grpc_options: [cred: GRPC.Credential.new(ssl: [verify: :verify_peer, cacerts: [trusted_der]])]`, where `trusted_der` is the DER-encoded trusted certificate. A gRPC credential controls server trust only for the gRPC channel: the client-credentials token request always follows `skipTlsValidation` and the system trust store. When `certificatePath` is configured, the client certificate is added to the gRPC credential even if you pass your own `:cred`.
 
 With a client certificate, put server-verification options on the `GRPC.Credential` passed as `:cred` through `:grpc_options`, not in `:adapter_opts` `:transport_opts`; adapter-level server-verification options are rejected at startup. Server verification uses Mint/OTP defaults or the caller's credential settings, not the client certificate.
 

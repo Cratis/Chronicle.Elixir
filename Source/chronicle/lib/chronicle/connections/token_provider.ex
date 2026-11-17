@@ -81,7 +81,11 @@ defmodule Chronicle.Connections.TokenProvider do
       connection_string: Keyword.fetch!(opts, :connection_string),
       fetch_fun:
         Keyword.get(opts, :fetch_fun, fn connection_string ->
-          default_fetch(connection_string, Keyword.get(opts, :client_certificate, []))
+          default_fetch(
+            connection_string,
+            Keyword.get(opts, :client_certificate, []),
+            Keyword.get(opts, :certificate_authorities)
+          )
         end),
       token: nil,
       expires_at: nil,
@@ -159,7 +163,7 @@ defmodule Chronicle.Connections.TokenProvider do
     end
   end
 
-  defp default_fetch(connection_string, client_certificate) do
+  defp default_fetch(connection_string, client_certificate, certificate_authorities) do
     address = ConnectionString.server_address(connection_string)
 
     # Chronicle serves OAuth on the same port as the gRPC connection, on the
@@ -174,9 +178,14 @@ defmodule Chronicle.Connections.TokenProvider do
       connection_string.password,
       connection_string.disable_tls,
       connection_string.skip_tls_validation,
-      client_certificate
+      with_trust(client_certificate, certificate_authorities)
     )
   end
+
+  defp with_trust(client_certificate, nil), do: client_certificate
+
+  defp with_trust(client_certificate, cacerts),
+    do: Keyword.put(client_certificate, :cacerts, cacerts)
 
   defp now_ms, do: System.monotonic_time(:millisecond)
 end

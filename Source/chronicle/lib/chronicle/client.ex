@@ -509,7 +509,8 @@ defmodule Chronicle.Client do
          connection: conn_name,
          client_name: name,
          lifecycle: lifecycle_name,
-         keepalive_timeout: Keyword.get(opts, :keepalive_timeout)},
+         keepalive_timeout: Keyword.get(opts, :keepalive_timeout),
+         skip_keep_alive: skip_keep_alive?(opts)},
         {Chronicle.Registration.Coordinator,
          Keyword.merge(observer_opts,
            registration: Keyword.get(opts, :registration),
@@ -539,6 +540,19 @@ defmodule Chronicle.Client do
     # everything that subscribes to it restarts and re-subscribes, picking up the
     # current phase via the snapshot returned on subscribe.
     Supervisor.init(children, strategy: :rest_for_one)
+  end
+
+  defp skip_keep_alive?(opts) do
+    case Keyword.get(opts, :connection_string) do
+      %Chronicle.Connections.ConnectionString{skip_keep_alive: skip} ->
+        skip
+
+      value when is_binary(value) ->
+        Chronicle.Connections.ConnectionString.parse(value).skip_keep_alive
+
+      _ ->
+        false
+    end
   end
 
   defp lag_children(opts, name) do

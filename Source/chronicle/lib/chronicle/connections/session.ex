@@ -136,6 +136,7 @@ defmodule Chronicle.Connections.Session do
       last_keepalive: nil,
       watchdog_timer: nil,
       reconnect_timer: nil,
+      skip_keep_alive: Keyword.get(opts, :skip_keep_alive, false),
       reconnect_backoff:
         ReconnectBackoff.new(@reconnect_backoff, Keyword.take(opts, [:jitter_fun, :now_fun])),
       send_after_fun: Keyword.get(opts, :send_after_fun, &Process.send_after(self(), &1, &2)),
@@ -165,6 +166,23 @@ defmodule Chronicle.Connections.Session do
   end
 
   @impl true
+  # `skipKeepAlive`: no Connect stream and no watchdog - the session is "up" as soon as the
+  # channel is. Suits short-lived processes; the kernel has no live connection to deliver
+  # reactor and reducer events on.
+  def handle_info(:connect, %{skip_keep_alive: true} = state) do
+    state = %{state | reconnect_timer: nil}
+
+    case Connection.session_channel(state.connection) do
+      {:ok, _channel} ->
+        state = %{state | connection_id: current_connection_id(state), ready?: true}
+        notify_connected(state)
+        {:noreply, state}
+
+      {:error, _} ->
+        {:noreply, schedule_reconnect(state)}
+    end
+  end
+
   def handle_info(:connect, state) do
     state = %{
       state
