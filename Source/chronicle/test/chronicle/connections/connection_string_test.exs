@@ -251,6 +251,103 @@ defmodule Chronicle.Connections.ConnectionStringTest do
     end
   end
 
+  describe "parse/1 caCertificatePath" do
+    test "defaults to nil" do
+      assert ConnectionString.parse("chronicle://server:35000").ca_certificate_path == nil
+    end
+
+    test "parses the path" do
+      cs = ConnectionString.parse("chronicle://server:35000?caCertificatePath=%2Fetc%2Fca.pem")
+      assert cs.ca_certificate_path == "/etc/ca.pem"
+    end
+
+    test "may hold an at sign" do
+      cs =
+        ConnectionString.parse(
+          "chronicle://server:35000?caCertificatePath=%2Fhome%2Fme@corp%2Fca.pem"
+        )
+
+      assert cs.ca_certificate_path == "/home/me@corp/ca.pem"
+    end
+  end
+
+  describe "parse/1 auth" do
+    test "auth=none disables authentication" do
+      cs = ConnectionString.parse("chronicle://server:35000?auth=none")
+      assert cs.no_authentication
+      assert ConnectionString.authentication_mode(cs) == :none
+    end
+
+    test "is case-insensitive in key and value" do
+      assert ConnectionString.parse("chronicle://server:35000?AUTH=None").no_authentication
+    end
+
+    test "beats credentials and an API key in the same connection string" do
+      with_credentials = ConnectionString.parse("chronicle://user:pass@server:35000?auth=none")
+      with_api_key = ConnectionString.parse("chronicle://server:35000?auth=none&apiKey=abc")
+      assert ConnectionString.authentication_mode(with_credentials) == :none
+      assert ConnectionString.authentication_mode(with_api_key) == :none
+    end
+
+    test "defaults to false" do
+      refute ConnectionString.parse("chronicle://server:35000").no_authentication
+    end
+
+    test "with_credentials/3 and with_api_key/2 switch it off again" do
+      cs = ConnectionString.parse("chronicle://server:35000?auth=none")
+      refute ConnectionString.with_credentials(cs, "u", "p").no_authentication
+      refute ConnectionString.with_api_key(cs, "k").no_authentication
+    end
+  end
+
+  describe "parse/1 skipCompatibilityCheck and skipKeepAlive" do
+    test "both default to false" do
+      cs = ConnectionString.parse("chronicle://server:35000")
+      refute cs.skip_compatibility_check
+      refute cs.skip_keep_alive
+    end
+
+    test "parses both flags" do
+      cs =
+        ConnectionString.parse(
+          "chronicle://server:35000?skipCompatibilityCheck=true&skipKeepAlive=true"
+        )
+
+      assert cs.skip_compatibility_check
+      assert cs.skip_keep_alive
+    end
+  end
+
+  describe "parse/1 key casing and user information" do
+    test "query keys are case-insensitive" do
+      cs =
+        ConnectionString.parse(
+          "chronicle://server:35000?APIKEY=abc&skiptlsvalidation=false&DisableTls=true"
+        )
+
+      assert cs.api_key == "abc"
+      refute cs.skip_tls_validation
+      assert cs.disable_tls
+    end
+
+    test "unknown query keys are kept and round-trip" do
+      cs = ConnectionString.parse("chronicle://server:35000?custom=value")
+      assert ConnectionString.format(cs) == "chronicle://server:35000?custom=value"
+    end
+
+    test "raises when user information spilled an unencoded separator into the query" do
+      assert_raise ArgumentError, ~r/percent-encoded/, fn ->
+        ConnectionString.parse("chronicle://user:pa?ss@server:35000")
+      end
+    end
+
+    test "raises for an at sign in an option that cannot hold one" do
+      assert_raise ArgumentError, ~r/percent-encoded/, fn ->
+        ConnectionString.parse("chronicle://server:35000?loadBalancer=a@b&disableTls=x@y")
+      end
+    end
+  end
+
   describe "format/1" do
     test "round-trips a simple connection string" do
       original = "chronicle://localhost:35000"

@@ -51,6 +51,9 @@ defmodule Chronicle.Connections.ConnectionString do
   ## Query Parameters
 
     * `apiKey` — API key for authentication
+    * `auth` — set to `"none"` to skip authentication altogether. It wins over any
+      credentials or API key the connection string also carries, so credentials left
+      behind by shared configuration cannot quietly switch authentication back on.
     * `disableTls` — set to `"true"` to disable TLS (only for connecting through
       something else that terminates TLS for you, such as a plaintext-terminating
       proxy; the Chronicle kernel requires TLS on its single port, including in
@@ -63,6 +66,18 @@ defmodule Chronicle.Connections.ConnectionString do
       skipped unless explicitly turned on.
     * `certificatePath` — path to a client certificate file
     * `certificatePassword` — password for the client certificate
+    * `caCertificatePath` — path to a PEM file with the certificate authorities the
+      server certificate must chain to, in place of the system trust store. Used only
+      when `skipTlsValidation=false`; the file is nevertheless read when the
+      connection is created, so a missing or unreadable file, or one without
+      certificates, fails connection setup.
+    * `skipCompatibilityCheck` — set to `"true"` to skip the server compatibility
+      check. An escape hatch for a known-safe client/kernel skew; it hides every
+      other incompatibility too.
+    * `skipKeepAlive` — set to `"true"` to skip the long-lived keep-alive session
+      and its watchdog. Suits short-lived processes such as command line tools and
+      jobs. A client that skips keep-alive cannot host reactors or reducers, as the
+      kernel has no live connection to deliver events on.
     * `loadBalancer` — strategy used to pick among multiple hosts (or
       SRV-resolved addresses): `"least-connections"` (default), `"round-robin"`,
       or `"random"`. See `Chronicle.Connections.LoadBalancer`.
@@ -83,6 +98,13 @@ defmodule Chronicle.Connections.ConnectionString do
   @default_port 35_000
   @development_client "chronicle-dev-client"
   @development_client_secret "chronicle-dev-secret"
+
+  @query_keys ~w(apiKey auth skipTlsValidation disableTls skipCompatibilityCheck skipKeepAlive
+                 loadBalancer srvNameServer certificatePath certificatePassword caCertificatePath
+                 authPort)
+  @known_query_keys Map.new(@query_keys, fn key -> {String.downcase(key), key} end)
+  @keys_that_may_hold_at_sign ~w(apiKey certificatePath certificatePassword caCertificatePath
+                                 loadBalancer srvNameServer)
 
   @load_balancer_strategies %{
     "least-connections" => :least_connections,
@@ -113,6 +135,10 @@ defmodule Chronicle.Connections.ConnectionString do
             skip_tls_validation: true,
             certificate_path: nil,
             certificate_password: nil,
+            ca_certificate_path: nil,
+            no_authentication: false,
+            skip_compatibility_check: false,
+            skip_keep_alive: false,
             auth_port: nil,
             load_balancer: :least_connections,
             srv_name_server: nil,
@@ -130,6 +156,10 @@ defmodule Chronicle.Connections.ConnectionString do
           skip_tls_validation: boolean(),
           certificate_path: String.t() | nil,
           certificate_password: String.t() | nil,
+          ca_certificate_path: String.t() | nil,
+          no_authentication: boolean(),
+          skip_compatibility_check: boolean(),
+          skip_keep_alive: boolean(),
           auth_port: non_neg_integer() | nil,
           load_balancer: load_balancer_strategy(),
           srv_name_server: String.t() | nil,
@@ -233,6 +263,10 @@ defmodule Chronicle.Connections.ConnectionString do
       skip_tls_validation: flag?(query_parameters, "skipTlsValidation", true),
       certificate_path: Map.get(query_parameters, "certificatePath"),
       certificate_password: Map.get(query_parameters, "certificatePassword"),
+      ca_certificate_path: Map.get(query_parameters, "caCertificatePath"),
+      no_authentication: no_authentication?(query_parameters),
+      skip_compatibility_check: flag?(query_parameters, "skipCompatibilityCheck", false),
+      skip_keep_alive: flag?(query_parameters, "skipKeepAlive", false),
       auth_port: auth_port,
       load_balancer: parse_load_balancer(query_parameters),
       srv_name_server: Map.get(query_parameters, "srvNameServer"),
@@ -255,6 +289,8 @@ defmodule Chronicle.Connections.ConnectionString do
       :client_credentials
   """
   @spec authentication_mode(t()) :: :client_credentials | :api_key | :none
+  def authentication_mode(%__MODULE__{no_authentication: true}), do: :none
+
   def authentication_mode(%__MODULE__{} = connection_string) do
     has_credentials? =
       present?(connection_string.username) and
@@ -284,13 +320,15 @@ defmodule Chronicle.Connections.ConnectionString do
   """
   @spec with_credentials(t(), String.t(), String.t()) :: t()
   def with_credentials(%__MODULE__{} = connection_string, username, password) do
-    updated_query_parameters = Map.delete(connection_string.query_parameters, "apiKey")
+    updated_query_parameters =
+      connection_string.query_parameters |> Map.delete("apiKey") |> Map.delete("auth")
 
     %{
       connection_string
       | username: username,
         password: password,
         api_key: nil,
+        no_authentication: false,
         query_parameters: updated_query_parameters
     }
   end
@@ -302,13 +340,15 @@ defmodule Chronicle.Connections.ConnectionString do
   """
   @spec with_api_key(t(), String.t()) :: t()
   def with_api_key(%__MODULE__{} = connection_string, api_key) do
-    query_parameters = Map.put(connection_string.query_parameters, "apiKey", api_key)
+    query_parameters =
+      connection_string.query_parameters |> Map.put("apiKey", api_key) |> Map.delete("auth")
 
     %{
       connection_string
       | username: nil,
         password: nil,
         api_key: api_key,
+        no_authentication: false,
         query_parameters: query_parameters
     }
   end
@@ -395,8 +435,58 @@ defmodule Chronicle.Connections.ConnectionString do
     end
   end
 
+  # Keys are matched case-insensitively, like the .NET client, and folded to their canonical
+  # spelling so every lookup below can use it. Unknown keys pass through untouched.
   defp parse_query(nil), do: %{}
-  defp parse_query(query), do: URI.decode_query(query)
+
+  defp parse_query(query) do
+    query
+    |> reject_unencoded_at_sign!()
+    |> URI.decode_query()
+    |> Map.new(fn {key, value} -> {canonical_key(key), value} end)
+  end
+
+  defp canonical_key(key) do
+    Map.get(@known_query_keys, String.downcase(key), key)
+  end
+
+  # An at sign in a query value means the user information contained a separator that was not
+  # percent-encoded and spilled into the query - unless the option is one that may hold one.
+  defp reject_unencoded_at_sign!(query) do
+    misplaced? =
+      query
+      |> String.split("&")
+      |> Enum.any?(&misplaced_at_sign?/1)
+
+    if misplaced? do
+      raise ArgumentError,
+            "Connection string user information must be percent-encoded: it contains a separator"
+    end
+
+    query
+  end
+
+  defp misplaced_at_sign?(pair) do
+    if String.contains?(pair, "@") do
+      case String.split(pair, "=", parts: 2) do
+        [key, _value] ->
+          String.contains?(key, "@") or
+            canonical_key(URI.decode_www_form(key)) not in @keys_that_may_hold_at_sign
+
+        [_key_only] ->
+          true
+      end
+    else
+      false
+    end
+  end
+
+  defp no_authentication?(query_parameters) do
+    case Map.get(query_parameters, "auth") do
+      nil -> false
+      value -> String.downcase(value) == "none"
+    end
+  end
 
   defp parse_hosts(hosts_part) do
     hosts_part

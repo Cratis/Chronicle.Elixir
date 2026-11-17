@@ -525,6 +525,103 @@ defmodule Chronicle.Connections.ConnectionTest do
              ]
     end
 
+    test "auth=none adds no auth even when credentials are present" do
+      test_pid = self()
+      channel = channel_with_conn(self())
+
+      conn =
+        start(
+          connection_string: "chronicle://user:pass@localhost:35000?auth=none&disableTls=true",
+          connect_fun: fn _target, opts ->
+            send(test_pid, {:opts, opts})
+            {:ok, channel}
+          end,
+          auto_connect: true
+        )
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert_receive {:opts, opts}
+      assert opts[:headers] == []
+
+      assert opts[:interceptors] == [
+               Chronicle.Connections.TracePropagationInterceptor,
+               Chronicle.Connections.TransportFailureInterceptor
+             ]
+    end
+
+    test "auth=none sends no api-key header" do
+      test_pid = self()
+      channel = channel_with_conn(self())
+
+      conn =
+        start(
+          connection_string: "chronicle://localhost:35000?apiKey=abc&auth=none&disableTls=true",
+          connect_fun: fn _target, opts ->
+            send(test_pid, {:opts, opts})
+            {:ok, channel}
+          end,
+          auto_connect: true
+        )
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert_receive {:opts, opts}
+      assert opts[:headers] == []
+    end
+
+    @tag :tmp_dir
+    test "caCertificatePath replaces the system trust store when validation is on", %{
+      tmp_dir: dir
+    } do
+      %{client_config: config} =
+        :public_key.pkix_test_data(%{
+          server_chain: %{root: [], peer: []},
+          client_chain: %{root: [], peer: []}
+        })
+
+      [authority | _] = Keyword.fetch!(config, :cacerts)
+      path = Path.join(dir, "ca.pem")
+      File.write!(path, :public_key.pem_encode([{:Certificate, authority, :not_encrypted}]))
+
+      test_pid = self()
+      channel = channel_with_conn(self())
+
+      conn =
+        start(
+          connection_string:
+            "chronicle://localhost:35000?skipTlsValidation=false&caCertificatePath=#{URI.encode_www_form(path)}",
+          connect_fun: fn _target, opts ->
+            send(test_pid, {:opts, opts})
+            {:ok, channel}
+          end,
+          auto_connect: true
+        )
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert_receive {:opts, opts}
+      assert opts[:cred].ssl[:verify] == :verify_peer
+      assert opts[:cred].ssl[:cacerts] == [authority]
+    end
+
+    test "a missing caCertificatePath file fails the connection setup" do
+      assert {:error, _reason} =
+               start_invalid("chronicle://localhost:35000?caCertificatePath=%2Fno%2Fsuch.pem")
+    end
+
+    test "skipCompatibilityCheck hands out the channel without asking the kernel" do
+      channel = channel_with_conn(self())
+
+      conn =
+        start(
+          connection_string:
+            "chronicle://localhost:35000?skipCompatibilityCheck=true&disableTls=true",
+          connect_fun: fn _target, _opts -> {:ok, channel} end,
+          auto_connect: true
+        )
+
+      assert Connection.connect(conn, 1_000) == :ok
+      assert GenServer.call(conn, :append_channel) == {:ok, channel}
+    end
+
     test "adds no auth at all without credentials" do
       test_pid = self()
       channel = channel_with_conn(self())

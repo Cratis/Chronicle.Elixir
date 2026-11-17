@@ -6,6 +6,29 @@ defmodule Chronicle.Connections.AuthTest do
 
   alias Chronicle.Connections.Auth
 
+  describe "transport_opts/3" do
+    test "verifies against the system trust store by default" do
+      [transport_opts: opts] = Auth.transport_opts(false, false, [])
+      assert opts[:verify] == :verify_peer
+      assert opts[:cacerts] == :public_key.cacerts_get()
+    end
+
+    test "verifies against the configured certificate authorities instead" do
+      [transport_opts: opts] = Auth.transport_opts(false, false, cacerts: [<<1, 2, 3>>])
+      assert opts[:verify] == :verify_peer
+      assert opts[:cacerts] == [<<1, 2, 3>>]
+    end
+
+    test "never presents the certificate authorities as a client identity" do
+      [transport_opts: opts] = Auth.transport_opts(false, true, cacerts: [<<1, 2, 3>>])
+      assert opts == [verify: :verify_none]
+    end
+
+    test "ignores the certificate authorities when TLS is disabled" do
+      assert Auth.transport_opts(true, false, cacerts: [<<1, 2, 3>>]) == []
+    end
+  end
+
   test "a failed token response closes the open Mint socket" do
     {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true])
     {:ok, {_, port}} = :inet.sockname(listener)

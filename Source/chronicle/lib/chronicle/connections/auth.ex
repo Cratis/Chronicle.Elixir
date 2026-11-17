@@ -185,18 +185,24 @@ defmodule Chronicle.Connections.Auth do
 
   @doc false
   @spec transport_opts(boolean(), boolean(), keyword()) :: keyword()
-  def transport_opts(true, _skip_tls_validation, []), do: []
+  def transport_opts(disable_tls, skip_tls_validation, client_certificate) do
+    # `:cacerts` is not part of the client identity: it carries the certificate authorities from
+    # the connection string's `caCertificatePath` and replaces the system trust store.
+    {cacerts, identity} = Keyword.pop(client_certificate, :cacerts)
+    build_transport_opts(disable_tls, skip_tls_validation, identity, cacerts)
+  end
 
-  def transport_opts(true, _skip_tls_validation, _client_certificate) do
+  defp build_transport_opts(true, _skip_tls_validation, [], _cacerts), do: []
+
+  defp build_transport_opts(true, _skip_tls_validation, _client_certificate, _cacerts) do
     raise ArgumentError, "client certificate cannot be used when TLS is disabled"
   end
 
-  def transport_opts(false, true, client_certificate),
+  defp build_transport_opts(false, true, client_certificate, _cacerts),
     do: [transport_opts: [verify: :verify_none] ++ client_certificate]
 
-  def transport_opts(false, false, client_certificate) do
-    trust = [verify: :verify_peer, cacerts: :public_key.cacerts_get()]
-
+  defp build_transport_opts(false, false, client_certificate, cacerts) do
+    trust = [verify: :verify_peer, cacerts: cacerts || :public_key.cacerts_get()]
     [transport_opts: trust ++ client_certificate]
   end
 
