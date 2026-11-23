@@ -104,7 +104,7 @@ defmodule Chronicle.Observers do
               previous_next_event_sequence_number: 0,
               next_event_sequence_number: 0
 
-    @type outcome :: :fast_forwarded | :already_at_tail | :replaying | :not_available
+    @type outcome :: :fast_forwarded | :already_at_tail | :replaying | :not_available | :accepted
 
     @type t :: %__MODULE__{
             outcome: outcome(),
@@ -182,6 +182,7 @@ defmodule Chronicle.Observers do
           | :partition_not_found
           | :observer_quarantined
           | :partition_quarantined
+          | :accepted
           | :unknown
 
   @doc """
@@ -192,7 +193,9 @@ defmodule Chronicle.Observers do
 
   Returns `{:ok, outcome}` where outcome is `:started` (a recovery was started or resumed),
   `:partition_not_found` (nothing failed there), `:observer_quarantined` or `:partition_quarantined`
-  (clear the quarantine first, see `clear_partition_quarantine/3`).
+  (clear the quarantine first, see `clear_partition_quarantine/3`). A kernel that runs recoveries as
+  jobs answers `:accepted` at once instead: the recovery was accepted, and what became of it is the
+  result of its job.
   """
   @spec retry_partition(String.t() | module(), String.t(), keyword()) ::
           {:ok, retry_outcome()} | {:error, term()}
@@ -219,7 +222,7 @@ defmodule Chronicle.Observers do
 
   Options: `:retry_immediately` (default `true`), plus the common options.
 
-  Returns `{:ok, %{outcome: :cleared | :not_found | :not_quarantined, retry_outcome: outcome}}`
+  Returns `{:ok, %{outcome: :cleared | :not_found | :not_quarantined | :accepted, retry_outcome: outcome}}`
   where `retry_outcome` is a `t:retry_outcome/0`. Mirrors .NET's
   `ClearFailedPartitionQuarantineFor<TReactor>(partition, retryImmediately)`.
   """
@@ -308,12 +311,20 @@ defmodule Chronicle.Observers do
   def decode_retry_outcome(outcome) when outcome in [:PartitionQuarantined, 3],
     do: :partition_quarantined
 
+  def decode_retry_outcome(outcome) when outcome in [:PARTITION_RECOVERY_OUTCOME_Accepted, 4],
+    do: :accepted
+
   def decode_retry_outcome(_), do: :unknown
 
   @doc false
   def decode_clear_outcome(outcome) when outcome in [:Cleared, 0], do: :cleared
   def decode_clear_outcome(outcome) when outcome in [:NotFound, 1], do: :not_found
   def decode_clear_outcome(outcome) when outcome in [:NotQuarantined, 2], do: :not_quarantined
+
+  def decode_clear_outcome(outcome)
+      when outcome in [:CLEAR_PARTITION_QUARANTINE_OUTCOME_Accepted, 3],
+      do: :accepted
+
   def decode_clear_outcome(_), do: :unknown
 
   @doc """
@@ -324,7 +335,8 @@ defmodule Chronicle.Observers do
   events is missing from it; replay the observer instead to rebuild.
 
   Returns a `FastForwardResult` saying what happened and where the observer is now. An observer
-  that is replaying is left alone and reported as `:replaying`.
+  that is replaying is left alone and reported as `:replaying`. A kernel that runs the fast forward
+  as a job answers `:accepted` at once; what became of it is the result of the job.
   """
   @spec fast_forward(String.t(), keyword()) :: {:ok, FastForwardResult.t()} | {:error, term()}
   def fast_forward(observer_id, opts \\ []) when is_binary(observer_id) do
@@ -403,6 +415,8 @@ defmodule Chronicle.Observers do
   defp decode_fast_forward_outcome(:FastForwarded), do: :fast_forwarded
   defp decode_fast_forward_outcome(:AlreadyAtTail), do: :already_at_tail
   defp decode_fast_forward_outcome(:ObserverReplaying), do: :replaying
+  defp decode_fast_forward_outcome(:FAST_FORWARD_OUTCOME_Accepted), do: :accepted
+  defp decode_fast_forward_outcome(4), do: :accepted
   defp decode_fast_forward_outcome(_), do: :not_available
 
   defp decode_removal_outcome(:Removed), do: :removed
