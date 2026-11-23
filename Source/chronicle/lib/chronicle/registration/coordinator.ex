@@ -60,7 +60,7 @@ defmodule Chronicle.Registration.Coordinator do
   alias Bcl.Guid, as: BclGuid
 
   alias Chronicle.Discovery.{DriftDetector, Report}
-  alias Chronicle.Registration.RetryPolicy
+  alias Chronicle.Registration.{AcceptedRegistration, RetryPolicy}
 
   @drift_findings_key :chronicle_drift_findings
   @drift_checked_key :chronicle_drift_checked
@@ -122,6 +122,8 @@ defmodule Chronicle.Registration.Coordinator do
       graphs: Keyword.get(opts, :graphs, []),
       global_handlers: Keyword.get(opts, :global_handlers, []),
       constraints: Keyword.get(opts, :constraints, []),
+      registrant: Keyword.get(opts, :registrant, ""),
+      accepted_registration: Keyword.get(opts, :accepted_registration, []),
       default_sink_type_id: Keyword.get(opts, :default_sink_type_id, "MongoDB"),
       default_graph_sink_type_id:
         Keyword.get(opts, :default_graph_sink_type_id, WellKnownSinkTypes.neo4j()),
@@ -628,18 +630,30 @@ defmodule Chronicle.Registration.Coordinator do
     if Enum.empty?(definitions) do
       :ok
     else
+      registrant = Map.get(state, :registrant, "")
+
+      # `FullSet` stays false: the kernel retires what a full set leaves out, and this batch does
+      # not claim to be everything the application ever declared.
       request =
         struct(RegisterRequest,
           EventStore: state.event_store,
           Owner: 1,
-          Projections: definitions
+          Projections: definitions,
+          Registrant: registrant,
+          FullSet: false
         )
 
-      case Projections.Stub.register(channel, request) do
-        {:ok, _} ->
-          Logger.info("Registered #{length(definitions)} projection(s) with Chronicle")
-          :ok
-
+      with {:ok, _} <- Projections.Stub.register(channel, request),
+           :ok <-
+             AcceptedRegistration.wait(
+               channel,
+               state.event_store,
+               registrant,
+               Map.get(state, :accepted_registration, [])
+             ) do
+        Logger.info("Registered #{length(definitions)} projection(s) with Chronicle")
+        :ok
+      else
         {:error, reason} ->
           {:error, {:register_projections, reason}}
       end
