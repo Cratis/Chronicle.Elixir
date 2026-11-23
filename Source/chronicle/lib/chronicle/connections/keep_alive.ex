@@ -16,6 +16,8 @@ defmodule Chronicle.Connections.KeepAlive do
   # and every append keeps working. This mirrors the C# client's
   # ChronicleConnection.HandleConnection.
 
+  require Logger
+
   alias Cratis.Chronicle.Contracts.Clients.ConnectionService
   alias Cratis.Chronicle.Contracts.Clients.ConnectionKeepAlive, as: KeepAliveMessage
 
@@ -31,23 +33,58 @@ defmodule Chronicle.Connections.KeepAlive do
   """
   @spec run(pid(), Enumerable.t(), %GRPC.Channel{}, String.t(), answer_fun()) :: :ok
   def run(handler, reply_stream, channel, connection_id, answer_fun \\ &__MODULE__.answer/2) do
-    reason =
-      Enum.reduce_while(reply_stream, :stream_ended, fn
-        {:ok, _keepalive}, _acc ->
+    {reason, _status} =
+      Enum.reduce_while(reply_stream, {:stream_ended, :accepting}, fn
+        {:ok, keepalive}, {_reason, status} ->
           send(handler, :keepalive_received)
+          status = observe_status(status, keepalive)
 
           case answer_fun.(channel, connection_id) do
-            :ok -> {:cont, :stream_ended}
-            {:error, reason} -> {:halt, {:keepalive_failed, reason}}
+            :ok -> {:cont, {:stream_ended, status}}
+            {:error, reason} -> {:halt, {{:keepalive_failed, reason}, status}}
           end
 
-        {:error, reason}, _acc ->
-          {:halt, reason}
+        {:error, reason}, {_reason, status} ->
+          {:halt, {reason, status}}
       end)
 
     send(handler, {:session_down, reason})
     :ok
   end
+
+  # The kernel says in each keepalive whether it is taking on work: `Accepting`, `Degraded` (busy)
+  # or `Recovering`. A kernel that says nothing is accepting. The client logs when that changes and
+  # otherwise carries on as before; its calls are retried by their own backoff.
+  defp observe_status(previous, keepalive) do
+    current = kernel_status(if is_map(keepalive), do: Map.get(keepalive, :Status))
+
+    if current != previous do
+      log_status_change(previous, current)
+    end
+
+    current
+  end
+
+  defp kernel_status(status) when status in [nil, :Accepting, 0], do: :accepting
+  defp kernel_status(status) when status in [:Degraded, 1], do: :degraded
+  defp kernel_status(status) when status in [:Recovering, 2], do: :recovering
+  defp kernel_status(_unknown), do: :unknown
+
+  defp log_status_change(_previous, :accepting),
+    do: Logger.info("Chronicle is accepting calls normally again")
+
+  defp log_status_change(_previous, :degraded),
+    do:
+      Logger.warning("Chronicle reports that it is busy; calls may be slow or be asked to retry")
+
+  defp log_status_change(_previous, :recovering),
+    do:
+      Logger.warning(
+        "Chronicle reports that it is recovering; calls may be slow or be asked to retry"
+      )
+
+  defp log_status_change(_previous, :unknown),
+    do: Logger.warning("Chronicle reports a status this client does not know")
 
   @doc """
   Answers a single keepalive by calling the unary ConnectionKeepAlive RPC.
