@@ -591,9 +591,11 @@ defmodule Chronicle.Registration.Coordinator do
   defp sink_type_id(_state, true), do: WellKnownSinkTypes.none()
   defp sink_type_id(state, false), do: state.default_sink_type_id
 
-  defp register_projections(_channel, %{read_models: [], projections: [], graphs: []}), do: :ok
+  # Public so the request it sends can be asserted through a fake channel.
+  @doc false
+  def register_projections(_channel, %{read_models: [], projections: [], graphs: []}), do: :ok
 
-  defp register_projections(channel, state) do
+  def register_projections(channel, state) do
     model_bound_entries =
       state.read_models
       |> Enum.filter(& &1.__chronicle_read_model__(:has_projection?))
