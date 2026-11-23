@@ -96,6 +96,12 @@ returns `:started`, `:partition_not_found`, `:observer_quarantined` or `:partiti
 (clear the quarantine first). `clear_partition_quarantine/3` retries immediately unless you pass
 `retry_immediately: false`.
 
+A kernel that runs recoveries and fast forwards as jobs answers `:accepted` straight away, from
+`retry_partition/3`, from the `retry_outcome` of `clear_partition_quarantine/3` (whose own outcome is
+then `:accepted` too) and from `fast_forward/2`. The request was taken on; what became of it is the
+result of the job. An outcome this client does not know is reported as `:unknown`, or
+`:not_available` for a fast forward, rather than raising.
+
 ## Lag
 
 An observer that was evicted or stalled is invisible from the append side. `Chronicle.Observers.Lag.measure/1`

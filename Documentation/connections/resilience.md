@@ -132,6 +132,8 @@ Seeders run each time the lifecycle reaches `:registered`: at startup and again 
 
 A failed observation stream is a different problem from losing the client's session. Each reactor and reducer manages its own observation stream. If one stream fails while the connection is healthy, only that stream reopens, after a short delay.
 
+When the kernel advertises the `multiplexed-observation` capability, those streams are carried over one shared call to Chronicle instead of one call each, and the reactors and reducers register in one write. Each keeps its own stream within it: a slow handler does not hold back another, and one stream ending with an error does not end the others. If the shared call itself fails, or the kernel breaks the order of a stream's messages, every stream ends and reopens on a new call, the same way they reopen after any lost connection. Set `multiplex_observation: false` on the client to give each reactor and reducer its own call; a kernel without the capability gets that anyway.
+
 The delay grows while a stream keeps ending without having worked. The first wait is at most two seconds, and each stream that ends without having worked doubles that ceiling, up to a minute. Every wait lands at random in the upper half of its ceiling, so many observers that fail together during a kernel rollout come back at different times instead of as one herd. The wait starts over at two seconds once a stream delivered something or stayed open for three minutes. The three minutes are longer than the kernel takes to give up establishing a stream against a busy observer, so slow subscribes keep backing off. The defaults match the .NET client. Tune them with the `:observation_reconnect` client option, in milliseconds:
 
 ```elixir

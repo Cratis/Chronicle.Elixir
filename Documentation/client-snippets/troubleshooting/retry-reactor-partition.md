@@ -36,4 +36,4 @@ defmodule MyApp.Troubleshooting.RetryReactorPartition do
 end
 ```
 
-In Elixir, `{:ok, :started}` means a recovery job started or resumed. `{:ok, :partition_not_found}` means the failure was already cleared (or never existed), not that the call failed. `{:ok, :observer_quarantined}` and `{:ok, :partition_quarantined}` mean retry was refused until the corresponding quarantine is cleared. `{:ok, :unknown}` means the server returned an outcome this client version does not recognize; do not treat it as success.
+In Elixir, `{:ok, :started}` means a recovery job started or resumed. `{:ok, :partition_not_found}` means the failure was already cleared (or never existed), not that the call failed. `{:ok, :observer_quarantined}` and `{:ok, :partition_quarantined}` mean retry was refused until the corresponding quarantine is cleared. `{:ok, :accepted}` means a kernel that runs recoveries as jobs took the request on; what became of it is the result of the job. `{:ok, :unknown}` means the server returned an outcome this client version does not recognize; do not treat it as success.
