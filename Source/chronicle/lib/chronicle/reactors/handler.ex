@@ -86,7 +86,7 @@ defmodule Chronicle.Reactors.Handler do
       batch_functions: functions.batch,
       generation_delivery: generation_delivery,
       establish_fun: Keyword.get(opts, :establish_fun, &default_establish/2),
-      send_fun: Keyword.get(opts, :send_fun, &GRPC.Stub.send_request/2),
+      send_fun: Keyword.get(opts, :send_fun, &ObservationStream.send_request/2),
       append_fun:
         Keyword.get(opts, :append_fun, fn operation ->
           Dispatch.default_append(operation, client)
@@ -270,7 +270,13 @@ defmodule Chronicle.Reactors.Handler do
         registration = build_registration(state, connection_id)
 
         with {:ok, stream, response_processes} <-
-               ObservationStream.open(channel, &Reactors.Stub.observe/1, registration) do
+               ObservationStream.open(
+                 channel,
+                 &Reactors.Stub.observe/1,
+                 registration,
+                 multiplexer(state),
+                 :reactor
+               ) do
           handler = self()
           task = Task.async(fn -> receive_loop(handler, stream) end)
           {:ok, stream, task, response_processes}
@@ -285,11 +291,15 @@ defmodule Chronicle.Reactors.Handler do
     :exit, reason -> {:error, reason}
   end
 
+  # The multiplexed observation channel of the client, when it runs one.
+  defp multiplexer(%{client: client}),
+    do: Chronicle.Observers.Multiplexed.Channel.name_for(client)
+
   defp registered?(%{lifecycle: nil}), do: true
   defp registered?(%{lifecycle: lifecycle}), do: Lifecycle.phase(lifecycle) == :registered
 
   defp receive_loop(handler, stream) do
-    case GRPC.Stub.recv(stream) do
+    case ObservationStream.recv(stream) do
       {:ok, reply_stream} ->
         Enum.each(reply_stream, fn
           {:ok, events_to_observe} ->
