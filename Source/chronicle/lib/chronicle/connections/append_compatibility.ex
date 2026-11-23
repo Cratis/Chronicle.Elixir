@@ -43,13 +43,45 @@ defmodule Chronicle.Connections.AppendCompatibility do
     end
   end
 
-  defp check_descriptor(channel, descriptor) do
-    request = %CompatibilityRequest{
+  @doc """
+  Asks the kernel what it can do: the capabilities it advertises, such as `multiplexed-observation`.
+
+  Returns `{:error, reason}` when the kernel cannot be asked or is not compatible, in which case
+  a client keeps to what every kernel supports.
+  """
+  @spec capabilities(%GRPC.Channel{}) :: {:ok, [String.t()]} | {:error, term()}
+  def capabilities(channel) do
+    case DescriptorSet.bytes() do
+      <<>> ->
+        {:error, :missing_contract_descriptor}
+
+      descriptor ->
+        case ConnectionService.Stub.check_compatibility(channel, request(descriptor),
+               timeout: 10_000
+             ) do
+          {:ok, %{IsCompatible: true, Incompatibilities: []} = response} ->
+            {:ok, Map.get(response, :Capabilities, [])}
+
+          {:ok, response} ->
+            {:error, {:incompatible_server, response}}
+
+          {:error, reason} ->
+            {:error, {:compatibility_check_failed, reason}}
+        end
+    end
+  end
+
+  defp request(descriptor) do
+    %CompatibilityRequest{
       ClientType: "Elixir",
       ClientVersion: @client_version,
       ProtocolVersion: @protocol_version,
       DescriptorSet: descriptor
     }
+  end
+
+  defp check_descriptor(channel, descriptor) do
+    request = request(descriptor)
 
     case ConnectionService.Stub.check_compatibility(channel, request, timeout: 10_000) do
       {:ok, %{IsCompatible: true, Incompatibilities: []}} -> :ok
