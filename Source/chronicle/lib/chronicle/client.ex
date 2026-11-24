@@ -168,6 +168,11 @@ defmodule Chronicle.Client do
       by default, matching the .NET client. A `:base_delay` of `0` reopens at once.
       `:max_delay` must not be below `:base_delay`. An unknown option or an invalid
       value raises `ArgumentError` when the client starts.
+    * `:multiplex_observation` — defaults to `true`. When the kernel advertises the
+      `multiplexed-observation` capability, every reactor and reducer of the client observes
+      over one shared stream to Chronicle instead of one stream each, and they all register in
+      one write. Set it to `false` to give each its own stream, which is what a kernel without
+      the capability gets in any case.
     * `:keepalive_timeout` — milliseconds without a keepalive from the kernel after
       which the session is treated as dead and reconnected. Defaults to `5_000`, matching
       the kernel's `connectedClients.staleThresholdSeconds` (5); raise both together.
@@ -511,8 +516,12 @@ defmodule Chronicle.Client do
          lifecycle: lifecycle_name,
          keepalive_timeout: Keyword.get(opts, :keepalive_timeout),
          skip_keep_alive: skip_keep_alive?(opts)},
+        {Chronicle.Observers.Multiplexed.Channel,
+         name: Chronicle.Observers.Multiplexed.Channel.name_for(name),
+         enabled: Keyword.get(opts, :multiplex_observation, true)},
         {Chronicle.Registration.Coordinator,
          Keyword.merge(observer_opts,
+           registrant: registrant(opts, name),
            registration: Keyword.get(opts, :registration),
            event_types: event_types,
            event_sources: event_sources,
@@ -540,6 +549,15 @@ defmodule Chronicle.Client do
     # everything that subscribes to it restarts and re-subscribes, picking up the
     # current phase via the snapshot returned on subscribe.
     Supervisor.init(children, strategy: :rest_for_one)
+  end
+
+  # Who the kernel records a projection registration as coming from: the application the
+  # client discovers its artifacts in, or else the client's own name.
+  defp registrant(opts, name) do
+    case Keyword.get(opts, :otp_app) do
+      nil -> inspect(name)
+      otp_app -> to_string(otp_app)
+    end
   end
 
   defp skip_keep_alive?(opts) do

@@ -19,6 +19,32 @@ defmodule Chronicle.Observers.ObservationStream do
   # (see Chronicle.Connections.ResponseProcesses).
 
   alias Chronicle.Connections.ResponseProcesses
+  alias Chronicle.Observers.Multiplexed.{Channel, ObserverStream}
+
+  @doc """
+  Opens the observation stream of a `kind` (`:reactor` or `:reducer`) observer.
+
+  When `multiplexer` is the registered name of a `Chronicle.Observers.Multiplexed.Channel` that
+  is running and the kernel supports it, the stream is a share of the connection's one
+  multiplexed call. Otherwise it is the observer's own call, opened as `open/3` does.
+  """
+  @spec open(
+          GRPC.Channel.t(),
+          (GRPC.Channel.t() -> GRPC.Client.Stream.t()),
+          struct(),
+          atom() | nil,
+          atom()
+        ) ::
+          {:ok, GRPC.Client.Stream.t() | ObserverStream.t(), [pid()]} | {:error, term()}
+  def open(channel, observe, registration, multiplexer, kind) do
+    with pid when is_pid(pid) <- multiplexer && Process.whereis(multiplexer),
+         {:ok, stream} <- Channel.open(pid, channel, kind, registration) do
+      {:ok, stream, []}
+    else
+      {:error, _reason} = error -> error
+      _ -> open(channel, observe, registration)
+    end
+  end
 
   @doc """
   Opens an observation stream with `observe` on `channel` and sends `registration` on it.
@@ -57,10 +83,30 @@ defmodule Chronicle.Observers.ObservationStream do
   @spec close(GRPC.Client.Stream.t() | nil, [pid()]) :: :ok
   def close(nil, response_processes), do: ResponseProcesses.stop(response_processes)
 
+  def close(%ObserverStream{} = stream, response_processes) do
+    Channel.close(stream)
+    ResponseProcesses.stop(response_processes)
+  end
+
   def close(stream, response_processes) do
     end_stream(stream)
     ResponseProcesses.stop(response_processes)
   end
+
+  @doc """
+  Sends `message` on an observation stream of either kind. Replaceable in the handlers' tests.
+  """
+  @spec send_request(GRPC.Client.Stream.t() | ObserverStream.t(), struct()) :: term()
+  def send_request(%ObserverStream{} = stream, message),
+    do: ObserverStream.send_request(stream, message)
+
+  def send_request(stream, message), do: GRPC.Stub.send_request(stream, message)
+
+  @doc "The deliveries of an observation stream of either kind, as `GRPC.Stub.recv/1` gives them."
+  @spec recv(GRPC.Client.Stream.t() | ObserverStream.t()) ::
+          {:ok, Enumerable.t()} | {:error, term()}
+  def recv(%ObserverStream{} = stream), do: ObserverStream.recv(stream)
+  def recv(stream), do: GRPC.Stub.recv(stream)
 
   defp end_stream(stream) do
     GRPC.Stub.end_stream(stream)

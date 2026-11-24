@@ -4,6 +4,8 @@
 defmodule Chronicle.Connections.KeepAliveTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
   alias Chronicle.Connections.KeepAlive
 
   defp answering(test_pid, result \\ :ok) do
@@ -58,5 +60,56 @@ defmodule Chronicle.Connections.KeepAliveTest do
     # A failing answer means the session is already lost; continuing to consume
     # the stream would keep it looking alive.
     refute_receive {:answered, :channel, "conn-1"}, 100
+  end
+
+  describe "the status the kernel reports" do
+    defp run_with(statuses) do
+      stream = Enum.map(statuses, &{:ok, %{Status: &1}})
+
+      capture_log([level: :info], fn ->
+        KeepAlive.run(self(), stream, :channel, "c", answering(self()))
+      end)
+    end
+
+    test "is quiet while the kernel is accepting" do
+      assert run_with([:Accepting, :Accepting]) == ""
+    end
+
+    test "reads a keepalive without a status as accepting" do
+      log =
+        capture_log([level: :info], fn ->
+          KeepAlive.run(self(), [{:ok, %{}}, {:ok, :keepalive}], :channel, "c", answering(self()))
+        end)
+
+      assert log == ""
+    end
+
+    test "warns once when the kernel becomes busy, however many keepalives say so" do
+      log = run_with([:Accepting, :Degraded, :Degraded, :Degraded])
+
+      assert length(String.split(log, "reports that it is busy")) == 2
+    end
+
+    test "warns when the kernel is recovering" do
+      assert run_with([:Recovering]) =~ "recovering"
+    end
+
+    test "says when the kernel accepts calls normally again" do
+      log = run_with([:Degraded, :Accepting])
+
+      assert log =~ "reports that it is busy"
+      assert log =~ "accepting calls normally again"
+    end
+
+    test "does not crash on a status it does not know" do
+      assert run_with([99]) =~ "status this client does not know"
+    end
+
+    test "still answers every keepalive" do
+      run_with([:Degraded, :Recovering])
+
+      assert_receive {:answered, :channel, "c"}
+      assert_receive {:answered, :channel, "c"}
+    end
   end
 end

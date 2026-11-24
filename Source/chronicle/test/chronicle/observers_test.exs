@@ -32,9 +32,56 @@ defmodule Chronicle.ObserversTest do
                Observers.decode_fast_forward_result(%{Outcome: :ObserverReplaying})
     end
 
+    test "decodes an accepted fast forward" do
+      assert %FastForwardResult{outcome: :accepted} =
+               Observers.decode_fast_forward_result(%{Outcome: :FAST_FORWARD_OUTCOME_Accepted})
+
+      assert %FastForwardResult{outcome: :accepted} =
+               Observers.decode_fast_forward_result(%{Outcome: 4})
+    end
+
+    test "decodes an outcome number this client does not know as not available" do
+      assert %FastForwardResult{outcome: :not_available} =
+               Observers.decode_fast_forward_result(%{Outcome: 99})
+    end
+
     test "decodes an unrecognized outcome as not available" do
       assert %FastForwardResult{outcome: :not_available} =
                Observers.decode_fast_forward_result(%{Outcome: :bogus})
+    end
+  end
+
+  describe "decode_retry_outcome/1" do
+    test "decodes an accepted retry by name and by number" do
+      assert :accepted = Observers.decode_retry_outcome(:PARTITION_RECOVERY_OUTCOME_Accepted)
+      assert :accepted = Observers.decode_retry_outcome(4)
+    end
+
+    test "keeps decoding the outcomes it knew" do
+      assert :started = Observers.decode_retry_outcome(:Started)
+      assert :partition_quarantined = Observers.decode_retry_outcome(:PartitionQuarantined)
+    end
+
+    test "does not crash on an outcome it does not know" do
+      assert :unknown = Observers.decode_retry_outcome(99)
+    end
+  end
+
+  describe "decode_clear_outcome/1" do
+    test "decodes an accepted clear by name and by number" do
+      assert :accepted =
+               Observers.decode_clear_outcome(:CLEAR_PARTITION_QUARANTINE_OUTCOME_Accepted)
+
+      assert :accepted = Observers.decode_clear_outcome(3)
+    end
+
+    test "keeps decoding the outcomes it knew" do
+      assert :cleared = Observers.decode_clear_outcome(:Cleared)
+      assert :not_quarantined = Observers.decode_clear_outcome(:NotQuarantined)
+    end
+
+    test "does not crash on an outcome it does not know" do
+      assert :unknown = Observers.decode_clear_outcome(99)
     end
   end
 
