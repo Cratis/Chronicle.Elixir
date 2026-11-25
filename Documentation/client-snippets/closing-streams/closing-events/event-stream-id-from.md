@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.ClosingEventsBooksReopened do
-  use Chronicle.Events.EventType, id: "closing-events-books-reopened"
+  use Cratis.Chronicle.Events.EventType, id: "closing-events-books-reopened"
 
   defstruct [:period, :reason]
 end
 
 defmodule MyApp.Events.ClosingEventsBooksClosed do
-  use Chronicle.Events.EventType, id: "closing-events-books-closed"
+  use Cratis.Chronicle.Events.EventType, id: "closing-events-books-closed"
 
   defstruct [:period, :closing_balance]
 

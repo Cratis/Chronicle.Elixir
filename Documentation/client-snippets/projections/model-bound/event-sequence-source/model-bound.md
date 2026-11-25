@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.MbEventSeqOrderPlaced do
-  use Chronicle.Events.EventType, id: "mb-event-seq-order-placed"
+  use Cratis.Chronicle.Events.EventType, id: "mb-event-seq-order-placed"
 
   defstruct amount: 0.0
 end
 
 defmodule MyApp.ReadModels.MbEventSeqOrderSummary do
-  use Chronicle.ReadModels.ReadModel, event_sequence: "custom-sequence"
+  use Cratis.Chronicle.ReadModels.ReadModel, event_sequence: "custom-sequence"
 
   defstruct id: "", total_amount: 0.0
 

@@ -36,8 +36,8 @@ Every span uses the `Cratis.Chronicle.Client` instrumentation scope — the same
 
 | Span name | Kind | Where |
 | --- | --- | --- |
-| `cratis.chronicle.client.event_sequence.append` | Client | `Chronicle.EventSequences.EventLog.append/3`, `append_with_result/3` |
-| `cratis.chronicle.client.event_sequence.append_many` | Client | `append_many/3`, `append_many_with_result/3`, `append_many_for_event_sources/2`, and a `Chronicle.Transactions.UnitOfWork.commit/1` |
+| `cratis.chronicle.client.event_sequence.append` | Client | `Cratis.Chronicle.EventSequences.EventLog.append/3`, `append_with_result/3` |
+| `cratis.chronicle.client.event_sequence.append_many` | Client | `append_many/3`, `append_many_with_result/3`, `append_many_for_event_sources/2`, and a `Cratis.Chronicle.Transactions.UnitOfWork.commit/1` |
 | `cratis.chronicle.client.reactor.handle` | Consumer | a reactor's `handle/2` (and `handle_replay/2`) delivery |
 | `cratis.chronicle.client.reducer.reduce` | Consumer | a reducer's `reduce/3` delivery |
 
@@ -94,9 +94,9 @@ The `:stop` event's metadata carries `error: true` when the operation returned `
 
 ## Trace propagation
 
-Every outbound gRPC call carries the W3C `traceparent`/`tracestate` headers for whichever OpenTelemetry span is active in the calling process, injected by `Chronicle.Connections.TracePropagationInterceptor`. This interceptor is always installed — like the rest of this instrumentation, it does nothing without an SDK-configured propagator, and is not something you configure or disable per connection.
+Every outbound gRPC call carries the W3C `traceparent`/`tracestate` headers for whichever OpenTelemetry span is active in the calling process, injected by `Cratis.Chronicle.Connections.TracePropagationInterceptor`. This interceptor is always installed — like the rest of this instrumentation, it does nothing without an SDK-configured propagator, and is not something you configure or disable per connection.
 
-This means a trace that started in your application (an HTTP request, a Phoenix LiveView event) continues into the Chronicle kernel when your handler for it calls `Chronicle.EventSequences.EventLog.append/3` or a query, as long as the call happens inside the active span — for example inside `OpenTelemetry.Tracer.with_span/2`.
+This means a trace that started in your application (an HTTP request, a Phoenix LiveView event) continues into the Chronicle kernel when your handler for it calls `Cratis.Chronicle.EventSequences.EventLog.append/3` or a query, as long as the call happens inside the active span — for example inside `OpenTelemetry.Tracer.with_span/2`.
 
 ## Not covered
 

@@ -1,6 +1,6 @@
 ```elixir
 defmodule EventProcessingHourlyMetricRecorded do
-  use Chronicle.Events.EventType, id: "event-processing-hourly-metric-recorded"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-hourly-metric-recorded"
 
   defstruct [:value]
 end
@@ -10,7 +10,7 @@ defmodule EventProcessingHourlyMetrics do
 end
 
 defmodule EventProcessingHourlyMetricsReducer do
-  use Chronicle.Reducers.Reducer, model: EventProcessingHourlyMetrics
+  use Cratis.Chronicle.Reducers.Reducer, model: EventProcessingHourlyMetrics
 
   alias EventProcessingHourlyMetricRecorded
 

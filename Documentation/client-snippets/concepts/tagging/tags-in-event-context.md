@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.ReadModels.TaggingUserAnalytics do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: nil, login_count: 0, critical_login_count: 0
 end
 
 defmodule MyApp.Reducers.TaggingUserAnalyticsReducer do
-  use Chronicle.Reducers.Reducer, model: MyApp.ReadModels.TaggingUserAnalytics
+  use Cratis.Chronicle.Reducers.Reducer, model: MyApp.ReadModels.TaggingUserAnalytics
 
   alias MyApp.Events.TaggingUserLoggedIn
   alias MyApp.ReadModels.TaggingUserAnalytics

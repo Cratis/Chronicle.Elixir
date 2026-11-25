@@ -11,21 +11,21 @@ Event sourcing for Elixir — the idiomatic client for [Cratis Chronicle](https:
 
 `cratis_chronicle` brings event sourcing and CQRS to Elixir applications: append events to an event store, project them into read models, and react to them — all backed by the Chronicle Kernel. It builds on Chronicle's language-agnostic gRPC API and exposes OTP-native constructs including:
 
-- **`use Chronicle.Events.EventType`** — annotate structs as event types with stable IDs
-- **`use Chronicle.ReadModels.ReadModel`** — declare model-bound projections executed server-side
-- **`use Chronicle.Graphs.Graph`** — project events onto a property graph with `node` and `edge`
-- **`use Chronicle.Reactors.Reactor`** — react to events with side effects
-- **`use Chronicle.Reducers.Reducer`** — fold events into read models in your own process
-- **`use Chronicle.Seeding.Seeder`** — seed event stores with baseline events at startup
-- **Constraints** — unique and unique-event-type constraints on event types, or in standalone `use Chronicle.Events.Constraint` modules
+- **`use Cratis.Chronicle.Events.EventType`** — annotate structs as event types with stable IDs
+- **`use Cratis.Chronicle.ReadModels.ReadModel`** — declare model-bound projections executed server-side
+- **`use Cratis.Chronicle.Graphs.Graph`** — project events onto a property graph with `node` and `edge`
+- **`use Cratis.Chronicle.Reactors.Reactor`** — react to events with side effects
+- **`use Cratis.Chronicle.Reducers.Reducer`** — fold events into read models in your own process
+- **`use Cratis.Chronicle.Seeding.Seeder`** — seed event stores with baseline events at startup
+- **Constraints** — unique and unique-event-type constraints on event types, or in standalone `use Cratis.Chronicle.Events.Constraint` modules
 - **Decision reads** — guard a unit of work against concurrent appends (the dynamic consistency boundary)
-- **`use Chronicle.Captures.Capture`** — declare captures that turn external input into events
-- **`Chronicle.Testing`** — an in-memory kernel and assertions for specs that don't need a running kernel
+- **`use Cratis.Chronicle.Captures.Capture`** — declare captures that turn external input into events
+- **`Cratis.Chronicle.Testing`** — an in-memory kernel and assertions for specs that don't need a running kernel
 - **Observability** — OpenTelemetry spans, `:telemetry` events and W3C trace propagation
 - **Context-aware appends** — process-scoped identity, correlation, and causation metadata
 - **Optimistic concurrency** — guard appends with scoped tail-sequence checks
 - **Transactions** — buffer and commit multi-event units of work
-- **`Chronicle.Imports`** — import large volumes of history from any `Enumerable`, chunked, resumable and validated before anything is committed
+- **`Cratis.Chronicle.Imports`** — import large volumes of history from any `Enumerable`, chunked, resumable and validated before anything is committed
 - **Jobs and webhooks** — inspect Chronicle jobs and manage webhook registrations
 - **Resilient connection** — automatic reconnection with exponential backoff
 
@@ -67,14 +67,14 @@ The `127.0.0.1:` prefixes keep both ports on your machine: the development kerne
 
 ```elixir
 defmodule MyApp.Events.AccountOpened do
-  use Chronicle.Events.EventType, id: "account-opened"
+  use Cratis.Chronicle.Events.EventType, id: "account-opened"
 
   # Typed defaults: the client derives the event's JSON schema from them.
   defstruct owner: "", balance: 0
 end
 
 defmodule MyApp.ReadModels.Account do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: "", owner: "", balance: 0
 
@@ -88,7 +88,7 @@ defmodule MyApp.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      {Chronicle.Client,
+      {Cratis.Chronicle.Client,
        # Development-only credentials for the local development kernel.
        connection_string: "chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000",
        event_store: "my-app",
@@ -103,16 +103,16 @@ end
 Then, with the application running (for example in `iex -S mix`):
 
 ```elixir
-alias Chronicle.Connections.Lifecycle
+alias Cratis.Chronicle.Connections.Lifecycle
 
 # The client connects and registers in the background; until then, calls return
 # {:error, :not_connected}.
-:ok = Lifecycle.wait_until(Lifecycle.name_for(Chronicle.Client), :registered)
+:ok = Lifecycle.wait_until(Lifecycle.name_for(Cratis.Chronicle.Client), :registered)
 
-:ok = Chronicle.append("account-42", %MyApp.Events.AccountOpened{owner: "Alice", balance: 1000})
+:ok = Cratis.Chronicle.append("account-42", %MyApp.Events.AccountOpened{owner: "Alice", balance: 1000})
 
 # Projections run asynchronously: this can be {:ok, nil} until the projection catches up.
-{:ok, account} = Chronicle.read_model(MyApp.ReadModels.Account, "account-42")
+{:ok, account} = Cratis.Chronicle.read_model(MyApp.ReadModels.Account, "account-42")
 ```
 
 ## Known limitations

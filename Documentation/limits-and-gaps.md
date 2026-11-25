@@ -14,8 +14,8 @@ description: Kernel limits to size your data against, the consistency guarantees
 
 ## Consistency
 
-- `Chronicle.append/3` returning `:ok` means the event is stored. Projections, reducers and reactors process it **afterwards and asynchronously**.
-- A read model read right after an append, including `append_many/3`, may not reflect it yet. When you need your own write, use `Chronicle.EventSequences.EventLog.append_and_wait_for_completion/3` or `AppendResult.wait_for_completion/2`, which return once the affected observers have processed the event (or failed).
+- `Cratis.Chronicle.append/3` returning `:ok` means the event is stored. Projections, reducers and reactors process it **afterwards and asynchronously**.
+- A read model read right after an append, including `append_many/3`, may not reflect it yet. When you need your own write, use `Cratis.Chronicle.EventSequences.EventLog.append_and_wait_for_completion/3` or `AppendResult.wait_for_completion/2`, which return once the affected observers have processed the event (or failed).
 - `await_registration/2` returns once the client's artifacts are registered. Observers subscribe right after; wait for the first events you depend on with the calls above rather than sleeping.
 - `get/3` returns `{:ok, nil}` both for a key that does not exist and for one that is not projected yet.
 
@@ -26,9 +26,9 @@ description: Kernel limits to size your data against, the consistency guarantees
 ## Not supported yet
 
 - The filter of `query/2` is evaluated by the client, not the kernel.
-- `Chronicle.Testing.InMemoryKernel` models appends, reads, concurrency scopes and `unique`/`unique_event_type` constraints, but not `closes_stream` constraints or the read model and projection query surface. Use `Chronicle.Testing.Integration` against a running kernel for those, and note that the kernel has no way to delete the event stores those specs create.
+- `Cratis.Chronicle.Testing.InMemoryKernel` models appends, reads, concurrency scopes and `unique`/`unique_event_type` constraints, but not `closes_stream` constraints or the read model and projection query surface. Use `Cratis.Chronicle.Testing.Integration` against a running kernel for those, and note that the kernel has no way to delete the event stores those specs create.
 - A shared read model subscription that reconnects does not replay the changes made while it was down, because the kernel's watch request cannot resume from a sequence number. Query again after `{:chronicle_read_model_watch_resumed, model}`.
-- `Chronicle.Projections.preview/2` runs a registered projection's declaration over a stored event sequence; previewing a projection over events you supply is not possible.
+- `Cratis.Chronicle.Projections.preview/2` runs a registered projection's declaration over a stored event sequence; previewing a projection over events you supply is not possible.
 - Webhook sources in captures cannot carry authentication, and the kernel engine currently runs only `api` and `events` sources.
 - Event metadata carries no content hash or size; the hash of an event is on its `EventContext`.
 - Projections have no `min`/`max` operations, because the kernel has no such expressions.

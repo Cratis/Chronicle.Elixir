@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.ReadModels.WatchingBasicOrder do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: "", status: ""
 end
@@ -9,7 +9,7 @@ defmodule MyApp.WatchingReadModelsBasicMonitor do
   alias MyApp.ReadModels.WatchingBasicOrder
 
   def start_watching do
-    {:ok, watcher} = Chronicle.ReadModels.watch(WatchingBasicOrder)
+    {:ok, watcher} = Cratis.Chronicle.ReadModels.watch(WatchingBasicOrder)
     watcher
   end
 
@@ -24,6 +24,6 @@ defmodule MyApp.WatchingReadModelsBasicMonitor do
     end
   end
 
-  def stop_watching(watcher), do: Chronicle.ReadModels.unwatch(watcher)
+  def stop_watching(watcher), do: Cratis.Chronicle.ReadModels.unwatch(watcher)
 end
 ```

@@ -1,12 +1,12 @@
 ```elixir title="Business defaults"
 defmodule MyApp.Events.DecInitialValuesOrderSubmitted do
-  use Chronicle.Events.EventType, id: "dec-initial-values-order-submitted"
+  use Cratis.Chronicle.Events.EventType, id: "dec-initial-values-order-submitted"
 
   defstruct [:customer_name, :total_amount]
 end
 
 defmodule MyApp.ReadModels.DecInitialValuesOrderSummary do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct customer_name: "",
             status: "Draft",
@@ -16,7 +16,7 @@ defmodule MyApp.ReadModels.DecInitialValuesOrderSummary do
 end
 
 defmodule MyApp.Projections.DecInitialValuesOrderSummaryProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.DecInitialValuesOrderSummary
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.DecInitialValuesOrderSummary
 
   alias MyApp.Events.DecInitialValuesOrderSubmitted
 

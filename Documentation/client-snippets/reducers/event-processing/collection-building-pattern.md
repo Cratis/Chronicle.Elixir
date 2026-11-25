@@ -1,6 +1,6 @@
 ```elixir
 defmodule EventProcessingCustomerAction do
-  use Chronicle.Events.EventType, id: "event-processing-customer-action"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-customer-action"
 
   defstruct [:type, :description]
 end
@@ -14,7 +14,7 @@ defmodule EventProcessingCustomerActivityLog do
 end
 
 defmodule EventProcessingCustomerActivityLogReducer do
-  use Chronicle.Reducers.Reducer, model: EventProcessingCustomerActivityLog
+  use Cratis.Chronicle.Reducers.Reducer, model: EventProcessingCustomerActivityLog
 
   alias EventProcessingCustomerAction
   alias EventProcessingActivity

@@ -1,23 +1,23 @@
 ```elixir
 defmodule MyApp.Events.TestingScenarioFullAuthorRegistered do
-  use Chronicle.Events.EventType, id: "testing-scenario-full-author-registered"
+  use Cratis.Chronicle.Events.EventType, id: "testing-scenario-full-author-registered"
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.TestingScenarioFullBookAdded do
-  use Chronicle.Events.EventType, id: "testing-scenario-full-book-added"
+  use Cratis.Chronicle.Events.EventType, id: "testing-scenario-full-book-added"
 
   defstruct [:title]
 end
 
 defmodule MyApp.TestingScenarioFullExampleTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [MyApp.Events.TestingScenarioFullAuthorRegistered, MyApp.Events.TestingScenarioFullBookAdded]
 
-  import Chronicle.Testing.Assertions
+  import Cratis.Chronicle.Testing.Assertions
 
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.{TestingScenarioFullAuthorRegistered, TestingScenarioFullBookAdded}
 
   setup %{chronicle: client} do

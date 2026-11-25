@@ -3,13 +3,13 @@
 # `removed_with` always lives inside the owning `children` block, so this is the same declaration
 # as the property-level form.
 defmodule MyApp.Events.MbChildrenLineItemAddedForClassRemoval do
-  use Chronicle.Events.EventType, id: "mb-children-line-item-added-for-class-removal"
+  use Cratis.Chronicle.Events.EventType, id: "mb-children-line-item-added-for-class-removal"
 
   defstruct [:line_item_id, :product_name]
 end
 
 defmodule MyApp.Events.MbChildrenLineItemRemovedClassLevel do
-  use Chronicle.Events.EventType, id: "mb-children-line-item-removed-class-level"
+  use Cratis.Chronicle.Events.EventType, id: "mb-children-line-item-removed-class-level"
 
   defstruct [:line_item_id]
 end
@@ -19,7 +19,7 @@ defmodule MyApp.ReadModels.MbChildrenRemovableLineClassLevel do
 end
 
 defmodule MyApp.ReadModels.MbChildrenOrderWithClassLevelRemoval do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [lines: {:list, MyApp.ReadModels.MbChildrenRemovableLineClassLevel}]
 
   defstruct order_id: nil, lines: []

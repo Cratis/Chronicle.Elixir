@@ -1,20 +1,20 @@
 ```elixir
 defmodule MyApp.Events.MonthlyLimitMoneyWithdrawn do
-  use Chronicle.Events.EventType, id: "monthly-limit-money-withdrawn"
+  use Cratis.Chronicle.Events.EventType, id: "monthly-limit-money-withdrawn"
 
   defstruct [:amount]
 end
 
 # Names the source type and the stream, so the read and the append use the same values.
 defmodule MyApp.MonthlyLimitBankAccountEventSource do
-  use Chronicle.EventSources.EventSource, name: "BankAccount"
+  use Cratis.Chronicle.EventSources.EventSource, name: "BankAccount"
 
   stream "Transactions", description: "Deposits and withdrawals, one stream per month"
 end
 
 # The decision model: what this account has withdrawn in the stream the read is scoped to.
 defmodule MyApp.ReadModels.MonthlyLimitWithdrawnThisMonth do
-  use Chronicle.ReadModels.ReadModel, passive: true
+  use Cratis.Chronicle.ReadModels.ReadModel, passive: true
 
   defstruct id: nil, total: 0
 
@@ -22,8 +22,8 @@ defmodule MyApp.ReadModels.MonthlyLimitWithdrawnThisMonth do
 end
 
 defmodule MyApp.MonthlyLimitWithdraw do
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.ReadModels.{DecisionConflict, DecisionReads}
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.ReadModels.{DecisionConflict, DecisionReads}
   alias MyApp.Events.MonthlyLimitMoneyWithdrawn
   alias MyApp.MonthlyLimitBankAccountEventSource
   alias MyApp.ReadModels.MonthlyLimitWithdrawnThisMonth
@@ -33,7 +33,7 @@ defmodule MyApp.MonthlyLimitWithdraw do
   # month is the stream id, for example "2026-10".
   def handle(account_id, month, amount) do
     result =
-      Chronicle.decide(fn _unit_of_work ->
+      Cratis.Chronicle.decide(fn _unit_of_work ->
         # Reads only BankAccount / Transactions / month, and guards only that stream.
         {:ok, read} =
           DecisionReads.get(

@@ -1,36 +1,36 @@
 ```elixir
 defmodule MyApp.Events.CustomerRegistered do
-  use Chronicle.Events.EventType, id: "graph-customer-registered"
+  use Cratis.Chronicle.Events.EventType, id: "graph-customer-registered"
   defstruct customer_id: ""
 end
 
 defmodule MyApp.Events.ShopRegistered do
-  use Chronicle.Events.EventType, id: "graph-shop-registered"
+  use Cratis.Chronicle.Events.EventType, id: "graph-shop-registered"
   defstruct shop_id: ""
 end
 
 defmodule MyApp.Events.ShopVisited do
-  use Chronicle.Events.EventType, id: "graph-shop-visited"
+  use Cratis.Chronicle.Events.EventType, id: "graph-shop-visited"
   defstruct customer_id: "", shop_id: "", visit_id: ""
 end
 
 defmodule MyApp.Graphs.Customer do
-  use Chronicle.Graphs.Node
+  use Cratis.Chronicle.Graphs.Node
   defstruct customer_id: ""
 end
 
 defmodule MyApp.Graphs.Shop do
-  use Chronicle.Graphs.Node
+  use Cratis.Chronicle.Graphs.Node
   defstruct shop_id: ""
 end
 
 defmodule MyApp.Graphs.Visited do
-  use Chronicle.Graphs.Edge, type: "VISITED"
+  use Cratis.Chronicle.Graphs.Edge, type: "VISITED"
   defstruct visit_id: "", times: 0
 end
 
 defmodule MyApp.Graphs.Visits do
-  use Chronicle.Graphs.Graph, id: "Visits"
+  use Cratis.Chronicle.Graphs.Graph, id: "Visits"
 
   alias MyApp.Events.{CustomerRegistered, ShopRegistered, ShopVisited}
   alias MyApp.Graphs.{Customer, Shop, Visited}

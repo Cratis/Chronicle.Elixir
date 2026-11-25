@@ -5,7 +5,7 @@ description: Import selected events from another event store's outbox into yours
 
 Chronicle.Elixir supports event store subscriptions for importing events from one event store into another event store.
 
-This is useful when you want one Chronicle event store to consume selected events from another store's outbox without writing a reactor or webhook. See [Explicit event store subscriptions](/chronicle/subscriptions/explicit-subscriptions/) and [Outbox/inbox](/chronicle/subscriptions/outbox-inbox/) for the underlying concepts and how they apply across every client. This page adds the Elixir-specific **discoverable subscription module** pattern (`use Chronicle.EventStoreSubscriptions.Subscription`), which isn't covered there.
+This is useful when you want one Chronicle event store to consume selected events from another store's outbox without writing a reactor or webhook. See [Explicit event store subscriptions](/chronicle/subscriptions/explicit-subscriptions/) and [Outbox/inbox](/chronicle/subscriptions/outbox-inbox/) for the underlying concepts and how they apply across every client. This page adds the Elixir-specific **discoverable subscription module** pattern (`use Cratis.Chronicle.EventStoreSubscriptions.Subscription`), which isn't covered there.
 
 The registration, listing and removal requests below target the selected client's event store, not a namespace.
 Confirm the source/target stores and selected event types before registering or removing anything.
@@ -21,10 +21,10 @@ Confirm the source/target stores and selected event types before registering or 
 
 Choose one registration approach for a subscription:
 
-1. **Discoverably** with `use Chronicle.EventStoreSubscriptions.Subscription`
-2. **Imperatively** with `Chronicle.EventStoreSubscriptions.subscribe/4`
+1. **Discoverably** with `use Cratis.Chronicle.EventStoreSubscriptions.Subscription`
+2. **Imperatively** with `Cratis.Chronicle.EventStoreSubscriptions.subscribe/4`
 
-`Chronicle.Client` can auto-discover and register subscription modules during startup, just like it does for reactors, reducers, read models, migrations, and webhooks.
+`Cratis.Chronicle.Client` can auto-discover and register subscription modules during startup, just like it does for reactors, reducers, read models, migrations, and webhooks.
 
 ## Discoverable subscriptions
 
@@ -34,10 +34,10 @@ If you don't select any event types, the subscription uses the event types the c
 
 ```elixir
 defmodule MyApp.EventStoreSubscriptions.DefaultAccountEvents do
-  use Chronicle.EventStoreSubscriptions.Subscription,
+  use Cratis.Chronicle.EventStoreSubscriptions.Subscription,
     source_event_store: "default"
 
-  alias Chronicle.EventStoreSubscriptions.DefinitionBuilder
+  alias Cratis.Chronicle.EventStoreSubscriptions.DefinitionBuilder
 
   @impl true
   def define(builder) do
@@ -48,35 +48,35 @@ defmodule MyApp.EventStoreSubscriptions.DefaultAccountEvents do
 end
 ```
 
-### Options for `use Chronicle.EventStoreSubscriptions.Subscription`
+### Options for `use Cratis.Chronicle.EventStoreSubscriptions.Subscription`
 
 - `:source_event_store` — **required** name of the source event store to subscribe to
 - `:id` — optional stable identifier for the subscription. Defaults to the module name.
 
-The `define/1` callback receives a `Chronicle.EventStoreSubscriptions.DefinitionBuilder`.
+The `define/1` callback receives a `Cratis.Chronicle.EventStoreSubscriptions.DefinitionBuilder`.
 Return the builder after selecting event types.
 
-## Auto-registration with `Chronicle.Client`
+## Auto-registration with `Cratis.Chronicle.Client`
 
-Start `Chronicle.Client` with discovery enabled:
+Start `Cratis.Chronicle.Client` with discovery enabled:
 
 ```elixir
 children = [
-  {Chronicle.Client,
+  {Cratis.Chronicle.Client,
    connection_string: "chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000",
    event_store: "target-store",
    otp_app: :my_app}
 ]
 ```
 
-If your OTP application includes modules that use `Chronicle.EventStoreSubscriptions.Subscription`, the client discovers them and registers them automatically on startup.
+If your OTP application includes modules that use `Cratis.Chronicle.EventStoreSubscriptions.Subscription`, the client discovers them and registers them automatically on startup.
 
 You can also register discoverable subscriptions manually:
 
 ```elixir
-:ok = Chronicle.register_event_store_subscription(MyApp.EventStoreSubscriptions.DefaultAccountEvents)
+:ok = Cratis.Chronicle.register_event_store_subscription(MyApp.EventStoreSubscriptions.DefaultAccountEvents)
 
-:ok = Chronicle.register_discovered_event_store_subscriptions()
+:ok = Cratis.Chronicle.register_discovered_event_store_subscriptions()
 ```
 
 Both accept `client:` with the `name:` of another running client, when you start more than one.
@@ -87,15 +87,15 @@ For one-off or runtime-defined subscriptions, register them directly:
 
 ```elixir
 :ok =
-  Chronicle.subscribe_to_event_store(
+  Cratis.Chronicle.subscribe_to_event_store(
     "default-account-events",
     "default",
     fn builder ->
       builder
-      |> Chronicle.EventStoreSubscriptions.DefinitionBuilder.with_event_type(
+      |> Cratis.Chronicle.EventStoreSubscriptions.DefinitionBuilder.with_event_type(
         MyApp.Events.AccountOpened
       )
-      |> Chronicle.EventStoreSubscriptions.DefinitionBuilder.with_event_type(
+      |> Cratis.Chronicle.EventStoreSubscriptions.DefinitionBuilder.with_event_type(
         MyApp.Events.FundsDeposited
       )
     end
@@ -111,23 +111,23 @@ The arguments are:
 
 ## Listing subscriptions
 
-`Chronicle.EventStoreSubscriptions.get_all/1` returns every event store subscription
+`Cratis.Chronicle.EventStoreSubscriptions.get_all/1` returns every event store subscription
 currently registered with the target event store. Mirrors the C# and Kotlin clients'
 `IEventStoreSubscriptions.GetAll()`.
 
 ```elixir
-{:ok, subscriptions} = Chronicle.EventStoreSubscriptions.get_all()
+{:ok, subscriptions} = Cratis.Chronicle.EventStoreSubscriptions.get_all()
 
 Enum.each(subscriptions, fn subscription ->
   IO.puts("#{subscription.id} <- #{subscription.source_event_store}")
 end)
 ```
 
-Each subscription is returned as a `%Chronicle.EventStoreSubscriptions.Definition{}` with:
+Each subscription is returned as a `%Cratis.Chronicle.EventStoreSubscriptions.Definition{}` with:
 
 - `:id` — the subscription's identifier
 - `:source_event_store` — the event store it imports events from
-- `:event_types` — the `%Chronicle.EventStoreSubscriptions.EventType{}` list it subscribes to
+- `:event_types` — the `%Cratis.Chronicle.EventStoreSubscriptions.EventType{}` list it subscribes to
 
 ## Removing subscriptions
 
@@ -136,12 +136,12 @@ Confirm the subscription id, target event store and authority from inspection be
 Remove a subscription by identifier:
 
 ```elixir
-:ok = Chronicle.unsubscribe_from_event_store("default-account-events")
+:ok = Cratis.Chronicle.unsubscribe_from_event_store("default-account-events")
 ```
 
 ## Definition builder
 
-`Chronicle.EventStoreSubscriptions.DefinitionBuilder` currently supports:
+`Cratis.Chronicle.EventStoreSubscriptions.DefinitionBuilder` currently supports:
 
 - `new/1`
 - `with_event_type/2`
@@ -150,7 +150,7 @@ Remove a subscription by identifier:
 Example:
 
 ```elixir
-alias Chronicle.EventStoreSubscriptions.DefinitionBuilder
+alias Cratis.Chronicle.EventStoreSubscriptions.DefinitionBuilder
 
 builder =
   DefinitionBuilder.new([MyApp.Events.AccountOpened, MyApp.Events.FundsDeposited])
@@ -161,7 +161,7 @@ If `with_event_type/2` is never called, `build/3` uses all registered event type
 
 ## Client options
 
-`Chronicle.Client` accepts:
+`Cratis.Chronicle.Client` accepts:
 
 - `:event_store_subscriptions` — explicit list of discoverable subscription modules
 - `:discover` — enables or disables auto-discovery

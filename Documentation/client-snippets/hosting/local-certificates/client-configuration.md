@@ -4,7 +4,7 @@ defmodule MyApp.HostingLocalCertificatesClientConfiguration do
 
   def start_link do
     children = [
-      {Chronicle.Client,
+      {Cratis.Chronicle.Client,
        connection_string:
          "chronicle://localhost:35000?certificatePath=./chronicle-dev.pfx&certificatePassword=YourPassword123"}
     ]

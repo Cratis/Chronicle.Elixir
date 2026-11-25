@@ -1,6 +1,6 @@
 ```elixir title="Composite key from event content and context"
 defmodule MyApp.Projections.AuditEntryProjectionWithCompositeKey do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.AuditEntryWithCompositeKey
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.AuditEntryWithCompositeKey
 
   alias MyApp.Events.CompositeUserAction
 

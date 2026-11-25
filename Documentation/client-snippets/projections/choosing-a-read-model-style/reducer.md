@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.ReadModels.ChoosingStyleBookStatusReducerModel do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: nil, title: nil, isbn: nil, is_borrowed: false, borrowed_by: nil
 
@@ -8,7 +8,7 @@ defmodule MyApp.ReadModels.ChoosingStyleBookStatusReducerModel do
 end
 
 defmodule MyApp.Reducers.ChoosingStyleBookStatusReducer do
-  use Chronicle.Reducers.Reducer, model: MyApp.ReadModels.ChoosingStyleBookStatusReducerModel
+  use Cratis.Chronicle.Reducers.Reducer, model: MyApp.ReadModels.ChoosingStyleBookStatusReducerModel
 
   alias MyApp.Events.{
     ChoosingStyleBookBorrowed,

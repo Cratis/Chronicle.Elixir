@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.TestingCollectionSingleItemRegistered do
-  use Chronicle.Events.EventType, id: "testing-collection-single-item-registered"
+  use Cratis.Chronicle.Events.EventType, id: "testing-collection-single-item-registered"
 
   defstruct [:name]
 end
 
 defmodule MyApp.TestingCollectionSingleEventTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [MyApp.Events.TestingCollectionSingleItemRegistered]
 
   alias MyApp.Events.TestingCollectionSingleItemRegistered
@@ -15,13 +15,13 @@ defmodule MyApp.TestingCollectionSingleEventTest do
     event_source_id = "item-#{System.unique_integer([:positive])}"
 
     :ok =
-      Chronicle.EventSequences.EventLog.append(
+      Cratis.Chronicle.EventSequences.EventLog.append(
         event_source_id,
         %TestingCollectionSingleItemRegistered{name: "Widget"},
         client: client
       )
 
-    captured = Chronicle.Testing.appended_events(client, event_source_id)
+    captured = Cratis.Chronicle.Testing.appended_events(client, event_source_id)
 
     assert [%{event: %TestingCollectionSingleItemRegistered{}, context: context}] = captured
     assert context.sequence_number != nil

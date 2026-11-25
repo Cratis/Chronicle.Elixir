@@ -1,21 +1,21 @@
 ```elixir
 defmodule MyApp.Events.TestingSeqAssertTailAuthorRegistered do
-  use Chronicle.Events.EventType, id: "testing-seq-assert-tail-author-registered"
+  use Cratis.Chronicle.Events.EventType, id: "testing-seq-assert-tail-author-registered"
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.TestingSeqAssertTailBookAdded do
-  use Chronicle.Events.EventType, id: "testing-seq-assert-tail-book-added"
+  use Cratis.Chronicle.Events.EventType, id: "testing-seq-assert-tail-book-added"
 
   defstruct [:title]
 end
 
 defmodule MyApp.TestingSeqAssertTailSequenceNumberTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [MyApp.Events.TestingSeqAssertTailAuthorRegistered, MyApp.Events.TestingSeqAssertTailBookAdded]
 
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.{TestingSeqAssertTailAuthorRegistered, TestingSeqAssertTailBookAdded}
 
   test "the tail is the sequence number of the last appended event", %{chronicle: client} do

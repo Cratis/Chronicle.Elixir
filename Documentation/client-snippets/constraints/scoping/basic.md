@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.EmailChanged do
-  use Chronicle.Events.EventType, id: "email-changed"
+  use Cratis.Chronicle.Events.EventType, id: "email-changed"
 
   defstruct [:email]
 

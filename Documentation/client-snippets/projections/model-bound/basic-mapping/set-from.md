@@ -1,12 +1,12 @@
 ```elixir title="Model-bound set mapping"
 defmodule MyApp.Events.UserRegisteredForContact do
-  use Chronicle.Events.EventType, id: "user-registered-for-contact-v1"
+  use Cratis.Chronicle.Events.EventType, id: "user-registered-for-contact-v1"
 
   defstruct [:name, :email]
 end
 
 defmodule MyApp.ReadModels.UserContact do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.UserRegisteredForContact
 

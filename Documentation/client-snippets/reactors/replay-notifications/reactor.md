@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.ReplayNotifiedOrderPlaced do
-  use Chronicle.Events.EventType, id: "replay-notified-order-placed"
+  use Cratis.Chronicle.Events.EventType, id: "replay-notified-order-placed"
 
   defstruct [:order_id]
 end
@@ -18,7 +18,7 @@ defmodule MyApp.ReplayNotificationGate do
 end
 
 defmodule MyApp.Reactors.ReplayNotifiedOrderReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.ReplayNotifiedOrderPlaced
   alias MyApp.ReplayNotificationGate

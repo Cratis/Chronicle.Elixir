@@ -16,12 +16,12 @@ Projections are shared Chronicle read-model behavior. Use the shared docs for pr
 ## Child collections
 
 `children/2,3` declares a list on the parent that grows, changes and shrinks with events. Mirrors
-the .NET `[ChildrenFrom<T>]`. It works in `use Chronicle.ReadModels.ReadModel` and
-`use Chronicle.Projections.Projection`:
+the .NET `[ChildrenFrom<T>]`. It works in `use Cratis.Chronicle.ReadModels.ReadModel` and
+`use Cratis.Chronicle.Projections.Projection`:
 
 ```elixir
 defmodule MyApp.ReadModels.Basket do
-  use Chronicle.ReadModels.ReadModel, types: [items: {:list, MyApp.ReadModels.BasketItem}]
+  use Cratis.Chronicle.ReadModels.ReadModel, types: [items: {:list, MyApp.ReadModels.BasketItem}]
 
   defstruct basket_id: "", items: []
 
@@ -146,28 +146,28 @@ logic a declaration cannot express. These operations need Chronicle 19.150.0 or 
 
 ## Pinning the id
 
-`use Chronicle.Projections.Projection` defaults a declarative projection's id to the last
+`use Cratis.Chronicle.Projections.Projection` defaults a declarative projection's id to the last
 segment of its module name. Renaming or moving the module then changes that id, and Chronicle
 treats it as a *different* projection — its observation position resets. Pin the id explicitly so
 the module can be renamed or moved freely:
 
 ```elixir
-use Chronicle.Projections.Projection, id: "account-summary", model: MyApp.ReadModels.AccountSummary
+use Cratis.Chronicle.Projections.Projection, id: "account-summary", model: MyApp.ReadModels.AccountSummary
 ```
 
 A projection relying on the module-name default gets a one-time warning (per module, for the life
 of the BEAM node) from [discovery](./discovery.md), naming the module and showing this fix. See
 [Discovery and artifact identity drift](./discovery.md).
 
-## Ad-hoc querying with `Chronicle.Projections`
+## Ad-hoc querying with `Cratis.Chronicle.Projections`
 
-`Chronicle.Projections.query/2` sends a Projection Declaration Language (PDL) string straight to
+`Cratis.Chronicle.Projections.query/2` sends a Projection Declaration Language (PDL) string straight to
 the kernel and returns the projected entries, without registering a permanent projection or
 defining a read model module:
 
 ```elixir
 {:ok, result} =
-  Chronicle.Projections.query("""
+  Cratis.Chronicle.Projections.query("""
   projection OrderSummary
     from OrderPlaced
   """)
@@ -180,19 +180,19 @@ errors returns `{:error, {:invalid_declaration, [%{message:, line:, column:}]}}`
 [Ad-hoc Querying](/chronicle/projections/projection-declaration-language/adhoc-querying/) page for
 the full picture — Elixir now joins C# in supporting this.
 
-`Chronicle.Projections.preview/2` runs an already-registered projection's own declaration the same
+`Cratis.Chronicle.Projections.preview/2` runs an already-registered projection's own declaration the same
 way, looked up by read model module or projection identifier.
 
 ## Waiting for a projection
 
-`Chronicle.Projections.wait_for/3` polls until a projection has handled a given event sequence
+`Cratis.Chronicle.Projections.wait_for/3` polls until a projection has handled a given event sequence
 number, or returns `{:error, :timeout}`:
 
 ```elixir
 {:ok, %{sequence_number: sequence}} =
-  Chronicle.EventSequences.EventLog.append_with_result(account_id, event)
+  Cratis.Chronicle.EventSequences.EventLog.append_with_result(account_id, event)
 
-:ok = Chronicle.Projections.wait_for(MyApp.ReadModels.Account, sequence)
+:ok = Cratis.Chronicle.Projections.wait_for(MyApp.ReadModels.Account, sequence)
 ```
 
 ## Event context values

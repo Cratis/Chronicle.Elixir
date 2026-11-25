@@ -1,24 +1,24 @@
 ```elixir
 defmodule MyApp.Events.MemberLoansMemberRegistered do
-  use Chronicle.Events.EventType, id: "member-loans-member-registered"
+  use Cratis.Chronicle.Events.EventType, id: "member-loans-member-registered"
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.MemberLoansLoanTaken do
-  use Chronicle.Events.EventType, id: "member-loans-loan-taken"
+  use Cratis.Chronicle.Events.EventType, id: "member-loans-loan-taken"
 
   defstruct [:isbn]
 end
 
 defmodule MyApp.Events.MemberLoansLoanReturned do
-  use Chronicle.Events.EventType, id: "member-loans-loan-returned"
+  use Cratis.Chronicle.Events.EventType, id: "member-loans-loan-returned"
 
   defstruct [:isbn]
 end
 
 defmodule MyApp.ReadModels.MemberLoans do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: nil, active: 0
 
@@ -28,8 +28,8 @@ defmodule MyApp.ReadModels.MemberLoans do
 end
 
 defmodule MyApp.MemberLoansTakeLoan do
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.ReadModels.{DecisionConflict, DecisionReads}
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.ReadModels.{DecisionConflict, DecisionReads}
   alias MyApp.Events.MemberLoansLoanTaken
   alias MyApp.ReadModels.MemberLoans
 
@@ -37,7 +37,7 @@ defmodule MyApp.MemberLoansTakeLoan do
 
   def handle(member_id, isbn) do
     result =
-      Chronicle.decide(fn _unit_of_work ->
+      Cratis.Chronicle.decide(fn _unit_of_work ->
         {:ok, member} = DecisionReads.get(MemberLoans, member_id)
 
         case member.instance do

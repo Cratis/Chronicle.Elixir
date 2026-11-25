@@ -1,6 +1,6 @@
 ```elixir
 defmodule IdempotentPaymentDue do
-  use Chronicle.Events.EventType, id: "idempotent-payment-due"
+  use Cratis.Chronicle.Events.EventType, id: "idempotent-payment-due"
 
   defstruct [:order_id, :amount]
 end
@@ -16,7 +16,7 @@ defmodule IdempotentDeliveryReceipts do
 end
 
 defmodule IdempotentBilling do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   @handles IdempotentPaymentDue
 

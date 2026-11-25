@@ -4,7 +4,7 @@
 defmodule ConsoleSample.Reducers.EmployeeStateReducer do
   @moduledoc "Folds employee lifecycle events into the EmployeeState read model."
 
-  use Chronicle.Reducers.Reducer, model: ConsoleSample.ReadModels.EmployeeState
+  use Cratis.Chronicle.Reducers.Reducer, model: ConsoleSample.ReadModels.EmployeeState
 
   alias ConsoleSample.Events.{
     EmployeeAddressSet,

@@ -1,18 +1,18 @@
 ```elixir title="Remove children"
 defmodule MyApp.Events.GroupCreatedWithRemoval do
-  use Chronicle.Events.EventType, id: "group-created-with-removal"
+  use Cratis.Chronicle.Events.EventType, id: "group-created-with-removal"
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.UserAddedWithRemoval do
-  use Chronicle.Events.EventType, id: "user-added-with-removal"
+  use Cratis.Chronicle.Events.EventType, id: "user-added-with-removal"
 
   defstruct [:user_id, :role]
 end
 
 defmodule MyApp.Events.UserRemovedWithRemoval do
-  use Chronicle.Events.EventType, id: "user-removed-with-removal"
+  use Cratis.Chronicle.Events.EventType, id: "user-removed-with-removal"
 
   defstruct [:user_id]
 end
@@ -22,14 +22,14 @@ defmodule MyApp.ReadModels.GroupMemberWithRemoval do
 end
 
 defmodule MyApp.ReadModels.GroupWithRemoval do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [members: {:list, MyApp.ReadModels.GroupMemberWithRemoval}]
 
   defstruct name: nil, members: []
 end
 
 defmodule MyApp.Projections.GroupWithRemovalProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.GroupWithRemoval
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.GroupWithRemoval
 
   alias MyApp.Events.{GroupCreatedWithRemoval, UserAddedWithRemoval, UserRemovedWithRemoval}
 

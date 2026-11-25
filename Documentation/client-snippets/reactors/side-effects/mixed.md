@@ -1,26 +1,26 @@
 ```elixir
 defmodule ReactorSideEffectsMixedBookReserved do
-  use Chronicle.Events.EventType, id: "reactor-side-effects-mixed-book-reserved"
+  use Cratis.Chronicle.Events.EventType, id: "reactor-side-effects-mixed-book-reserved"
 
   defstruct [:member_id, :isbn]
 end
 
 defmodule ReactorSideEffectsMixedActivityLogged do
-  use Chronicle.Events.EventType, id: "reactor-side-effects-mixed-activity-logged"
+  use Cratis.Chronicle.Events.EventType, id: "reactor-side-effects-mixed-activity-logged"
 
   defstruct [:isbn]
 end
 
 defmodule ReactorSideEffectsMixedMemberActivityRecorded do
-  use Chronicle.Events.EventType, id: "reactor-side-effects-mixed-member-activity-recorded"
+  use Cratis.Chronicle.Events.EventType, id: "reactor-side-effects-mixed-member-activity-recorded"
 
   defstruct [:isbn]
 end
 
 defmodule ReactorSideEffectsMixedReservationReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
-  alias Chronicle.EventSequences.EventForEventSourceId
+  alias Cratis.Chronicle.EventSequences.EventForEventSourceId
   alias ReactorSideEffectsMixedBookReserved
   alias ReactorSideEffectsMixedActivityLogged
   alias ReactorSideEffectsMixedMemberActivityRecorded

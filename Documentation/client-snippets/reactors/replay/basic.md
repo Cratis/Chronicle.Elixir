@@ -1,12 +1,12 @@
 ```elixir
 defmodule ReplayAwareOrderPlaced do
-  use Chronicle.Events.EventType, id: "replay-aware-order-placed"
+  use Cratis.Chronicle.Events.EventType, id: "replay-aware-order-placed"
 
   defstruct [:order_id]
 end
 
 defmodule ReplayAwareOrderReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   @handles ReplayAwareOrderPlaced
 

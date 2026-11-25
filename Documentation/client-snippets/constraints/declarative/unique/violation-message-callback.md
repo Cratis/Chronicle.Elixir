@@ -1,11 +1,11 @@
 ```elixir
 defmodule MyApp.Events.ConstraintsUniqueMessageCallbackProjectCreated do
-  use Chronicle.Events.EventType, id: "constraints-unique-message-callback-project-created"
+  use Cratis.Chronicle.Events.EventType, id: "constraints-unique-message-callback-project-created"
   defstruct name: ""
 end
 
 defmodule MyApp.Constraints.ConstraintsUniqueMessageCallbackMessages do
-  alias Chronicle.Events.ConstraintViolation
+  alias Cratis.Chronicle.Events.ConstraintViolation
 
   def project_name_taken(violation) do
     "A project named '#{ConstraintViolation.details(violation)[:property_value]}' already exists."
@@ -13,7 +13,7 @@ defmodule MyApp.Constraints.ConstraintsUniqueMessageCallbackMessages do
 end
 
 defmodule MyApp.Constraints.ConstraintsUniqueMessageCallbackProjectName do
-  use Chronicle.Events.Constraint
+  use Cratis.Chronicle.Events.Constraint
 
   unique name: "ConstraintsUniqueMessageCallbackProjectName",
     message: {MyApp.Constraints.ConstraintsUniqueMessageCallbackMessages, :project_name_taken} do

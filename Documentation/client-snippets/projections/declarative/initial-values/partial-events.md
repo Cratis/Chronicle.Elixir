@@ -1,18 +1,18 @@
 ```elixir title="Defaults for fields events do not set"
 defmodule MyApp.Events.InitialValuesStockReceived do
-  use Chronicle.Events.EventType, id: "initial-values-stock-received"
+  use Cratis.Chronicle.Events.EventType, id: "initial-values-stock-received"
 
   defstruct [:quantity]
 end
 
 defmodule MyApp.Events.InitialValuesStockReserved do
-  use Chronicle.Events.EventType, id: "initial-values-stock-reserved"
+  use Cratis.Chronicle.Events.EventType, id: "initial-values-stock-reserved"
 
   defstruct [:quantity]
 end
 
 defmodule MyApp.ReadModels.InitialValuesInventoryItem do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct current_stock: 0,
             reserved_stock: 0,
@@ -23,7 +23,7 @@ defmodule MyApp.ReadModels.InitialValuesInventoryItem do
 end
 
 defmodule MyApp.Projections.InitialValuesInventoryProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.InitialValuesInventoryItem
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.InitialValuesInventoryItem
 
   alias MyApp.Events.{InitialValuesStockReceived, InitialValuesStockReserved}
 

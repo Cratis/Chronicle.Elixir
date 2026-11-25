@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Projections.DecJoinsUserProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.DecJoinsUser
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.DecJoinsUser
 
   alias MyApp.Events.{
     DecJoinsUserCreated,

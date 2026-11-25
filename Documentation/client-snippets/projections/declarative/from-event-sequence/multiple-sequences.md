@@ -1,30 +1,30 @@
 ```elixir
 defmodule MyApp.Events.DecFromEventSequencePackageCreated do
-  use Chronicle.Events.EventType, id: "dec-from-event-sequence-package-created"
+  use Cratis.Chronicle.Events.EventType, id: "dec-from-event-sequence-package-created"
 
   defstruct package_id: ""
 end
 
 defmodule MyApp.Events.DecFromEventSequencePackageShipped do
-  use Chronicle.Events.EventType, id: "dec-from-event-sequence-package-shipped"
+  use Cratis.Chronicle.Events.EventType, id: "dec-from-event-sequence-package-shipped"
 
   defstruct package_id: "", shipped_at: ""
 end
 
 defmodule MyApp.Events.DecFromEventSequencePackageDelivered do
-  use Chronicle.Events.EventType, id: "dec-from-event-sequence-package-delivered"
+  use Cratis.Chronicle.Events.EventType, id: "dec-from-event-sequence-package-delivered"
 
   defstruct package_id: "", delivered_at: ""
 end
 
 defmodule MyApp.ReadModels.DecFromEventSequenceShipping do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct package_id: nil, shipped_at: nil, delivered_at: nil
 end
 
 defmodule MyApp.Projections.DecFromEventSequenceMultiOrderProjection do
-  use Chronicle.Projections.Projection,
+  use Cratis.Chronicle.Projections.Projection,
     model: MyApp.ReadModels.DecFromEventSequenceOrder,
     event_sequence: "order-management"
 
@@ -33,7 +33,7 @@ defmodule MyApp.Projections.DecFromEventSequenceMultiOrderProjection do
 end
 
 defmodule MyApp.Projections.DecFromEventSequenceShippingProjection do
-  use Chronicle.Projections.Projection,
+  use Cratis.Chronicle.Projections.Projection,
     model: MyApp.ReadModels.DecFromEventSequenceShipping,
     event_sequence: "shipping-management"
 

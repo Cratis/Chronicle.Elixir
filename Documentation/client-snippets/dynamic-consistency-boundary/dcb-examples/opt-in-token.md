@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.OptInSignUpInitiated do
-  use Chronicle.Events.EventType, id: "opt-in-sign-up-initiated"
+  use Cratis.Chronicle.Events.EventType, id: "opt-in-sign-up-initiated"
 
   defstruct [:email, :token_hash, :expires_at]
 end
 
 defmodule MyApp.Events.OptInSignUpConfirmed do
-  use Chronicle.Events.EventType, id: "opt-in-sign-up-confirmed"
+  use Cratis.Chronicle.Events.EventType, id: "opt-in-sign-up-confirmed"
 
   defstruct []
 end
@@ -14,7 +14,7 @@ end
 # Both events live on the sign-up's own event source. The token is checked against the sign-up
 # the caller names, so the token itself needs no place in the boundary.
 defmodule MyApp.ReadModels.OptInPendingSignUp do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: nil, token_hash: nil, expires_at: 0, confirmations: 0
 
@@ -25,15 +25,15 @@ defmodule MyApp.ReadModels.OptInPendingSignUp do
 end
 
 defmodule MyApp.OptInConfirmSignUp do
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.ReadModels.{DecisionConflict, DecisionReads}
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.ReadModels.{DecisionConflict, DecisionReads}
   alias MyApp.Events.OptInSignUpConfirmed
   alias MyApp.ReadModels.OptInPendingSignUp
 
   # `expires_at` and `now` are Unix timestamps in seconds.
   def handle(sign_up_id, token_hash, now) do
     result =
-      Chronicle.decide(fn _unit_of_work ->
+      Cratis.Chronicle.decide(fn _unit_of_work ->
         {:ok, read} = DecisionReads.get(OptInPendingSignUp, sign_up_id)
 
         cond do

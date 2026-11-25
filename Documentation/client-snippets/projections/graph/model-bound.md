@@ -1,46 +1,46 @@
 ```elixir
 defmodule MyApp.Events.PersonRegistered do
-  use Chronicle.Events.EventType, id: "graph-person-registered"
+  use Cratis.Chronicle.Events.EventType, id: "graph-person-registered"
   defstruct person_id: "", name: ""
 end
 
 defmodule MyApp.Events.PersonRemoved do
-  use Chronicle.Events.EventType, id: "graph-person-removed"
+  use Cratis.Chronicle.Events.EventType, id: "graph-person-removed"
   defstruct person_id: ""
 end
 
 defmodule MyApp.Events.GroupCreated do
-  use Chronicle.Events.EventType, id: "graph-group-created"
+  use Cratis.Chronicle.Events.EventType, id: "graph-group-created"
   defstruct group_id: "", name: ""
 end
 
 defmodule MyApp.Events.MemberAdded do
-  use Chronicle.Events.EventType, id: "graph-member-added"
+  use Cratis.Chronicle.Events.EventType, id: "graph-member-added"
   defstruct person_id: "", group_id: ""
 end
 
 defmodule MyApp.Events.MemberRemoved do
-  use Chronicle.Events.EventType, id: "graph-member-removed"
+  use Cratis.Chronicle.Events.EventType, id: "graph-member-removed"
   defstruct person_id: "", group_id: ""
 end
 
 defmodule MyApp.Graphs.Person do
-  use Chronicle.Graphs.Node
+  use Cratis.Chronicle.Graphs.Node
   defstruct person_id: "", name: ""
 end
 
 defmodule MyApp.Graphs.Group do
-  use Chronicle.Graphs.Node
+  use Cratis.Chronicle.Graphs.Node
   defstruct group_id: "", name: ""
 end
 
 defmodule MyApp.Graphs.MemberOf do
-  use Chronicle.Graphs.Edge, type: "MEMBER_OF"
+  use Cratis.Chronicle.Graphs.Edge, type: "MEMBER_OF"
   defstruct since: ""
 end
 
 defmodule MyApp.Graphs.Organization do
-  use Chronicle.Graphs.Graph, id: "Organization"
+  use Cratis.Chronicle.Graphs.Graph, id: "Organization"
 
   alias MyApp.Events.{GroupCreated, MemberAdded, MemberRemoved, PersonRegistered, PersonRemoved}
   alias MyApp.Graphs.{Group, MemberOf, Person}

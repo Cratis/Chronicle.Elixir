@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.ProductPriceProductDefined do
-  use Chronicle.Events.EventType, id: "product-price-product-defined"
+  use Cratis.Chronicle.Events.EventType, id: "product-price-product-defined"
 
   defstruct [:price]
 end
 
 defmodule MyApp.Events.ProductPriceChanged do
-  use Chronicle.Events.EventType, id: "product-price-changed"
+  use Cratis.Chronicle.Events.EventType, id: "product-price-changed"
 
   defstruct [:old_price, :new_price]
 end
 
 defmodule MyApp.Events.ProductPriceProductsOrdered do
-  use Chronicle.Events.EventType, id: "product-price-products-ordered"
+  use Cratis.Chronicle.Events.EventType, id: "product-price-products-ordered"
 
   # Each item is a map with :product_id, :displayed_price and :quantity.
   defstruct [:items]
@@ -21,7 +21,7 @@ end
 # The decision model for one product: its current price, the one before and when it changed.
 # A reduced variant: a price older than the previous one is never accepted, even inside the grace period.
 defmodule MyApp.ReadModels.ProductPriceDecision do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: nil, current: nil, previous: nil, changed_at: nil
 
@@ -32,8 +32,8 @@ defmodule MyApp.ReadModels.ProductPriceDecision do
 end
 
 defmodule MyApp.ProductPriceOrderProducts do
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.ReadModels.DecisionReads
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.ReadModels.DecisionReads
   alias MyApp.Events.ProductPriceProductsOrdered
   alias MyApp.ReadModels.ProductPriceDecision
 
@@ -41,7 +41,7 @@ defmodule MyApp.ProductPriceOrderProducts do
 
   def handle(order_id, items, now) do
     result =
-      Chronicle.decide(fn _unit_of_work ->
+      Cratis.Chronicle.decide(fn _unit_of_work ->
         # One decision read per product in the cart. The set is dynamic: it is whatever the order contains.
         with :ok <- check_prices(items, now) do
           # One event on the order's own event source. The product keys are only read, never appended to,

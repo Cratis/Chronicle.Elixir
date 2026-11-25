@@ -4,7 +4,7 @@ defmodule MyApp.ReadModels.ReducersGettingStartedAttributeOrderSummary do
 end
 
 defmodule MyApp.Reducers.ReducersGettingStartedAttributeOrderSummaryReducer do
-  use Chronicle.Reducers.Reducer,
+  use Cratis.Chronicle.Reducers.Reducer,
     model: MyApp.ReadModels.ReducersGettingStartedAttributeOrderSummary,
     id: "order-summary"
 

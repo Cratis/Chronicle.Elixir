@@ -1,6 +1,6 @@
 ```elixir title="Mapping event context properties"
 defmodule MyApp.Projections.DecEventContextUserActivityProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.DecEventContextUserActivity
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.DecEventContextUserActivity
 
   alias MyApp.Events.{DecEventContextUserLoggedIn, DecEventContextUserPerformedAction}
 

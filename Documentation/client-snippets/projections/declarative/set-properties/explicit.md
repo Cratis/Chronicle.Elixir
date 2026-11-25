@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Projections.DecSetPropsAccountProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.DecSetPropsAccount
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.DecSetPropsAccount
 
   alias MyApp.Events.{DecSetPropsAccountOpened, DecSetPropsMoneyDeposited}
 

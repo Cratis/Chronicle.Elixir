@@ -1,7 +1,7 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.MixProject do
+defmodule Cratis.Chronicle.MixProject do
   use Mix.Project
 
   @version Path.join(__DIR__, "VERSION")
@@ -76,82 +76,85 @@ defmodule Chronicle.MixProject do
 
   defp docs do
     [
-      main: "Chronicle",
+      main: "Cratis.Chronicle",
       extras: [
         "README.md"
       ],
       groups_for_modules: [
-        Connections: [Chronicle.Connections.ConnectionString, Chronicle.Connections.Connection],
+        Connections: [
+          Cratis.Chronicle.Connections.ConnectionString,
+          Cratis.Chronicle.Connections.Connection
+        ],
         Context: [
-          Chronicle.Correlation.CorrelationId,
-          Chronicle.Correlation.CorrelationIdManager,
-          Chronicle.Identity,
-          Chronicle.Identity.IdentityProvider,
-          Chronicle.Auditing.CausationType,
-          Chronicle.Auditing.CausationEntry,
-          Chronicle.Auditing.CausationManager
+          Cratis.Chronicle.Correlation.CorrelationId,
+          Cratis.Chronicle.Correlation.CorrelationIdManager,
+          Cratis.Chronicle.Identity,
+          Cratis.Chronicle.Identity.IdentityProvider,
+          Cratis.Chronicle.Auditing.CausationType,
+          Cratis.Chronicle.Auditing.CausationEntry,
+          Cratis.Chronicle.Auditing.CausationManager
         ],
         "Event Sourcing": [
-          Chronicle.Events.EventType,
-          Chronicle.Events.Migration,
-          Chronicle.Events.MigrationBuilder,
-          Chronicle.Events.Migrators,
-          Chronicle.EventSequences.EventLog,
-          Chronicle.EventSequences.EventSequence,
-          Chronicle.EventSequences.TransactionalEventSequence,
-          Chronicle.Events.ConcurrencyScope,
-          Chronicle.Events.EventTypes,
-          Chronicle.EventSources,
-          Chronicle.EventSources.EventSource,
-          Chronicle.EventSources.EventSourceDefinition,
-          Chronicle.EventSources.EventStream,
-          Chronicle.EventSources.ConcurrencyDimensions,
-          Chronicle.EventStores
+          Cratis.Chronicle.Events.EventType,
+          Cratis.Chronicle.Events.Migration,
+          Cratis.Chronicle.Events.MigrationBuilder,
+          Cratis.Chronicle.Events.Migrators,
+          Cratis.Chronicle.EventSequences.EventLog,
+          Cratis.Chronicle.EventSequences.EventSequence,
+          Cratis.Chronicle.EventSequences.TransactionalEventSequence,
+          Cratis.Chronicle.Events.ConcurrencyScope,
+          Cratis.Chronicle.Events.EventTypes,
+          Cratis.Chronicle.EventSources,
+          Cratis.Chronicle.EventSources.EventSource,
+          Cratis.Chronicle.EventSources.EventSourceDefinition,
+          Cratis.Chronicle.EventSources.EventStream,
+          Cratis.Chronicle.EventSources.ConcurrencyDimensions,
+          Cratis.Chronicle.EventStores
         ],
-        Transactions: [Chronicle.Transactions.UnitOfWork],
+        Transactions: [Cratis.Chronicle.Transactions.UnitOfWork],
         Imports: [
-          Chronicle.Imports,
-          Chronicle.Imports.Session,
-          Chronicle.Imports.ImportResult,
-          Chronicle.Imports.ImportProgress,
-          Chronicle.Imports.ImportRejection
+          Cratis.Chronicle.Imports,
+          Cratis.Chronicle.Imports.Session,
+          Cratis.Chronicle.Imports.ImportResult,
+          Cratis.Chronicle.Imports.ImportProgress,
+          Cratis.Chronicle.Imports.ImportRejection
         ],
         Observers: [
-          Chronicle.Reactors.Reactor,
-          Chronicle.Reducers.Reducer,
-          Chronicle.EventStoreSubscriptions,
-          Chronicle.EventStoreSubscriptions.Subscription,
-          Chronicle.EventStoreSubscriptions.Definition,
-          Chronicle.EventStoreSubscriptions.DefinitionBuilder,
-          Chronicle.EventStoreSubscriptions.EventType
+          Cratis.Chronicle.Reactors.Reactor,
+          Cratis.Chronicle.Reducers.Reducer,
+          Cratis.Chronicle.EventStoreSubscriptions,
+          Cratis.Chronicle.EventStoreSubscriptions.Subscription,
+          Cratis.Chronicle.EventStoreSubscriptions.Definition,
+          Cratis.Chronicle.EventStoreSubscriptions.DefinitionBuilder,
+          Cratis.Chronicle.EventStoreSubscriptions.EventType
         ],
-        "Read Models": [Chronicle.ReadModels.ReadModel, Chronicle.ReadModels],
+        "Read Models": [Cratis.Chronicle.ReadModels.ReadModel, Cratis.Chronicle.ReadModels],
         "Graph Projections": [
-          Chronicle.Graphs.Graph,
-          Chronicle.Graphs.Node,
-          Chronicle.Graphs.Edge,
-          Chronicle.Graphs.View,
-          Chronicle.Graphs.ViewDefinition
+          Cratis.Chronicle.Graphs.Graph,
+          Cratis.Chronicle.Graphs.Node,
+          Cratis.Chronicle.Graphs.Edge,
+          Cratis.Chronicle.Graphs.View,
+          Cratis.Chronicle.Graphs.ViewDefinition
         ],
-        Sinks: [Chronicle.Sinks.WellKnownSinkTypes],
+        Sinks: [Cratis.Chronicle.Sinks.WellKnownSinkTypes],
         Jobs: [
-          Chronicle.Jobs,
-          Chronicle.Jobs.Job,
-          Chronicle.Jobs.JobProgress,
-          Chronicle.Jobs.JobStatusChanged,
-          Chronicle.Jobs.JobStep,
-          Chronicle.Jobs.JobStepProgress,
-          Chronicle.Jobs.JobStepStatusChanged
+          Cratis.Chronicle.Jobs,
+          Cratis.Chronicle.Jobs.Job,
+          Cratis.Chronicle.Jobs.JobProgress,
+          Cratis.Chronicle.Jobs.JobStatusChanged,
+          Cratis.Chronicle.Jobs.JobStep,
+          Cratis.Chronicle.Jobs.JobStepProgress,
+          Cratis.Chronicle.Jobs.JobStepStatusChanged
         ],
         WebHooks: [
-          Chronicle.WebHooks,
-          Chronicle.WebHooks.Definition,
-          Chronicle.WebHooks.DefinitionBuilder,
-          Chronicle.WebHooks.EventType,
-          Chronicle.WebHooks.Target,
-          Chronicle.WebHooks.Webhook
+          Cratis.Chronicle.WebHooks,
+          Cratis.Chronicle.WebHooks.Definition,
+          Cratis.Chronicle.WebHooks.DefinitionBuilder,
+          Cratis.Chronicle.WebHooks.EventType,
+          Cratis.Chronicle.WebHooks.Target,
+          Cratis.Chronicle.WebHooks.Webhook
         ],
-        Constraints: [Chronicle.Events.Constraints]
+        Constraints: [Cratis.Chronicle.Events.Constraints]
       ]
     ]
   end

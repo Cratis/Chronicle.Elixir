@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.StreamOrderPlaced do
-  use Chronicle.Events.EventType, id: "stream-order-placed"
+  use Cratis.Chronicle.Events.EventType, id: "stream-order-placed"
 
   defstruct [:status]
 end
 
 defmodule MyApp.ReadModels.StreamOrderEligibility do
-  use Chronicle.ReadModels.ReadModel, passive: true
+  use Cratis.Chronicle.ReadModels.ReadModel, passive: true
 
   defstruct id: nil, status: nil
 
@@ -14,13 +14,13 @@ defmodule MyApp.ReadModels.StreamOrderEligibility do
 end
 
 defmodule MyApp.StreamDecisionExample do
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.ReadModels.DecisionReads
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.ReadModels.DecisionReads
   alias MyApp.Events.StreamOrderPlaced
   alias MyApp.ReadModels.StreamOrderEligibility
 
   def place_order(order_id) do
-    Chronicle.decide(fn _unit_of_work ->
+    Cratis.Chronicle.decide(fn _unit_of_work ->
       # Folds and guards only the "orders" / "checkout" stream of this event source.
       {:ok, read} = DecisionReads.get(StreamOrderEligibility, order_id, "orders", "checkout")
 

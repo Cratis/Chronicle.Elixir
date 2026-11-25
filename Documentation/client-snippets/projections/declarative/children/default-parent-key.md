@@ -1,12 +1,12 @@
 ```elixir title="Default parent key"
 defmodule MyApp.Events.GroupCreatedWithDefaultParentKey do
-  use Chronicle.Events.EventType, id: "group-created-with-default-parent-key"
+  use Cratis.Chronicle.Events.EventType, id: "group-created-with-default-parent-key"
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.UserAddedWithDefaultParentKey do
-  use Chronicle.Events.EventType, id: "user-added-with-default-parent-key"
+  use Cratis.Chronicle.Events.EventType, id: "user-added-with-default-parent-key"
 
   defstruct [:user_id, :role]
 end
@@ -16,14 +16,14 @@ defmodule MyApp.ReadModels.GroupMemberWithDefaultParentKey do
 end
 
 defmodule MyApp.ReadModels.GroupWithDefaultParentKey do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [members: {:list, MyApp.ReadModels.GroupMemberWithDefaultParentKey}]
 
   defstruct name: nil, members: []
 end
 
 defmodule MyApp.Projections.GroupWithDefaultParentKeyProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.GroupWithDefaultParentKey
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.GroupWithDefaultParentKey
 
   alias MyApp.Events.{GroupCreatedWithDefaultParentKey, UserAddedWithDefaultParentKey}
 

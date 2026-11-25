@@ -1,30 +1,30 @@
 ```elixir
 defmodule EventProcessingOrderCreatedForStatus do
-  use Chronicle.Events.EventType, id: "event-processing-order-created-for-status"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-order-created-for-status"
 
   defstruct [:order_id]
 end
 
 defmodule EventProcessingOrderPaid do
-  use Chronicle.Events.EventType, id: "event-processing-order-paid"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-order-paid"
 
   defstruct [:order_id]
 end
 
 defmodule EventProcessingOrderShipped do
-  use Chronicle.Events.EventType, id: "event-processing-order-shipped"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-order-shipped"
 
   defstruct [:order_id]
 end
 
 defmodule EventProcessingOrderDelivered do
-  use Chronicle.Events.EventType, id: "event-processing-order-delivered"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-order-delivered"
 
   defstruct [:order_id]
 end
 
 defmodule EventProcessingOrderCancelled do
-  use Chronicle.Events.EventType, id: "event-processing-order-cancelled"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-order-cancelled"
 
   defstruct [:order_id]
 end
@@ -34,7 +34,7 @@ defmodule EventProcessingOrderStatus do
 end
 
 defmodule EventProcessingOrderStatusReducer do
-  use Chronicle.Reducers.Reducer, model: EventProcessingOrderStatus
+  use Cratis.Chronicle.Reducers.Reducer, model: EventProcessingOrderStatus
 
   alias EventProcessingOrderCreatedForStatus
   alias EventProcessingOrderPaid

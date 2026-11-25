@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.TestingCollectionShipmentSpecTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [
       MyApp.Events.TestingCollectionOrderPlaced,
       MyApp.Events.TestingCollectionShipmentScheduled
@@ -13,18 +13,18 @@ defmodule MyApp.TestingCollectionShipmentSpecTest do
     order_id = "order-#{System.unique_integer([:positive])}"
 
     :ok =
-      Chronicle.EventSequences.EventLog.append(
+      Cratis.Chronicle.EventSequences.EventLog.append(
         order_id,
         %TestingCollectionOrderPlaced{order_id: order_id},
         client: client
       )
 
     # Wait for the reactor's follow-up append to arrive — deterministic, no sleeps.
-    :ok = Chronicle.Testing.wait_for_observers(client)
+    :ok = Cratis.Chronicle.Testing.wait_for_observers(client)
 
     shipment =
       client
-      |> Chronicle.Testing.appended_events(order_id)
+      |> Cratis.Chronicle.Testing.appended_events(order_id)
       |> Enum.map(& &1.event)
       |> Enum.find(&match?(%TestingCollectionShipmentScheduled{}, &1))
 

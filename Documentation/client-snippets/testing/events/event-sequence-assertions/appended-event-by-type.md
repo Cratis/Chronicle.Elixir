@@ -1,23 +1,23 @@
 ```elixir
 defmodule MyApp.Events.TestingSeqAssertByTypeAuthorRegistered do
-  use Chronicle.Events.EventType, id: "testing-seq-assert-by-type-author-registered"
+  use Cratis.Chronicle.Events.EventType, id: "testing-seq-assert-by-type-author-registered"
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.TestingSeqAssertByTypeBookAdded do
-  use Chronicle.Events.EventType, id: "testing-seq-assert-by-type-book-added"
+  use Cratis.Chronicle.Events.EventType, id: "testing-seq-assert-by-type-book-added"
 
   defstruct [:title]
 end
 
 defmodule MyApp.TestingSeqAssertAppendedEventByTypeTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [MyApp.Events.TestingSeqAssertByTypeAuthorRegistered, MyApp.Events.TestingSeqAssertByTypeBookAdded]
 
-  import Chronicle.Testing.Assertions
+  import Cratis.Chronicle.Testing.Assertions
 
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.{TestingSeqAssertByTypeAuthorRegistered, TestingSeqAssertByTypeBookAdded}
 
   test "an event of each type was appended somewhere in the sequence", %{chronicle: client} do

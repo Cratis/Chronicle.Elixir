@@ -1,22 +1,22 @@
 ```elixir
 defmodule MyApp.Events.MigrationsDotnetClientRenamedFromCustomerRegisteredV1 do
-  use Chronicle.Events.EventType, id: "dotnet-client-customer-registered", generation: 1
+  use Cratis.Chronicle.Events.EventType, id: "dotnet-client-customer-registered", generation: 1
 
   defstruct [:email_address]
 end
 
 defmodule MyApp.Events.MigrationsDotnetClientRenamedFromCustomerRegistered do
-  use Chronicle.Events.EventType, id: "dotnet-client-customer-registered", generation: 2
+  use Cratis.Chronicle.Events.EventType, id: "dotnet-client-customer-registered", generation: 2
 
   defstruct [:email]
 end
 
 defmodule MyApp.Migrations.MigrationsDotnetClientRenamedFromCustomerRegisteredMigration do
-  use Chronicle.Events.Migration,
+  use Cratis.Chronicle.Events.Migration,
     from: {MyApp.Events.MigrationsDotnetClientRenamedFromCustomerRegisteredV1, generation: 1},
     to: {MyApp.Events.MigrationsDotnetClientRenamedFromCustomerRegistered, generation: 2}
 
-  alias Chronicle.Events.MigrationBuilder
+  alias Cratis.Chronicle.Events.MigrationBuilder
 
   @impl true
   def upcast(builder), do: MigrationBuilder.renamed_from(builder, :email, :email_address)

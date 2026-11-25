@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.ClosingEventsReportDelivered do
-  use Chronicle.Events.EventType, id: "closing-events-report-delivered"
+  use Cratis.Chronicle.Events.EventType, id: "closing-events-report-delivered"
 
   defstruct [:recipient]
 

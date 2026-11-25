@@ -1,24 +1,24 @@
 ```elixir
 defmodule MyApp.Events.MbRemovalMultipleAccountOpened do
-  use Chronicle.Events.EventType, id: "mb-removal-multiple-account-opened"
+  use Cratis.Chronicle.Events.EventType, id: "mb-removal-multiple-account-opened"
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.MbRemovalMultipleAccountClosed do
-  use Chronicle.Events.EventType, id: "mb-removal-multiple-account-closed"
+  use Cratis.Chronicle.Events.EventType, id: "mb-removal-multiple-account-closed"
 
   defstruct []
 end
 
 defmodule MyApp.Events.MbRemovalMultipleAccountMerged do
-  use Chronicle.Events.EventType, id: "mb-removal-multiple-account-merged"
+  use Cratis.Chronicle.Events.EventType, id: "mb-removal-multiple-account-merged"
 
   defstruct [:source_account_id]
 end
 
 defmodule MyApp.ReadModels.MbRemovalMultipleAccount do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: nil, name: nil
 

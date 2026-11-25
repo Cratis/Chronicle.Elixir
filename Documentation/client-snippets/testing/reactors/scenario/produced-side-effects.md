@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.TestingReactorScenarioReminderVibeStarted do
-  use Chronicle.Events.EventType, id: "testing-reactor-scenario-reminder-vibe-started"
+  use Cratis.Chronicle.Events.EventType, id: "testing-reactor-scenario-reminder-vibe-started"
 
   defstruct [:host]
 end
 
 defmodule MyApp.Events.TestingReactorScenarioSendReminder do
-  use Chronicle.Events.EventType, id: "testing-reactor-scenario-send-reminder"
+  use Cratis.Chronicle.Events.EventType, id: "testing-reactor-scenario-send-reminder"
 
   defstruct [:host]
 end
 
 defmodule MyApp.Reactors.TestingReactorScenarioReminderReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.{TestingReactorScenarioReminderVibeStarted, TestingReactorScenarioSendReminder}
 
@@ -24,14 +24,14 @@ defmodule MyApp.Reactors.TestingReactorScenarioReminderReactor do
 end
 
 defmodule MyApp.TestingReactorScenarioProducedSideEffectsTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [
       MyApp.Events.TestingReactorScenarioReminderVibeStarted,
       MyApp.Events.TestingReactorScenarioSendReminder
     ],
     reactors: [MyApp.Reactors.TestingReactorScenarioReminderReactor]
 
-  import Chronicle.Testing.Assertions
+  import Cratis.Chronicle.Testing.Assertions
 
   alias MyApp.Events.{TestingReactorScenarioReminderVibeStarted, TestingReactorScenarioSendReminder}
 
@@ -39,13 +39,13 @@ defmodule MyApp.TestingReactorScenarioProducedSideEffectsTest do
     vibe_id = "vibe-#{System.unique_integer([:positive])}"
 
     :ok =
-      Chronicle.EventSequences.EventLog.append(
+      Cratis.Chronicle.EventSequences.EventLog.append(
         vibe_id,
         %TestingReactorScenarioReminderVibeStarted{host: "Ada"},
         client: client
       )
 
-    :ok = Chronicle.Testing.wait_for_observers(client)
+    :ok = Cratis.Chronicle.Testing.wait_for_observers(client)
 
     assert_appended(client, %TestingReactorScenarioSendReminder{host: "Ada"}, event_source_id: vibe_id)
   end

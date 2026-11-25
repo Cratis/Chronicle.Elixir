@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.ReadModels.WatchingFilteringOrder do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: "", total_amount: 0.0
 end
@@ -9,7 +9,7 @@ defmodule MyApp.WatchingReadModelsFilteringMonitor do
   alias MyApp.ReadModels.WatchingFilteringOrder
 
   def start_watching do
-    {:ok, watcher} = Chronicle.ReadModels.watch(WatchingFilteringOrder)
+    {:ok, watcher} = Cratis.Chronicle.ReadModels.watch(WatchingFilteringOrder)
     watcher
   end
 

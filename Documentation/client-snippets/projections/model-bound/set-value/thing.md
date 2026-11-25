@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.SetValueThingHappened do
-  use Chronicle.Events.EventType, id: "set-value-thing-happened-v1"
+  use Cratis.Chronicle.Events.EventType, id: "set-value-thing-happened-v1"
 
   defstruct []
 end
 
 defmodule MyApp.ReadModels.SetValueThing do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.SetValueThingHappened
 

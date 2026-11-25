@@ -4,30 +4,30 @@
 # Round trip against a real kernel for artifact identity drift detection. Opt in like the
 # other integration tests: point CHRONICLE_INTEGRATION_CONNECTION_STRING at a development
 # kernel and run `mix test --include integration`.
-defmodule Chronicle.Integration.DiscoveryTest do
+defmodule Cratis.Chronicle.Integration.DiscoveryTest do
   use ExUnit.Case, async: false
 
   @moduletag :integration
 
   defmodule OrderPlacedV1 do
-    use Chronicle.Events.EventType, id: "disco-order-placed", generation: 1
+    use Cratis.Chronicle.Events.EventType, id: "disco-order-placed", generation: 1
     defstruct [:total]
   end
 
   # Same id and generation as OrderPlacedV1, with a field added — the struct changed shape
   # without a bumped generation.
   defmodule OrderPlacedV1Changed do
-    use Chronicle.Events.EventType, id: "disco-order-placed", generation: 1
+    use Cratis.Chronicle.Events.EventType, id: "disco-order-placed", generation: 1
     defstruct [:total, :currency]
   end
 
   defmodule TrackedEvent do
-    use Chronicle.Events.EventType, id: "disco-tracked-event"
+    use Cratis.Chronicle.Events.EventType, id: "disco-tracked-event"
     defstruct [:value]
   end
 
   defmodule TrackedReactor do
-    use Chronicle.Reactors.Reactor, id: "disco-tracked-reactor"
+    use Cratis.Chronicle.Reactors.Reactor, id: "disco-tracked-reactor"
 
     @handles TrackedEvent
 
@@ -51,7 +51,7 @@ defmodule Chronicle.Integration.DiscoveryTest do
       event_store = unique_store("disco-schema")
 
       {:ok, _} =
-        Chronicle.Client.start_link(
+        Cratis.Chronicle.Client.start_link(
           name: :disco_schema_warn_client,
           connection_string: connection_string(),
           event_store: event_store,
@@ -59,10 +59,10 @@ defmodule Chronicle.Integration.DiscoveryTest do
           event_types: [OrderPlacedV1]
         )
 
-      :ok = Chronicle.Client.await_registration(:disco_schema_warn_client, 60_000)
+      :ok = Cratis.Chronicle.Client.await_registration(:disco_schema_warn_client, 60_000)
 
       {:ok, _} =
-        Chronicle.Client.start_link(
+        Cratis.Chronicle.Client.start_link(
           name: :disco_schema_warn_client2,
           connection_string: connection_string(),
           event_store: event_store,
@@ -75,11 +75,11 @@ defmodule Chronicle.Integration.DiscoveryTest do
       warn_status = wait_for_attempt(:disco_schema_warn_client2)
       assert match?({:exception, _}, warn_status.error)
 
-      findings = Chronicle.Client.identity_drift(:disco_schema_warn_client2)
+      findings = Cratis.Chronicle.Client.identity_drift(:disco_schema_warn_client2)
       assert Enum.any?(findings, &(&1.reason == :schema_changed_without_generation))
 
       {:ok, _} =
-        Chronicle.Client.start_link(
+        Cratis.Chronicle.Client.start_link(
           name: :disco_schema_fail_client,
           connection_string: connection_string(),
           event_store: event_store,
@@ -92,7 +92,7 @@ defmodule Chronicle.Integration.DiscoveryTest do
       fail_status = wait_for_attempt(:disco_schema_fail_client)
       assert match?({:artifact_identity_drift, _}, fail_status.error)
 
-      findings = Chronicle.Client.identity_drift(:disco_schema_fail_client)
+      findings = Cratis.Chronicle.Client.identity_drift(:disco_schema_fail_client)
       assert Enum.any?(findings, &(&1.reason == :schema_changed_without_generation))
     end
   end
@@ -102,7 +102,7 @@ defmodule Chronicle.Integration.DiscoveryTest do
       event_store = unique_store("disco-observer")
 
       {:ok, _} =
-        Chronicle.Client.start_link(
+        Cratis.Chronicle.Client.start_link(
           name: :disco_observer_client1,
           connection_string: connection_string(),
           event_store: event_store,
@@ -111,11 +111,11 @@ defmodule Chronicle.Integration.DiscoveryTest do
           reactors: [TrackedReactor]
         )
 
-      :ok = Chronicle.Client.await_registration(:disco_observer_client1, 60_000)
+      :ok = Cratis.Chronicle.Client.await_registration(:disco_observer_client1, 60_000)
       wait_for_observer(:disco_observer_client1, "disco-tracked-reactor")
 
       {:ok, _} =
-        Chronicle.Client.start_link(
+        Cratis.Chronicle.Client.start_link(
           name: :disco_observer_client2,
           connection_string: connection_string(),
           event_store: event_store,
@@ -124,9 +124,9 @@ defmodule Chronicle.Integration.DiscoveryTest do
           drift_policy: :warn
         )
 
-      :ok = Chronicle.Client.await_registration(:disco_observer_client2, 60_000)
+      :ok = Cratis.Chronicle.Client.await_registration(:disco_observer_client2, 60_000)
 
-      findings = Chronicle.Client.identity_drift(:disco_observer_client2)
+      findings = Cratis.Chronicle.Client.identity_drift(:disco_observer_client2)
 
       assert Enum.any?(
                findings,
@@ -136,7 +136,7 @@ defmodule Chronicle.Integration.DiscoveryTest do
   end
 
   defp wait_for_attempt(client, attempts \\ 40) do
-    status = Chronicle.Client.registration_status(client)
+    status = Cratis.Chronicle.Client.registration_status(client)
 
     cond do
       status.attempts > 0 ->
@@ -152,7 +152,7 @@ defmodule Chronicle.Integration.DiscoveryTest do
   end
 
   defp wait_for_observer(client, observer_id, attempts \\ 40) do
-    case Chronicle.Observers.get_all(client: client, namespace: "Default") do
+    case Cratis.Chronicle.Observers.get_all(client: client, namespace: "Default") do
       {:ok, observers} ->
         if Enum.any?(observers, &(&1.id == observer_id and &1.event_sequence_id == "event-log")) do
           :ok

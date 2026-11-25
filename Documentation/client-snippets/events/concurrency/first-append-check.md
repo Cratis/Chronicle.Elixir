@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.ConcurrencyFirstAppendAccountOpened do
-  use Chronicle.Events.EventType, id: "concurrency-first-append-account-opened"
+  use Cratis.Chronicle.Events.EventType, id: "concurrency-first-append-account-opened"
 
   defstruct account_name: ""
 end
 
 defmodule MyApp.ConcurrencyFirstAppendAccountService do
-  alias Chronicle.Events.ConcurrencyScope
+  alias Cratis.Chronicle.Events.ConcurrencyScope
   alias MyApp.Events.ConcurrencyFirstAppendAccountOpened
 
   # Per append: ask for the check on one behavior without changing the client's default.
@@ -17,7 +17,7 @@ defmodule MyApp.ConcurrencyFirstAppendAccountService do
         event_types: [ConcurrencyFirstAppendAccountOpened]
       )
 
-    Chronicle.append(
+    Cratis.Chronicle.append(
       account_id,
       %ConcurrencyFirstAppendAccountOpened{account_name: account_name},
       concurrency_scope: scope
@@ -30,7 +30,7 @@ Application-wide, opt every first append into an empty narrowing into the same c
 the client's `:concurrency` option:
 
 ```elixir
-{Chronicle.Client,
+{Cratis.Chronicle.Client,
   connection_string: "chronicle://localhost:35000",
   event_store: "my-store",
   concurrency: [default: :optimistic, check_first_append: true]}

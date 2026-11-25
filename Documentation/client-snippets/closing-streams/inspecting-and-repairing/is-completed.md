@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.InspectingIsCompleted do
-  alias Chronicle.EventSequences.Streams
+  alias Cratis.Chronicle.EventSequences.Streams
 
   def april_closed?(report_id) do
     {:ok, completed?} =

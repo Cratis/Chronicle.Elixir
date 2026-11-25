@@ -44,3 +44,5 @@
   href: testing.md
 - name: Limits and Gaps
   href: limits-and-gaps.md
+- name: Upgrading to 4.0
+  href: upgrading.md

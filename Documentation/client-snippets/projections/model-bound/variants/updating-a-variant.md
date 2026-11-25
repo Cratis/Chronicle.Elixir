@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.MbVariantUpdatingPullRequestCreated do
-  use Chronicle.Events.EventType, id: "mb-variant-updating-pull-request-created-v1"
+  use Cratis.Chronicle.Events.EventType, id: "mb-variant-updating-pull-request-created-v1"
 
   defstruct [:pull_request_url]
 end
 
 defmodule MyApp.Events.MbVariantUpdatingBuildCompleted do
-  use Chronicle.Events.EventType, id: "mb-variant-updating-build-completed-v1"
+  use Cratis.Chronicle.Events.EventType, id: "mb-variant-updating-build-completed-v1"
 
   defstruct [:build_status]
 end
@@ -18,7 +18,7 @@ end
 # variant's entering event, so it is automatically reclassified into an update-only join. It can
 # bring an already-active instance up to date, but it can never create one on its own.
 defmodule MyApp.ReadModels.MbVariantUpdatingPullRequestItem do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{MbVariantUpdatingPullRequestCreated, MbVariantUpdatingBuildCompleted}
   alias MyApp.ReadModels.MbVariantUpdatingWorkItem

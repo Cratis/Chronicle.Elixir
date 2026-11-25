@@ -1,25 +1,25 @@
 ```elixir
 defmodule MyApp.Events.DecisionReadsWorkshopOpened do
-  use Chronicle.Events.EventType, id: "decision-reads-workshop-opened"
+  use Cratis.Chronicle.Events.EventType, id: "decision-reads-workshop-opened"
 
   defstruct [:places]
 end
 
 defmodule MyApp.Events.DecisionReadsPlaceBooked do
-  use Chronicle.Events.EventType, id: "decision-reads-place-booked"
+  use Cratis.Chronicle.Events.EventType, id: "decision-reads-place-booked"
 
   defstruct [:attendee]
 end
 
 defmodule MyApp.Events.DecisionReadsPlaceCancelled do
-  use Chronicle.Events.EventType, id: "decision-reads-place-cancelled"
+  use Cratis.Chronicle.Events.EventType, id: "decision-reads-place-cancelled"
 
   defstruct [:attendee]
 end
 
 # The decision model: a flat projection keyed by the event source.
 defmodule MyApp.ReadModels.DecisionReadsWorkshopPlaces do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: nil, total: 0, booked: 0
 
@@ -29,14 +29,14 @@ defmodule MyApp.ReadModels.DecisionReadsWorkshopPlaces do
 end
 
 defmodule MyApp.DecisionReadsBookPlace do
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.ReadModels.{DecisionConflict, DecisionReads}
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.ReadModels.{DecisionConflict, DecisionReads}
   alias MyApp.Events.DecisionReadsPlaceBooked
   alias MyApp.ReadModels.DecisionReadsWorkshopPlaces
 
   def handle(workshop_id, attendee) do
     result =
-      Chronicle.decide(fn _unit_of_work ->
+      Cratis.Chronicle.decide(fn _unit_of_work ->
         # 1. The read notes the log position, folds the workshop's events and enrolls
         #    itself as the guard of the unit of work.
         {:ok, read} = DecisionReads.get(DecisionReadsWorkshopPlaces, workshop_id)

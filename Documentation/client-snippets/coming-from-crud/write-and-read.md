@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.ComingFromCrudWriteAndReadAddressChanged do
-  use Chronicle.Events.EventType, id: "crud-comparison-write-and-read-address-changed"
+  use Cratis.Chronicle.Events.EventType, id: "crud-comparison-write-and-read-address-changed"
 
   defstruct [:address]
 end
 
 defmodule MyApp.ReadModels.ComingFromCrudWriteAndReadCustomerCard do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.ComingFromCrudWriteAndReadAddressChanged
 
@@ -22,11 +22,11 @@ defmodule MyApp.ComingFromCrudCustomerAddressUpdater do
 
   def change_address(customer_id, new_address) do
     :ok =
-      Chronicle.append(customer_id, %ComingFromCrudWriteAndReadAddressChanged{
+      Cratis.Chronicle.append(customer_id, %ComingFromCrudWriteAndReadAddressChanged{
         address: new_address
       })
 
-    Chronicle.read_model(ComingFromCrudWriteAndReadCustomerCard, customer_id)
+    Cratis.Chronicle.read_model(ComingFromCrudWriteAndReadCustomerCard, customer_id)
   end
 end
 ```

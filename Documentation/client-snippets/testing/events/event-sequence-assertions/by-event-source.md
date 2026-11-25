@@ -1,22 +1,22 @@
 ```elixir
 defmodule MyApp.Events.TestingSeqAssertSourceAuthorRegistered do
-  use Chronicle.Events.EventType, id: "testing-seq-assert-source-author-registered"
+  use Cratis.Chronicle.Events.EventType, id: "testing-seq-assert-source-author-registered"
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.TestingSeqAssertSourceBookAdded do
-  use Chronicle.Events.EventType, id: "testing-seq-assert-source-book-added"
+  use Cratis.Chronicle.Events.EventType, id: "testing-seq-assert-source-book-added"
 
   defstruct [:title]
 end
 
 defmodule MyApp.TestingSeqAssertByEventSourceTest do
-  use Chronicle.Testing.Case, event_types: [MyApp.Events.TestingSeqAssertSourceAuthorRegistered]
+  use Cratis.Chronicle.Testing.Case, event_types: [MyApp.Events.TestingSeqAssertSourceAuthorRegistered]
 
-  import Chronicle.Testing.Assertions
+  import Cratis.Chronicle.Testing.Assertions
 
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.TestingSeqAssertSourceAuthorRegistered
 
   test "assertions can be narrowed to one event source", %{chronicle: client} do
@@ -27,7 +27,7 @@ defmodule MyApp.TestingSeqAssertByEventSourceTest do
     :ok = EventLog.append(author2, %TestingSeqAssertSourceAuthorRegistered{name: "John Doe"}, client: client)
 
     # With a sequence number and the exact content
-    [first] = Chronicle.Testing.appended_events(client, author1)
+    [first] = Cratis.Chronicle.Testing.appended_events(client, author1)
 
     assert %{
              event: %TestingSeqAssertSourceAuthorRegistered{name: "Jane Smith"},

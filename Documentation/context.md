@@ -22,25 +22,25 @@ This Phoenix controller action is an excerpt: it assumes an authentication plug 
 defmodule MyAppWeb.AccountController do
   use MyAppWeb, :controller
 
-  alias Chronicle.{Auditing.CausationManager, Correlation.CorrelationId, Identity}
+  alias Cratis.Chronicle.{Auditing.CausationManager, Correlation.CorrelationId, Identity}
 
   def create(conn, %{"account_id" => account_id, "owner" => owner}) do
     user = conn.assigns.current_user
 
-    Chronicle.set_correlation_id(CorrelationId.create())
-    Chronicle.set_identity(Identity.new(user.id, user.name, user.user_name))
+    Cratis.Chronicle.set_correlation_id(CorrelationId.create())
+    Cratis.Chronicle.set_identity(Identity.new(user.id, user.name, user.user_name))
     CausationManager.clear()
     CausationManager.define_root(%{request_id: conn.assigns.request_id})
     CausationManager.add("MyApp.Commands.OpenAccount", %{account_id: account_id})
 
     try do
-      case Chronicle.append(account_id, %MyApp.Events.AccountOpened{owner: owner, balance: 0}) do
+      case Cratis.Chronicle.append(account_id, %MyApp.Events.AccountOpened{owner: owner, balance: 0}) do
         :ok -> send_resp(conn, 201, "")
         {:error, reason} -> send_resp(conn, 422, inspect(reason))
       end
     after
-      Chronicle.clear_correlation_id()
-      Chronicle.clear_identity()
+      Cratis.Chronicle.clear_correlation_id()
+      Cratis.Chronicle.clear_identity()
       CausationManager.clear()
     end
   end
@@ -55,17 +55,17 @@ the task defines its own causation root rather than copying the caller's causati
 Context lives in the process dictionary, so spawned processes, including `Task` processes, don't inherit it. Capture it before spawning and set it again inside:
 
 ```elixir
-alias Chronicle.Auditing.CausationManager
+alias Cratis.Chronicle.Auditing.CausationManager
 
-correlation_id = Chronicle.current_correlation_id()
-identity = Chronicle.current_identity()
+correlation_id = Cratis.Chronicle.current_correlation_id()
+identity = Cratis.Chronicle.current_identity()
 
 Task.start(fn ->
-  Chronicle.set_correlation_id(correlation_id)
-  Chronicle.set_identity(identity)
+  Cratis.Chronicle.set_correlation_id(correlation_id)
+  Cratis.Chronicle.set_identity(identity)
   CausationManager.define_root(%{source: "background-task"})
 
-  Chronicle.append("account-42", %MyApp.Events.FundsDeposited{amount: 100})
+  Cratis.Chronicle.append("account-42", %MyApp.Events.FundsDeposited{amount: 100})
 end)
 ```
 
@@ -76,7 +76,7 @@ A correlation id groups the events that one user action or job produced, so you 
 ### Creating Correlation IDs
 
 ```elixir
-alias Chronicle.Correlation.CorrelationId
+alias Cratis.Chronicle.Correlation.CorrelationId
 
 # A new random UUID-based correlation id
 correlation_id = CorrelationId.create()
@@ -90,18 +90,18 @@ correlation_id = CorrelationId.new("92a130f7-16e2-44f7-a8e3-79e76f5df3e1")
 Set a correlation id for the process, and every following append includes it:
 
 ```elixir
-alias Chronicle.Correlation.CorrelationId
+alias Cratis.Chronicle.Correlation.CorrelationId
 
-Chronicle.set_correlation_id(CorrelationId.create())
+Cratis.Chronicle.set_correlation_id(CorrelationId.create())
 
-:ok = Chronicle.append("account-42", %MyApp.Events.AccountOpened{owner: "Alice", balance: 500})
-:ok = Chronicle.append("account-42", %MyApp.Events.FundsDeposited{amount: 100})
+:ok = Cratis.Chronicle.append("account-42", %MyApp.Events.AccountOpened{owner: "Alice", balance: 500})
+:ok = Cratis.Chronicle.append("account-42", %MyApp.Events.FundsDeposited{amount: 100})
 
 # Read the current correlation id
-current = Chronicle.current_correlation_id()
+current = Cratis.Chronicle.current_correlation_id()
 
 # Replace it with a newly generated id before the next operation
-Chronicle.clear_correlation_id()
+Cratis.Chronicle.clear_correlation_id()
 ```
 
 `set_correlation_id/1` also accepts a plain string. Two details matter when you rely on the value:
@@ -115,7 +115,7 @@ Override the process-scoped correlation id for a single append:
 
 ```elixir
 :ok =
-  Chronicle.append("account-42", event,
+  Cratis.Chronicle.append("account-42", event,
     correlation_id: "92a130f7-16e2-44f7-a8e3-79e76f5df3e1"
   )
 ```
@@ -124,7 +124,7 @@ Override the process-scoped correlation id for a single append:
 
 Identity answers *who caused this state change?* Chronicle stores it with every event, which gives you a permanent record of authorship for audits, debugging, and "last changed by" views.
 
-An identity is a `%Chronicle.Identity{}` with four fields:
+An identity is a `%Cratis.Chronicle.Identity{}` with four fields:
 
 | Field | Description |
 | --- | --- |
@@ -136,7 +136,7 @@ An identity is a `%Chronicle.Identity{}` with four fields:
 ### Creating Identity
 
 ```elixir
-alias Chronicle.Identity
+alias Cratis.Chronicle.Identity
 
 identity = Identity.new("user-42", "Alice Cooper", "alice")
 ```
@@ -156,16 +156,16 @@ When a process hasn't set an identity, appends record `Identity.system()`. Set a
 Set the identity for the process, and every following append records it:
 
 ```elixir
-alias Chronicle.Identity
+alias Cratis.Chronicle.Identity
 
-Chronicle.set_identity(Identity.new("user-42", "Alice Cooper", "alice"))
+Cratis.Chronicle.set_identity(Identity.new("user-42", "Alice Cooper", "alice"))
 
-:ok = Chronicle.append("account-42", %MyApp.Events.AccountOpened{owner: "Alice", balance: 500})
-:ok = Chronicle.append("account-42", %MyApp.Events.FundsDeposited{amount: 100})
+:ok = Cratis.Chronicle.append("account-42", %MyApp.Events.AccountOpened{owner: "Alice", balance: 500})
+:ok = Cratis.Chronicle.append("account-42", %MyApp.Events.FundsDeposited{amount: 100})
 
-current = Chronicle.current_identity()
+current = Cratis.Chronicle.current_identity()
 
-Chronicle.clear_identity()
+Cratis.Chronicle.clear_identity()
 ```
 
 ### One-Off Identity Override
@@ -175,7 +175,7 @@ Override the process-scoped identity for a single append:
 ```elixir
 identity = Identity.new("batch-processor", "Batch Processor", "batch")
 
-:ok = Chronicle.append("account-42", event, identity: identity)
+:ok = Cratis.Chronicle.append("account-42", event, identity: identity)
 ```
 
 ### Switching Identity
@@ -187,12 +187,12 @@ alice = Identity.new("u-alice", "Alice Smith", "alice.smith")
 bob = Identity.new("u-bob", "Bob Jones", "bob.jones")
 
 # Alice approves a leave request
-Chronicle.set_identity(alice)
-:ok = Chronicle.append(request_id, %MyApp.Events.LeaveApproved{approved_by: "u-alice"})
+Cratis.Chronicle.set_identity(alice)
+:ok = Cratis.Chronicle.append(request_id, %MyApp.Events.LeaveApproved{approved_by: "u-alice"})
 
 # Bob then archives it
-Chronicle.set_identity(bob)
-:ok = Chronicle.append(request_id, %MyApp.Events.RequestArchived{})
+Cratis.Chronicle.set_identity(bob)
+:ok = Cratis.Chronicle.append(request_id, %MyApp.Events.RequestArchived{})
 ```
 
 The event log shows Alice caused the approval and Bob caused the archival.
@@ -202,15 +202,15 @@ The event log shows Alice caused the approval and Bob caused the archival.
 When a system actor performs an action for a person, pass the person as the fourth argument, `on_behalf_of`:
 
 ```elixir
-alias Chronicle.Identity
+alias Cratis.Chronicle.Identity
 
 human = Identity.new("u-alice", "Alice Smith", "alice.smith")
 
 system_acting =
   Identity.new("s-workflow", "Workflow Engine", "workflow-engine", human)
 
-Chronicle.set_identity(system_acting)
-:ok = Chronicle.append("order-99", %MyApp.Events.OrderFulfilled{})
+Cratis.Chronicle.set_identity(system_acting)
+:ok = Cratis.Chronicle.append("order-99", %MyApp.Events.OrderFulfilled{})
 ```
 
 Chronicle records the full chain: the workflow engine, acting on behalf of Alice. `Identity.without_duplicates/1` removes repeated subjects from a long chain.
@@ -222,7 +222,7 @@ Causation records the steps that led to an event: a root, such as an incoming HT
 ### Building Causation Chains
 
 ```elixir
-alias Chronicle.Auditing.CausationManager
+alias Cratis.Chronicle.Auditing.CausationManager
 
 # The root: the action that started the chain
 CausationManager.define_root(%{application: "banking-api", version: "1.0"})
@@ -231,7 +231,7 @@ CausationManager.define_root(%{application: "banking-api", version: "1.0"})
 CausationManager.add("Banking.Commands.OpenAccount", %{account_id: "account-42"})
 
 # Each append stores the full chain
-:ok = Chronicle.append("account-42", %MyApp.Events.AccountOpened{owner: "Alice", balance: 500})
+:ok = Cratis.Chronicle.append("account-42", %MyApp.Events.AccountOpened{owner: "Alice", balance: 500})
 
 # Remove the root and chain before the next operation
 CausationManager.clear()
@@ -239,10 +239,10 @@ CausationManager.clear()
 
 ### Causation Entries
 
-Each step is a `Chronicle.Auditing.CausationEntry` with a type and a map of properties. The type identifies the operation, typically the full name of a command or message:
+Each step is a `Cratis.Chronicle.Auditing.CausationEntry` with a type and a map of properties. The type identifies the operation, typically the full name of a command or message:
 
 ```elixir
-alias Chronicle.Auditing.CausationManager
+alias Cratis.Chronicle.Auditing.CausationManager
 
 CausationManager.define_root(%{request_id: "req-1", source: "my-api"})
 CausationManager.add("MyApp.Commands.PlaceOrder", %{order_id: "order-99"})
@@ -258,22 +258,22 @@ Properties become part of the permanent event log. Don't put secrets or personal
 Pass a causation list for a single append:
 
 ```elixir
-alias Chronicle.Auditing.CausationEntry
+alias Cratis.Chronicle.Auditing.CausationEntry
 
 causation = [
   CausationEntry.new("MyApp.Commands.InitialRequest", %{request_id: "req-1"}),
   CausationEntry.new("MyApp.Commands.ProcessRequest", %{item_id: "item-1"})
 ]
 
-:ok = Chronicle.append("resource-42", event, causation: causation)
+:ok = Cratis.Chronicle.append("resource-42", event, causation: causation)
 ```
 
 ## See Also
 
-- `Chronicle.Correlation.CorrelationId`: correlation id value type
-- `Chronicle.Correlation.CorrelationIdManager`: process-scoped correlation handling
-- `Chronicle.Identity`: identity value type, well-known identities, and `on_behalf_of` chains
-- `Chronicle.Identity.IdentityProvider`: process-scoped identity handling
-- `Chronicle.Auditing.CausationManager`: process-scoped causation chains
-- `Chronicle.Auditing.CausationEntry`: individual causation steps
-- `Chronicle.Auditing.CausationType`: built-in causation entry types
+- `Cratis.Chronicle.Correlation.CorrelationId`: correlation id value type
+- `Cratis.Chronicle.Correlation.CorrelationIdManager`: process-scoped correlation handling
+- `Cratis.Chronicle.Identity`: identity value type, well-known identities, and `on_behalf_of` chains
+- `Cratis.Chronicle.Identity.IdentityProvider`: process-scoped identity handling
+- `Cratis.Chronicle.Auditing.CausationManager`: process-scoped causation chains
+- `Cratis.Chronicle.Auditing.CausationEntry`: individual causation steps
+- `Cratis.Chronicle.Auditing.CausationType`: built-in causation entry types

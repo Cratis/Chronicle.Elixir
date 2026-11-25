@@ -4,48 +4,48 @@
 # Round trip against a real kernel for constraints parity (issue #143). Opt in like the other
 # integration tests: point CHRONICLE_INTEGRATION_CONNECTION_STRING at a development kernel and run
 # `mix test --include integration`.
-defmodule Chronicle.Integration.ConstraintsParityTest do
+defmodule Cratis.Chronicle.Integration.ConstraintsParityTest do
   use ExUnit.Case, async: false
 
   @moduletag :integration
 
-  alias Chronicle.EventSequences.{AppendResult, EventLog}
+  alias Cratis.Chronicle.EventSequences.{AppendResult, EventLog}
 
   defmodule CodeClaimed do
-    use Chronicle.Events.EventType, id: "cp-code-claimed"
+    use Cratis.Chronicle.Events.EventType, id: "cp-code-claimed"
     defstruct code: ""
 
     unique(:code, name: "cp-per-event-source-code", mode: :per_event_source)
   end
 
   defmodule VersionRegistered do
-    use Chronicle.Events.EventType, id: "cp-version-registered"
+    use Cratis.Chronicle.Events.EventType, id: "cp-version-registered"
     defstruct version_id: ""
 
     unique(:version_id, name: "cp-per-value-version", mode: :per_value)
   end
 
   defmodule VersionRemoved do
-    use Chronicle.Events.EventType, id: "cp-version-removed"
+    use Cratis.Chronicle.Events.EventType, id: "cp-version-removed"
     defstruct version_id: ""
 
     remove_constraint("cp-per-value-version", properties: [:version_id])
   end
 
   defmodule ProjectInitialized do
-    use Chronicle.Events.EventType, id: "cp-project-initialized"
+    use Cratis.Chronicle.Events.EventType, id: "cp-project-initialized"
     defstruct []
 
     unique_event_type(name: "cp-one-initialization")
   end
 
   defmodule StandaloneUserRegistered do
-    use Chronicle.Events.EventType, id: "cp-standalone-user-registered"
+    use Cratis.Chronicle.Events.EventType, id: "cp-standalone-user-registered"
     defstruct email: ""
   end
 
   defmodule StandaloneUniqueEmail do
-    use Chronicle.Events.Constraint
+    use Cratis.Chronicle.Events.Constraint
 
     unique name: "cp-standalone-unique-email" do
       on(StandaloneUserRegistered, [:email])
@@ -59,7 +59,7 @@ defmodule Chronicle.Integration.ConstraintsParityTest do
       "#{prefix}-#{System.system_time(:millisecond)}-#{System.unique_integer([:positive])}"
 
     {:ok, _} =
-      Chronicle.Client.start_link(
+      Cratis.Chronicle.Client.start_link(
         name: :constraints_it_client,
         connection_string: System.fetch_env!("CHRONICLE_INTEGRATION_CONNECTION_STRING"),
         event_store: event_store,
@@ -74,7 +74,7 @@ defmodule Chronicle.Integration.ConstraintsParityTest do
         constraints: [StandaloneUniqueEmail]
       )
 
-    :ok = Chronicle.Client.await_registration(:constraints_it_client, 60_000)
+    :ok = Cratis.Chronicle.Client.await_registration(:constraints_it_client, 60_000)
     :ok
   end
 
@@ -135,6 +135,6 @@ defmodule Chronicle.Integration.ConstraintsParityTest do
   # Registering every event type and constraint module `discover_loaded/0` finds across the
   # whole test suite against a live kernel is impractical here (it would register hundreds of
   # unrelated artifacts). That `StandaloneUniqueEmail` is discoverable at all is covered at the
-  # unit level in `Chronicle.Events.ConstraintTest` ("Chronicle.Artifacts discovery"); this test
+  # unit level in `Cratis.Chronicle.Events.ConstraintTest` ("Cratis.Chronicle.Artifacts discovery"); this test
   # only needs to prove a module reached the kernel through the explicit `:constraints` option.
 end

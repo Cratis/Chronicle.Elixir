@@ -1,24 +1,24 @@
 ```elixir
 defmodule MyApp.Events.ConstantKeyProductPurchased do
-  use Chronicle.Events.EventType, id: "constant-key-product-purchased-v1"
+  use Cratis.Chronicle.Events.EventType, id: "constant-key-product-purchased-v1"
 
   defstruct [:product_id, :amount]
 end
 
 defmodule MyApp.Events.ConstantKeyProductReturned do
-  use Chronicle.Events.EventType, id: "constant-key-product-returned-v1"
+  use Cratis.Chronicle.Events.EventType, id: "constant-key-product-returned-v1"
 
   defstruct [:product_id, :amount]
 end
 
 defmodule MyApp.Events.ConstantKeyPageViewed do
-  use Chronicle.Events.EventType, id: "constant-key-page-viewed-v1"
+  use Cratis.Chronicle.Events.EventType, id: "constant-key-page-viewed-v1"
 
   defstruct [:page_url]
 end
 
 defmodule MyApp.ReadModels.StoreMetrics do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{
     ConstantKeyProductPurchased,

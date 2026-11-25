@@ -1,9 +1,9 @@
 ---
 title: Captures
-description: Define Chronicle captures with the Elixir DSL, then register, start, stop, delete, list and validate them through the Chronicle.Captures API.
+description: Define Chronicle captures with the Elixir DSL, then register, start, stop, delete, list and validate them through the Cratis.Chronicle.Captures API.
 ---
 
-`Chronicle.Captures.Capture` provides a DSL for defining Chronicle captures, and `Chronicle.Captures` provides an idiomatic Elixir API for registering, starting, stopping, deleting, listing, and validating them.
+`Cratis.Chronicle.Captures.Capture` provides a DSL for defining Chronicle captures, and `Cratis.Chronicle.Captures` provides an idiomatic Elixir API for registering, starting, stopping, deleting, listing, and validating them.
 
 Captures turn data that arrives from outside the event log — an external API, an inbound webhook, or another event store's public events — into events appended to this event store. The DSL compiles at build time to Capture Declaration Language (CDL) text, the same text the kernel's Workbench and `SaveCapture` accept. See the Chronicle documentation's Capture Declaration Language reference for the full grammar.
 
@@ -15,7 +15,7 @@ As of Chronicle 19.6, the kernel's capturing engine reads only `api` and `events
 
 ```elixir
 defmodule MyApp.Captures.InvoiceCapture do
-  use Chronicle.Captures.Capture, name: "InvoiceCapture"
+  use Cratis.Chronicle.Captures.Capture, name: "InvoiceCapture"
 
   api_source("InvoicingApi", route: "/invoices", poll: "10m")
 
@@ -27,8 +27,8 @@ defmodule MyApp.Captures.InvoiceCapture do
 end
 ```
 
-- `use Chronicle.Captures.Capture` registers `:name` (defaults to the module's last segment) and `:id` (defaults to a deterministic UUIDv5 derived from the module's full name, so re-registering the same module updates the same kernel-side capture rather than creating a new one every deploy). Pass `start: true` to have `Chronicle.Captures.Registrar` start the capture once it has been saved.
-- Exactly one source is required: `api_source/1,2` (polls a named [External Service](external-services.md)), `webhook_source/1` (an inbound webhook path), or `events_source/1` (captures from another event store's public events, given as a list of registered `Chronicle.Events.EventType` modules).
+- `use Cratis.Chronicle.Captures.Capture` registers `:name` (defaults to the module's last segment) and `:id` (defaults to a deterministic UUIDv5 derived from the module's full name, so re-registering the same module updates the same kernel-side capture rather than creating a new one every deploy). Pass `start: true` to have `Cratis.Chronicle.Captures.Registrar` start the capture once it has been saved.
+- Exactly one source is required: `api_source/1,2` (polls a named [External Service](external-services.md)), `webhook_source/1` (an inbound webhook path), or `events_source/1` (captures from another event store's public events, given as a list of registered `Cratis.Chronicle.Events.EventType` modules).
 - `key/1` names the property path used to identify and diff a captured item. For an events source, use `"$eventSourceId"`.
 - `append/2,3` declares an event to append when its `when:` condition matches; `set/2` inside its block maps a target field of the event's struct from a source expression (`"$.path"` for the current payload, `"$context.<property>"` for the capture or event context).
 
@@ -37,10 +37,10 @@ The kernel's CDL parser lexes the target of `append <EventType>` as a type-name 
 
 ```elixir
 # Works as an append target - starts with an uppercase letter.
-use Chronicle.Events.EventType, id: "InvoiceStatusChanged"
+use Cratis.Chronicle.Events.EventType, id: "InvoiceStatusChanged"
 
 # Compiles, but can never be targeted by append/2,3 (fails at compile time with a clear error).
-use Chronicle.Events.EventType, id: "invoice-status-changed"
+use Cratis.Chronicle.Events.EventType, id: "invoice-status-changed"
 ```
 
 `append/2,3` raises `ArgumentError` at compile time when the resolved id does not match this shape, rather than letting the capture fail validation on the kernel. `events_source/1`'s `from` lines have no such restriction — the kernel's grammar treats them as free text.
@@ -105,31 +105,31 @@ end
 
 ## Registering a capture
 
-Register a capture module explicitly with `Chronicle.Client`:
+Register a capture module explicitly with `Cratis.Chronicle.Client`:
 
 ```elixir
-{Chronicle.Client,
+{Cratis.Chronicle.Client,
   connection_string: "chronicle://localhost:35000",
   event_store: "my-store",
   captures: [MyApp.Captures.InvoiceCapture]}
 ```
 
-Or rely on `otp_app:` auto-discovery — modules that export `__chronicle_capture__/1` are discovered automatically, the same way reactors, reducers, and webhooks are. Either way, `Chronicle.Captures.Registrar` saves every discoverable capture once the client's connection reaches the `:registered` phase, and re-registers on every reconnect:
+Or rely on `otp_app:` auto-discovery — modules that export `__chronicle_capture__/1` are discovered automatically, the same way reactors, reducers, and webhooks are. Either way, `Cratis.Chronicle.Captures.Registrar` saves every discoverable capture once the client's connection reaches the `:registered` phase, and re-registers on every reconnect:
 
-- It is idempotent: it compares the compiled declaration against what `Chronicle.Captures.list/1` reports and skips a capture whose declaration already matches.
+- It is idempotent: it compares the compiled declaration against what `Cratis.Chronicle.Captures.list/1` reports and skips a capture whose declaration already matches.
 - It warns, rather than fails, before saving over a capture that is `:started` and whose declaration changed — saving a started capture stops it on the kernel, so it comes back stopped.
 - It starts a capture only when it declares `start: true`.
 
 ## Managing a capture directly
 
 ```elixir
-{:ok, capture} = Chronicle.Captures.register(MyApp.Captures.InvoiceCapture)
-:ok = Chronicle.Captures.start(MyApp.Captures.InvoiceCapture)
-{:ok, captures} = Chronicle.Captures.list()
-{:ok, messages} = Chronicle.Captures.validate(MyApp.Captures.InvoiceCapture)
-{:ok, events} = Chronicle.Captures.captured_events("InvoiceCapture")
-:ok = Chronicle.Captures.stop(MyApp.Captures.InvoiceCapture)
-:ok = Chronicle.Captures.delete(MyApp.Captures.InvoiceCapture)
+{:ok, capture} = Cratis.Chronicle.Captures.register(MyApp.Captures.InvoiceCapture)
+:ok = Cratis.Chronicle.Captures.start(MyApp.Captures.InvoiceCapture)
+{:ok, captures} = Cratis.Chronicle.Captures.list()
+{:ok, messages} = Cratis.Chronicle.Captures.validate(MyApp.Captures.InvoiceCapture)
+{:ok, events} = Cratis.Chronicle.Captures.captured_events("InvoiceCapture")
+:ok = Cratis.Chronicle.Captures.stop(MyApp.Captures.InvoiceCapture)
+:ok = Cratis.Chronicle.Captures.delete(MyApp.Captures.InvoiceCapture)
 ```
 
 Every function also accepts a raw capture id (a GUID string) instead of a module for `start/2`, `stop/2`, and `delete/2`, and raw CDL text instead of a module for `validate/2` — useful for validating a declaration before it is ever saved.

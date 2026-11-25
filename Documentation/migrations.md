@@ -22,21 +22,21 @@ Events page.
 
 ```elixir
 defmodule MyApp.Events.AuthorRegistered do
-  use Chronicle.Events.EventType, id: "author-registered", generation: 2
+  use Cratis.Chronicle.Events.EventType, id: "author-registered", generation: 2
   defstruct [:first_name, :last_name]
 end
 
 defmodule MyApp.Events.AuthorRegisteredV1 do
-  use Chronicle.Events.EventType, generation_for: MyApp.Events.AuthorRegistered, generation: 1
+  use Cratis.Chronicle.Events.EventType, generation_for: MyApp.Events.AuthorRegistered, generation: 1
   defstruct [:name]
 end
 
 defmodule MyApp.Migrations.AuthorRegisteredMigration do
-  use Chronicle.Events.Migration,
+  use Cratis.Chronicle.Events.Migration,
     from: {MyApp.Events.AuthorRegisteredV1, generation: 1},
     to: {MyApp.Events.AuthorRegistered, generation: 2}
 
-  alias Chronicle.Events.MigrationBuilder
+  alias Cratis.Chronicle.Events.MigrationBuilder
 
   @impl true
   def upcast(builder) do
@@ -56,16 +56,16 @@ end
 
 A few mistakes are checked before the client connects. By default the client logs the full error
 and carries on; start it with `strict_validation: true` to raise instead, so a bad set fails
-immediately instead of being retried. `Chronicle.Events.EventTypes.validate/2` runs the same
+immediately instead of being retried. `Cratis.Chronicle.Events.EventTypes.validate/2` runs the same
 checks and returns `:ok` or `{:error, exception}`; `validate!/2` raises.
 
 - Two modules representing the same generation of the same event type id are reported as
-  `Chronicle.Events.MultipleEventTypesWithSameIdFound`.
+  `Cratis.Chronicle.Events.MultipleEventTypesWithSameIdFound`.
 - More than one migration module bridging the same pair of generations is reported as
-  `Chronicle.Events.MultipleMigratorsForSameEventTypeGeneration` - exactly one migrator may bridge
+  `Cratis.Chronicle.Events.MultipleMigratorsForSameEventTypeGeneration` - exactly one migrator may bridge
   a pair of generations.
 - A migration whose `:from` and `:to` resolve to different event type ids raises
   `ArgumentError` (as in earlier releases, now with a longer message) - mark the previous generation with
   `generation_for:` instead of giving it a separate `:id`.
 - A non-adjacent generation gap (for example `from: generation: 1` to `to: generation: 3`) raises
-  `Chronicle.Events.InvalidMigrationGenerationGap`.
+  `Cratis.Chronicle.Events.InvalidMigrationGenerationGap`.

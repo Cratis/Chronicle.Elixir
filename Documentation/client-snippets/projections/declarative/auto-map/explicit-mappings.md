@@ -1,24 +1,24 @@
 ```elixir title="AutoMap with explicit mappings"
 defmodule MyApp.Events.AutoMapAccountOpened do
-  use Chronicle.Events.EventType, id: "auto-map-account-opened"
+  use Cratis.Chronicle.Events.EventType, id: "auto-map-account-opened"
 
   defstruct [:name, :email]
 end
 
 defmodule MyApp.Events.AutoMapAccountEmailChanged do
-  use Chronicle.Events.EventType, id: "auto-map-account-email-changed"
+  use Cratis.Chronicle.Events.EventType, id: "auto-map-account-email-changed"
 
   defstruct [:email]
 end
 
 defmodule MyApp.ReadModels.AutoMapAccount do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct [:name, :email, :status, :created_at]
 end
 
 defmodule MyApp.Projections.AutoMapAccountProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.AutoMapAccount
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.AutoMapAccount
 
   alias MyApp.Events.{AutoMapAccountEmailChanged, AutoMapAccountOpened}
 

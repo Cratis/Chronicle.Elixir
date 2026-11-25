@@ -1,12 +1,12 @@
 ```elixir title="Model-bound set once"
 defmodule MyApp.Events.MbSetOnceDocumentRevised do
-  use Chronicle.Events.EventType, id: "mb-set-once-document-revised"
+  use Cratis.Chronicle.Events.EventType, id: "mb-set-once-document-revised"
 
   defstruct title: ""
 end
 
 defmodule MyApp.ReadModels.MbSetOnceDocument do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [created: :datetime, last_revised: :datetime]
 
   alias MyApp.Events.MbSetOnceDocumentRevised

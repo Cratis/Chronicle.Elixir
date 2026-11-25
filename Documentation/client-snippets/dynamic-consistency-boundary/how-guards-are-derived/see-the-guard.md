@@ -1,13 +1,13 @@
 ```elixir
 defmodule MyApp.Events.SeeTheGuardMoneyWithdrawn do
-  use Chronicle.Events.EventType, id: "see-the-guard-money-withdrawn"
+  use Cratis.Chronicle.Events.EventType, id: "see-the-guard-money-withdrawn"
 
   defstruct [:amount]
 end
 
 # Counts the withdrawals in the stream the read is scoped to.
 defmodule MyApp.ReadModels.SeeTheGuardMonthlyWithdrawals do
-  use Chronicle.ReadModels.ReadModel, passive: true
+  use Cratis.Chronicle.ReadModels.ReadModel, passive: true
 
   defstruct id: nil, count: 0
 
@@ -15,8 +15,8 @@ defmodule MyApp.ReadModels.SeeTheGuardMonthlyWithdrawals do
 end
 
 defmodule MyApp.SeeTheGuardShowTheGuard do
-  alias Chronicle.ReadModels.DecisionReads
-  alias Chronicle.Transactions.UnitOfWork
+  alias Cratis.Chronicle.ReadModels.DecisionReads
+  alias Cratis.Chronicle.Transactions.UnitOfWork
   alias MyApp.ReadModels.SeeTheGuardMonthlyWithdrawals
 
   def withdraw(account_id) do

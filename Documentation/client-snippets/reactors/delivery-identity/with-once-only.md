@@ -1,6 +1,6 @@
 ```elixir
 defmodule CustomerWelcomed do
-  use Chronicle.Events.EventType, id: "customer-welcomed"
+  use Cratis.Chronicle.Events.EventType, id: "customer-welcomed"
 
   defstruct [:customer_id]
 end
@@ -18,7 +18,7 @@ defmodule WelcomeMailer do
   # Skip CustomerWelcomed while the observer replays. Replay exclusion is not
   # exactly-once: recovering a failed partition can still deliver it again,
   # so the delivery receipt guards the side effect as well.
-  use Chronicle.Reactors.Reactor, once_only: [CustomerWelcomed]
+  use Cratis.Chronicle.Reactors.Reactor, once_only: [CustomerWelcomed]
 
   @handles CustomerWelcomed
 

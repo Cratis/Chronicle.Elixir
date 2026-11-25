@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.CountersUserLoggedIn do
-  use Chronicle.Events.EventType, id: "counters-user-logged-in-v1"
+  use Cratis.Chronicle.Events.EventType, id: "counters-user-logged-in-v1"
 
   defstruct []
 end
 
 defmodule MyApp.ReadModels.CountersUserStatistics do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.CountersUserLoggedIn
 

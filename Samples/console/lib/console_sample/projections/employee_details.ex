@@ -8,7 +8,7 @@ defmodule ConsoleSample.Projections.EmployeeDetails do
   `EmployeePromoted` needs an explicit mapping because the event field is `new_title`.
   """
 
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias ConsoleSample.Events.{
     EmployeeAddressSet,

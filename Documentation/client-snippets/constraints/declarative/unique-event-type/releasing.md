@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.ConstraintsUniqueEventTypeShiftStarted do
-  use Chronicle.Events.EventType, id: "constraints-unique-event-type-shift-started"
+  use Cratis.Chronicle.Events.EventType, id: "constraints-unique-event-type-shift-started"
 
   unique_event_type(name: "OneOpenShift")
 
@@ -8,7 +8,7 @@ defmodule MyApp.Events.ConstraintsUniqueEventTypeShiftStarted do
 end
 
 defmodule MyApp.Events.ConstraintsUniqueEventTypeShiftEnded do
-  use Chronicle.Events.EventType, id: "constraints-unique-event-type-shift-ended"
+  use Cratis.Chronicle.Events.EventType, id: "constraints-unique-event-type-shift-ended"
 
   remove_constraint "OneOpenShift"
 

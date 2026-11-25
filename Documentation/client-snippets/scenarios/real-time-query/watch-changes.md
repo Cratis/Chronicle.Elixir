@@ -3,7 +3,7 @@ defmodule MyApp.ScenariosQueryBookWatcher do
   alias MyApp.ReadModels.ScenariosQueryBook
 
   def watch do
-    Chronicle.ReadModels.watch(ScenariosQueryBook)
+    Cratis.Chronicle.ReadModels.watch(ScenariosQueryBook)
   end
 
   def handle_message({:chronicle_read_model_changed, ScenariosQueryBook, changeset}) do
@@ -17,6 +17,6 @@ defmodule MyApp.ScenariosQueryBookWatcher do
     IO.puts("Watch ended: #{inspect(reason)}")
   end
 
-  def stop(watcher), do: Chronicle.ReadModels.unwatch(watcher)
+  def stop(watcher), do: Cratis.Chronicle.ReadModels.unwatch(watcher)
 end
 ```

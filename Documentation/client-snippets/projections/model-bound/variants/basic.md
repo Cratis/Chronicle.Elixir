@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.MbVariantIssueCreated do
-  use Chronicle.Events.EventType, id: "mb-variant-issue-created-v1"
+  use Cratis.Chronicle.Events.EventType, id: "mb-variant-issue-created-v1"
 
   defstruct [:title]
 end
 
 defmodule MyApp.Events.MbVariantPullRequestCreated do
-  use Chronicle.Events.EventType, id: "mb-variant-pull-request-created-v1"
+  use Cratis.Chronicle.Events.EventType, id: "mb-variant-pull-request-created-v1"
 
   defstruct [:pull_request_url]
 end
@@ -17,7 +17,7 @@ defmodule MyApp.ReadModels.MbVariantWorkItem do
 end
 
 defmodule MyApp.ReadModels.MbVariantBacklogItem do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.MbVariantIssueCreated
   alias MyApp.ReadModels.MbVariantWorkItem
@@ -32,7 +32,7 @@ defmodule MyApp.ReadModels.MbVariantBacklogItem do
 end
 
 defmodule MyApp.ReadModels.MbVariantPullRequestItem do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.MbVariantPullRequestCreated
   alias MyApp.ReadModels.MbVariantWorkItem

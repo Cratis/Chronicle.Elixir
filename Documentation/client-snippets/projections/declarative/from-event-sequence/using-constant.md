@@ -4,7 +4,7 @@ defmodule MyApp.DecFromEventSequenceEventSequences do
 end
 
 defmodule MyApp.Projections.DecFromEventSequenceOrderProjectionWithConstant do
-  use Chronicle.Projections.Projection,
+  use Cratis.Chronicle.Projections.Projection,
     model: MyApp.ReadModels.DecFromEventSequenceOrder,
     event_sequence: MyApp.DecFromEventSequenceEventSequences.order_management()
 

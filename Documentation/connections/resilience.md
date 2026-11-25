@@ -28,23 +28,23 @@ stateDiagram-v2
 
 ## Wait for readiness in your code
 
-`Chronicle.Client` starts, and returns from `Supervisor.start_link/2`, long before the lifecycle reaches `:registered`. What a call does in that window depends on the call:
+`Cratis.Chronicle.Client` starts, and returns from `Supervisor.start_link/2`, long before the lifecycle reaches `:registered`. What a call does in that window depends on the call:
 
 - Appends, event log reads and most other calls use the gRPC channel as soon as it exists. Before that, and while the client reconnects, they return `{:error, :not_connected}` instead of waiting. Once the channel is up they are sent even if registration hasn't finished, so an append can reach the kernel before your event types are registered.
-- Read model queries in `Chronicle.ReadModels`, including `Chronicle.read_model/3`, first wait up to 30 seconds for `:registered`, then retry briefly while the kernel settles.
+- Read model queries in `Cratis.Chronicle.ReadModels`, including `Cratis.Chronicle.read_model/3`, first wait up to 30 seconds for `:registered`, then retry briefly while the kernel settles.
 
-Block until the client is ready with `Chronicle.Connections.Lifecycle.wait_until/3`:
+Block until the client is ready with `Cratis.Chronicle.Connections.Lifecycle.wait_until/3`:
 
 ```elixir
-alias Chronicle.Connections.Lifecycle
+alias Cratis.Chronicle.Connections.Lifecycle
 
-case Lifecycle.wait_until(Lifecycle.name_for(Chronicle.Client), :registered, 30_000) do
+case Lifecycle.wait_until(Lifecycle.name_for(Cratis.Chronicle.Client), :registered, 30_000) do
   :ok -> :ready
   {:error, :timeout} -> :not_ready
 end
 ```
 
-`Lifecycle.name_for/1` takes the client's `name:`, which defaults to `Chronicle.Client`. To follow phase changes instead of blocking, call `Lifecycle.subscribe/1`. It returns `{:ok, phase, connection_id}` with the current phase and then sends `{:chronicle_lifecycle, phase, connection_id}` messages on every transition. `Lifecycle.phase/1` returns the current phase.
+`Lifecycle.name_for/1` takes the client's `name:`, which defaults to `Cratis.Chronicle.Client`. To follow phase changes instead of blocking, call `Lifecycle.subscribe/1`. It returns `{:ok, phase, connection_id}` with the current phase and then sends `{:chronicle_lifecycle, phase, connection_id}` messages on every transition. `Lifecycle.phase/1` returns the current phase.
 
 ## What happens on connect
 
@@ -65,15 +65,15 @@ Steps 1 to 5 finish before step 7, so observers never register against definitio
 Use the registration methods to wait for completion or inspect why it has not finished:
 
 ```elixir
-:ok = Chronicle.Client.await_registration()                       # waits up to 30 seconds
-{:error, {:failed, status}} = Chronicle.Client.await_registration()  # the kernel rejected something for good
-%{state: :registering, attempts: 2, error: error, next_retry_in: ms} = Chronicle.Client.registration_status()
+:ok = Cratis.Chronicle.Client.await_registration()                       # waits up to 30 seconds
+{:error, {:failed, status}} = Cratis.Chronicle.Client.await_registration()  # the kernel rejected something for good
+%{state: :registering, attempts: 2, error: error, next_retry_in: ms} = Cratis.Chronicle.Client.registration_status()
 ```
 
 `registration_status/1` reports `:pending`, `:registering`, `:registered` or `:failed`. A rejection the kernel will never accept — a validation failure, an invalid argument — is `:failed` at once and is not retried. Retryable failures use backoff, but retrying also stops when a configured attempt limit is reached. Tune it with the client's `:registration` option:
 
 ```elixir
-{Chronicle.Client,
+{Cratis.Chronicle.Client,
  registration: [initial_delay: 1_000, max_delay: 30_000, multiplier: 2, jitter: 0.2, max_attempts: 10]}
 ```
 
@@ -84,7 +84,7 @@ The default keeps the fixed five-second delay with no attempt limit for retryabl
 For a client that stays short of `:registered`, the watchdog reconnects it after the configured interval:
 
 ```elixir
-{Chronicle.Client, watchdog: [unregistered_for: 60_000]}
+{Cratis.Chronicle.Client, watchdog: [unregistered_for: 60_000]}
 ```
 
 The default is 60 seconds when enabled with `watchdog: true`. This replaces a hand-written supervisor-of-the-client watchdog.
@@ -137,8 +137,8 @@ When the kernel advertises the `multiplexed-observation` capability, those strea
 The delay grows while a stream keeps ending without having worked. The first wait is at most two seconds, and each stream that ends without having worked doubles that ceiling, up to a minute. Every wait lands at random in the upper half of its ceiling, so many observers that fail together during a kernel rollout come back at different times instead of as one herd. The wait starts over at two seconds once a stream delivered something or stayed open for three minutes. The three minutes are longer than the kernel takes to give up establishing a stream against a busy observer, so slow subscribes keep backing off. The defaults match the .NET client. Tune them with the `:observation_reconnect` client option, in milliseconds:
 
 ```elixir
-{Chronicle.Client,
- connection_string: Chronicle.Connections.ConnectionString.development(),
+{Cratis.Chronicle.Client,
+ connection_string: Cratis.Chronicle.Connections.ConnectionString.development(),
  event_store: "my-store",
  otp_app: :my_app,
  observation_reconnect: [base_delay: 2_000, max_delay: 60_000, healthy_stream_duration: 180_000]}

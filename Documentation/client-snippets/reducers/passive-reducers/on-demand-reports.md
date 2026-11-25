@@ -1,6 +1,6 @@
 ```elixir
 defmodule PassiveReducersPaymentReceived do
-  use Chronicle.Events.EventType, id: "passive-reducers-payment-received"
+  use Cratis.Chronicle.Events.EventType, id: "passive-reducers-payment-received"
 
   defstruct [:category, :amount]
 end
@@ -10,7 +10,7 @@ defmodule PassiveReducersMonthlyRevenueReport do
 end
 
 defmodule PassiveReducersMonthlyRevenueReportReducer do
-  use Chronicle.Reducers.Reducer, model: PassiveReducersMonthlyRevenueReport, active: false
+  use Cratis.Chronicle.Reducers.Reducer, model: PassiveReducersMonthlyRevenueReport, active: false
 
   alias PassiveReducersPaymentReceived
 

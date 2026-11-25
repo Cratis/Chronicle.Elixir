@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Reactors.AccountNotifier do
-  use Chronicle.ReadModels.Reactor, model: MyApp.ReadModels.Account
+  use Cratis.Chronicle.ReadModels.Reactor, model: MyApp.ReadModels.Account
 
   @impl true
   def on_added(account, _changeset), do: send_welcome(account)

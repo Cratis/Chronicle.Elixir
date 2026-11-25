@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.MbChildrenLineItemAdded do
-  use Chronicle.Events.EventType, id: "mb-children-line-item-added"
+  use Cratis.Chronicle.Events.EventType, id: "mb-children-line-item-added"
 
   defstruct [:line_item_id, :product_name, :quantity]
 end
@@ -10,7 +10,7 @@ defmodule MyApp.ReadModels.MbChildrenLineItem do
 end
 
 defmodule MyApp.ReadModels.MbChildrenOrder do
-  use Chronicle.ReadModels.ReadModel, types: [lines: {:list, MyApp.ReadModels.MbChildrenLineItem}]
+  use Cratis.Chronicle.ReadModels.ReadModel, types: [lines: {:list, MyApp.ReadModels.MbChildrenLineItem}]
 
   defstruct order_id: nil, lines: []
 

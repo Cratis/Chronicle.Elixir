@@ -9,7 +9,7 @@ defmodule ConsoleSample.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      {Chronicle.Client,
+      {Cratis.Chronicle.Client,
        connection_string: connection_string(), event_store: "TestStoreElixir", otp_app: :console_sample}
     ]
 

@@ -9,7 +9,7 @@ defmodule ConsoleSample.Events.EmployeeWelcomeEmailQueued do
   in response to `EmployeeHired` — see that module for how `handle/2` triggers it.
   """
 
-  use Chronicle.Events.EventType, id: "employee-welcome-email-queued"
+  use Cratis.Chronicle.Events.EventType, id: "employee-welcome-email-queued"
 
   defstruct [:template]
 end

@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.EncryptedAttrPartnerIntegrationConfigured do
-  use Chronicle.Events.EventType, id: "encrypted-attr-partner-integration-configured"
+  use Cratis.Chronicle.Events.EventType, id: "encrypted-attr-partner-integration-configured"
 
   defstruct [:partner_name, :api_key]
 

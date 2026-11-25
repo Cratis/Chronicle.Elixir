@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.ReadModels.ChoosingStyleBookStatusModelBound do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: nil, title: nil, isbn: nil, is_borrowed: false, borrowed_by: nil
 

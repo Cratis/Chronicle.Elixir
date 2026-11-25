@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.CapturesIndexInvoiceStatusChanged do
-  use Chronicle.Events.EventType, id: "InvoiceStatusChanged"
+  use Cratis.Chronicle.Events.EventType, id: "InvoiceStatusChanged"
 
   defstruct [:status]
 end
 
 defmodule MyApp.Captures.CapturesIndexInvoiceCapture do
-  use Chronicle.Captures.Capture, name: "InvoiceCapture"
+  use Cratis.Chronicle.Captures.Capture, name: "InvoiceCapture"
 
   alias MyApp.Events.CapturesIndexInvoiceStatusChanged
 

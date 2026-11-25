@@ -6,18 +6,18 @@
 # `mix test --include integration`.
 #
 # Needs a kernel that honors StartAtTail on registration (Chronicle 19.70.0 or later).
-defmodule Chronicle.Integration.StartAtTailTest do
+defmodule Cratis.Chronicle.Integration.StartAtTailTest do
   use ExUnit.Case, async: false
 
   @moduletag :integration
 
   defmodule SomethingHappened do
-    use Chronicle.Events.EventType, id: "sat-something-happened"
+    use Cratis.Chronicle.Events.EventType, id: "sat-something-happened"
     defstruct name: ""
   end
 
   defmodule TailReactor do
-    use Chronicle.Reactors.Reactor, start_at_tail: true
+    use Cratis.Chronicle.Reactors.Reactor, start_at_tail: true
 
     @handles SomethingHappened
 
@@ -29,7 +29,7 @@ defmodule Chronicle.Integration.StartAtTailTest do
 
   # The control: the same registration without the option catches up on all history.
   defmodule HistoryReactor do
-    use Chronicle.Reactors.Reactor
+    use Cratis.Chronicle.Reactors.Reactor
 
     @handles SomethingHappened
 
@@ -48,7 +48,7 @@ defmodule Chronicle.Integration.StartAtTailTest do
 
     # History exists before either reactor has ever been registered.
     {:ok, _} =
-      Chronicle.Client.start_link(
+      Cratis.Chronicle.Client.start_link(
         name: :start_at_tail_writer,
         connection_string: connection_string,
         event_store: event_store,
@@ -56,17 +56,17 @@ defmodule Chronicle.Integration.StartAtTailTest do
         event_types: [SomethingHappened]
       )
 
-    :ok = Chronicle.Client.await_registration(:start_at_tail_writer, 60_000)
+    :ok = Cratis.Chronicle.Client.await_registration(:start_at_tail_writer, 60_000)
 
     for name <- ["one", "two", "three"] do
       :ok =
-        Chronicle.EventSequences.EventLog.append("sat-#{name}", %SomethingHappened{name: name},
-          client: :start_at_tail_writer
-        )
+        Cratis.Chronicle.EventSequences.EventLog.append(
+          "sat-#{name}",
+          %SomethingHappened{name: name}, client: :start_at_tail_writer)
     end
 
     {:ok, _} =
-      Chronicle.Client.start_link(
+      Cratis.Chronicle.Client.start_link(
         name: :start_at_tail_reader,
         connection_string: connection_string,
         event_store: event_store,
@@ -75,7 +75,7 @@ defmodule Chronicle.Integration.StartAtTailTest do
         reactors: [TailReactor, HistoryReactor]
       )
 
-    :ok = Chronicle.Client.await_registration(:start_at_tail_reader, 60_000)
+    :ok = Cratis.Chronicle.Client.await_registration(:start_at_tail_reader, 60_000)
     :ok
   end
 
@@ -92,7 +92,7 @@ defmodule Chronicle.Integration.StartAtTailTest do
     for name <- ["one", "two", "three"], do: assert_receive({:history, ^name}, 15_000)
 
     assert :ok =
-             Chronicle.EventSequences.EventLog.append(
+             Cratis.Chronicle.EventSequences.EventLog.append(
                "sat-after",
                %SomethingHappened{name: "after"},
                client: :start_at_tail_reader

@@ -1,6 +1,6 @@
 ```elixir
 defmodule ReducersSyncSignaturesMetricRecorded do
-  use Chronicle.Events.EventType, id: "reducers-sync-signatures-metric-recorded"
+  use Cratis.Chronicle.Events.EventType, id: "reducers-sync-signatures-metric-recorded"
 
   defstruct [:value]
 end
@@ -10,7 +10,7 @@ defmodule ReducersSyncSignaturesStats do
 end
 
 defmodule ReducersSyncSignaturesReducer do
-  use Chronicle.Reducers.Reducer, model: ReducersSyncSignaturesStats
+  use Cratis.Chronicle.Reducers.Reducer, model: ReducersSyncSignaturesStats
 
   alias ReducersSyncSignaturesMetricRecorded
 

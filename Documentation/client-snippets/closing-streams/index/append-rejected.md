@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.ClosingStreamsInvoiceLineAdded do
-  use Chronicle.Events.EventType, id: "closing-streams-invoice-line-added"
+  use Cratis.Chronicle.Events.EventType, id: "closing-streams-invoice-line-added"
 
   defstruct [:description, :amount]
 end
 
 defmodule MyApp.ClosingStreamsInvoiceLineAppender do
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.ClosingStreamsInvoiceLineAdded
 
   def try_append_line(invoice_id) do

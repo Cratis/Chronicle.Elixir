@@ -1,18 +1,18 @@
 ```elixir title="Add from an event"
 defmodule MyApp.Events.AccountOpenedForDeposits do
-  use Chronicle.Events.EventType, id: "account-opened-for-deposits-v1"
+  use Cratis.Chronicle.Events.EventType, id: "account-opened-for-deposits-v1"
 
   defstruct [:initial_balance]
 end
 
 defmodule MyApp.Events.DepositMadeForBalance do
-  use Chronicle.Events.EventType, id: "deposit-made-for-balance-v1"
+  use Cratis.Chronicle.Events.EventType, id: "deposit-made-for-balance-v1"
 
   defstruct [:amount]
 end
 
 defmodule MyApp.ReadModels.DepositAccount do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{AccountOpenedForDeposits, DepositMadeForBalance}
 

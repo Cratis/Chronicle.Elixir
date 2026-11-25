@@ -1,31 +1,31 @@
 ```elixir
 # Events
 defmodule MyApp.Events.MbRemovalFullShoppingCartCreated do
-  use Chronicle.Events.EventType, id: "mb-removal-full-shopping-cart-created"
+  use Cratis.Chronicle.Events.EventType, id: "mb-removal-full-shopping-cart-created"
 
   defstruct [:customer_name]
 end
 
 defmodule MyApp.Events.MbRemovalFullItemAddedToCart do
-  use Chronicle.Events.EventType, id: "mb-removal-full-item-added-to-cart"
+  use Cratis.Chronicle.Events.EventType, id: "mb-removal-full-item-added-to-cart"
 
   defstruct [:item_id, :product_name, :price]
 end
 
 defmodule MyApp.Events.MbRemovalFullItemRemovedFromCart do
-  use Chronicle.Events.EventType, id: "mb-removal-full-item-removed-from-cart"
+  use Cratis.Chronicle.Events.EventType, id: "mb-removal-full-item-removed-from-cart"
 
   defstruct [:cart_id, :item_id]
 end
 
 defmodule MyApp.Events.MbRemovalFullCartCheckedOut do
-  use Chronicle.Events.EventType, id: "mb-removal-full-cart-checked-out"
+  use Cratis.Chronicle.Events.EventType, id: "mb-removal-full-cart-checked-out"
 
   defstruct []
 end
 
 defmodule MyApp.Events.MbRemovalFullCartAbandoned do
-  use Chronicle.Events.EventType, id: "mb-removal-full-cart-abandoned"
+  use Cratis.Chronicle.Events.EventType, id: "mb-removal-full-cart-abandoned"
 
   defstruct []
 end
@@ -36,7 +36,7 @@ defmodule MyApp.ReadModels.MbRemovalFullCartItem do
 end
 
 defmodule MyApp.ReadModels.MbRemovalFullShoppingCart do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [items: {:list, MyApp.ReadModels.MbRemovalFullCartItem}]
 
   alias MyApp.Events.{

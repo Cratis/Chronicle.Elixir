@@ -1,20 +1,20 @@
 ```elixir
 defmodule ReactorSideEffectsSpecificBookReserved do
-  use Chronicle.Events.EventType, id: "reactor-side-effects-specific-book-reserved"
+  use Cratis.Chronicle.Events.EventType, id: "reactor-side-effects-specific-book-reserved"
 
   defstruct [:member_id, :isbn]
 end
 
 defmodule ReactorSideEffectsSpecificMemberActivityRecorded do
-  use Chronicle.Events.EventType, id: "reactor-side-effects-specific-member-activity-recorded"
+  use Cratis.Chronicle.Events.EventType, id: "reactor-side-effects-specific-member-activity-recorded"
 
   defstruct [:isbn]
 end
 
 defmodule ReactorSideEffectsSpecificReservationReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
-  alias Chronicle.EventSequences.EventForEventSourceId
+  alias Cratis.Chronicle.EventSequences.EventForEventSourceId
   alias ReactorSideEffectsSpecificBookReserved
   alias ReactorSideEffectsSpecificMemberActivityRecorded
 

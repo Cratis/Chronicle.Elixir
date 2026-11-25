@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.ChoosingStyleBookRegistered do
-  use Chronicle.Events.EventType, id: "choosing-style-book-registered"
+  use Cratis.Chronicle.Events.EventType, id: "choosing-style-book-registered"
 
   defstruct [:title, :isbn]
 end
 
 defmodule MyApp.Events.ChoosingStyleBookBorrowed do
-  use Chronicle.Events.EventType, id: "choosing-style-book-borrowed"
+  use Cratis.Chronicle.Events.EventType, id: "choosing-style-book-borrowed"
 
   defstruct [:member_name]
 
@@ -14,7 +14,7 @@ defmodule MyApp.Events.ChoosingStyleBookBorrowed do
 end
 
 defmodule MyApp.Events.ChoosingStyleBookReturned do
-  use Chronicle.Events.EventType, id: "choosing-style-book-returned"
+  use Cratis.Chronicle.Events.EventType, id: "choosing-style-book-returned"
 
   defstruct []
 end

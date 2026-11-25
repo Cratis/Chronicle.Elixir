@@ -18,12 +18,12 @@ reconnection does not replay changes missed while disconnected.
 
 ## Missing and not-yet-projected read models
 
-`Chronicle.read_model/3`, and `Chronicle.ReadModels.get/3` which it calls, return `{:ok, nil}`
+`Cratis.Chronicle.read_model/3`, and `Cratis.Chronicle.ReadModels.get/3` which it calls, return `{:ok, nil}`
 when no instance exists for the key. That is also what you get right after an append whose
 projection hasn't run yet, because Chronicle projects asynchronously:
 
 ```elixir
-case Chronicle.read_model(MyApp.ReadModels.AccountInfo, account_id) do
+case Cratis.Chronicle.read_model(MyApp.ReadModels.AccountInfo, account_id) do
   {:ok, nil} -> :not_found_or_not_projected_yet
   {:ok, account} -> {:ok, account}
   {:error, reason} -> {:error, reason}
@@ -31,23 +31,23 @@ end
 ```
 
 When you need to read your own write, append with
-`Chronicle.EventSequences.EventLog.append_and_wait_for_completion/3`, which returns once the
+`Cratis.Chronicle.EventSequences.EventLog.append_and_wait_for_completion/3`, which returns once the
 affected observers have processed the event. See
 [Event sequences](./event-sequences.md#appending-and-waiting-for-observer-completion).
 
 ## Watching for live changes
 
-`Chronicle.ReadModels.watch/2` subscribes the calling process to live changesets for a read
+`Cratis.Chronicle.ReadModels.watch/2` subscribes the calling process to live changesets for a read
 model over the kernel's server-streaming `Watch` RPC. Elixir has no `IObservable`/
 async-iterable equivalent to the C# and TypeScript clients' `Watch<TReadModel>()`, so this
-follows the same message-based idiom as `Chronicle.Connections.Lifecycle.subscribe/1`.
+follows the same message-based idiom as `Cratis.Chronicle.Connections.Lifecycle.subscribe/1`.
 
 ```elixir
-{:ok, watcher} = Chronicle.ReadModels.watch(MyApp.ReadModels.AccountInfo)
+{:ok, watcher} = Cratis.Chronicle.ReadModels.watch(MyApp.ReadModels.AccountInfo)
 
 receive do
   {:chronicle_read_model_changed, MyApp.ReadModels.AccountInfo, changeset} ->
-    # changeset is a %Chronicle.ReadModels.Changeset{} with :model_key, :read_model,
+    # changeset is a %Cratis.Chronicle.ReadModels.Changeset{} with :model_key, :read_model,
     # :change_type (:added | :modified | :removed), :event_sequence_number, and more.
     IO.inspect(changeset.read_model)
 
@@ -56,25 +56,25 @@ receive do
     IO.inspect(reason)
 end
 
-Chronicle.ReadModels.unwatch(watcher)
+Cratis.Chronicle.ReadModels.unwatch(watcher)
 ```
 
 ## Shared subscriptions
 
-`Chronicle.ReadModels.subscribe/2` is a shared alternative to `watch/2`: every caller that
+`Cratis.Chronicle.ReadModels.subscribe/2` is a shared alternative to `watch/2`: every caller that
 subscribes to the same read model (same client, namespace, and event sequence) is served by one
 kernel stream instead of each caller opening its own. Read model reactors use it, so a reactor and
 an ad-hoc subscriber for the same read model share a stream automatically.
 
 ```elixir
-{:ok, watcher} = Chronicle.ReadModels.subscribe(MyApp.ReadModels.AccountInfo)
+{:ok, watcher} = Cratis.Chronicle.ReadModels.subscribe(MyApp.ReadModels.AccountInfo)
 
 receive do
   {:chronicle_read_model_changed, MyApp.ReadModels.AccountInfo, changeset} ->
     IO.inspect(changeset.read_model)
 end
 
-Chronicle.ReadModels.unsubscribe(watcher)
+Cratis.Chronicle.ReadModels.unsubscribe(watcher)
 ```
 
 On top of `watch/2`'s messages, a subscriber also gets:
@@ -89,17 +89,17 @@ once its last subscriber unsubscribes, or exits.
 
 ## Observing a collection
 
-`Chronicle.ReadModels.observe/2` sends the calling process the page of instances now and again each
+`Cratis.Chronicle.ReadModels.observe/2` sends the calling process the page of instances now and again each
 time it changes:
 
 ```elixir
-{:ok, observer} = Chronicle.ReadModels.observe(MyApp.ReadModels.AccountInfo, page_size: 25)
+{:ok, observer} = Cratis.Chronicle.ReadModels.observe(MyApp.ReadModels.AccountInfo, page_size: 25)
 
 receive do
   {:chronicle_read_model_instances, MyApp.ReadModels.AccountInfo, %{instances: accounts}} -> accounts
 end
 
-Chronicle.ReadModels.unobserve(observer)
+Cratis.Chronicle.ReadModels.unobserve(observer)
 ```
 
 An error arrives as `{:chronicle_read_model_observe_error, model, reason}` and ends the observation;
@@ -109,11 +109,11 @@ page of instances.
 Pass `:filter`/`:sort` to keep and order only matching instances in each delivered page — same shape
 as [`query/2`'s filter and sort](#filtering-and-sorting). `total_count` then counts the matches
 within that page, not the whole read model. `observe_stream/2` wraps `observe/2` as an Elixir
-`Stream` of `%Chronicle.ReadModels.QueryResult{}`:
+`Stream` of `%Cratis.Chronicle.ReadModels.QueryResult{}`:
 
 ```elixir
 MyApp.ReadModels.AccountInfo
-|> Chronicle.ReadModels.observe_stream(page_size: 25)
+|> Cratis.Chronicle.ReadModels.observe_stream(page_size: 25)
 |> Enum.each(fn result -> IO.inspect(result.instances) end)
 ```
 
@@ -125,7 +125,7 @@ with it, releasing the resources Chronicle held for it right away.
 
 ```elixir
 :ok =
-  Chronicle.ReadModels.dehydrate_session(
+  Cratis.Chronicle.ReadModels.dehydrate_session(
     MyApp.ReadModels.AccountInfo,
     account_id,
     session_id
@@ -134,13 +134,13 @@ with it, releasing the resources Chronicle held for it right away.
 
 ## Filtering and sorting
 
-`Chronicle.ReadModels.query/2` accepts `:filter` and `:sort`. All conditions must match; a condition
+`Cratis.Chronicle.ReadModels.query/2` accepts `:filter` and `:sort`. All conditions must match; a condition
 is a value (equality) or one of `{:gt, v}`, `{:gte, v}`, `{:lt, v}`, `{:lte, v}`, `{:ne, v}`,
 `{:in, [v]}`, `{:contains, v}`:
 
 ```elixir
 {:ok, result} =
-  Chronicle.ReadModels.query(MyApp.ReadModels.Entry,
+  Cratis.Chronicle.ReadModels.query(MyApp.ReadModels.Entry,
     filter: [schema_id: "invoice", amount: {:gt, 100}],
     sort: {:amount, :desc},
     page_size: 20
@@ -159,11 +159,11 @@ answer. For large data, give the question its own projection.
 
 ## Read model reactors
 
-A `Chronicle.ReadModels.Reactor` reacts to *changes of a read model* rather than to events:
+A `Cratis.Chronicle.ReadModels.Reactor` reacts to *changes of a read model* rather than to events:
 
 ```elixir
 defmodule MyApp.Reactors.BalanceWatcher do
-  use Chronicle.ReadModels.Reactor, model: MyApp.ReadModels.AccountInfo
+  use Cratis.Chronicle.ReadModels.Reactor, model: MyApp.ReadModels.AccountInfo
 
   @impl true
   def on_modified(account, _changeset) do
@@ -172,17 +172,17 @@ defmodule MyApp.Reactors.BalanceWatcher do
   end
 end
 
-{Chronicle.Client, read_model_reactors: [MyApp.Reactors.BalanceWatcher], ...}
+{Cratis.Chronicle.Client, read_model_reactors: [MyApp.Reactors.BalanceWatcher], ...}
 ```
 
 `on_added/2`, `on_modified/2` and `on_removed/2` are all optional. The reactor subscribes through
-`Chronicle.ReadModels.subscribe/2`, so it shares its kernel stream with any other subscriber of the
+`Cratis.Chronicle.ReadModels.subscribe/2`, so it shares its kernel stream with any other subscriber of the
 same read model, receives changes that happen while it runs, and re-establishes its subscription
 after a reconnect.
 
 ## Decision reads and the Dynamic Consistency Boundary
 
-`Chronicle.ReadModels.DecisionReads` folds a read model at a key and carries forward the exact
+`Cratis.Chronicle.ReadModels.DecisionReads` folds a read model at a key and carries forward the exact
 log position the fold stopped at, so a subsequent append can be guarded against anything else
 changing that read model first. See [Dynamic Consistency Boundary](./dynamic-consistency-boundary.md).
 
@@ -193,8 +193,8 @@ exactly as you wrote them. Nested structs keep their multi-word field names. Fie
 `nil`, or hold a list of structs, are declared with `types:`:
 
 ```elixir
-use Chronicle.ReadModels.ReadModel,
+use Cratis.Chronicle.ReadModels.ReadModel,
   types: [lines: {:list, MyApp.OrderLine}, address: MyApp.Address, labels: :map]
 ```
 
-See `Chronicle.Serialization`.
+See `Cratis.Chronicle.Serialization`.

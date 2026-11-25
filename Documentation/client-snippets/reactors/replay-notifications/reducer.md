@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.ReplayNotifiedItemAdded do
-  use Chronicle.Events.EventType, id: "replay-notified-item-added"
+  use Cratis.Chronicle.Events.EventType, id: "replay-notified-item-added"
 
   defstruct [:order_id]
 end
@@ -10,7 +10,7 @@ defmodule MyApp.ReadModels.ReplayNotifiedOrderTotals do
 end
 
 defmodule MyApp.Reducers.ReplayNotifiedOrderTotalsReducer do
-  use Chronicle.Reducers.Reducer, model: MyApp.ReadModels.ReplayNotifiedOrderTotals
+  use Cratis.Chronicle.Reducers.Reducer, model: MyApp.ReadModels.ReplayNotifiedOrderTotals
 
   alias MyApp.Events.ReplayNotifiedItemAdded
   alias MyApp.ReadModels.ReplayNotifiedOrderTotals

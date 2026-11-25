@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Projections.DecVariantBacklogItemProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.DecVariantBacklogItem
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.DecVariantBacklogItem
 
   alias MyApp.Events.DecVariantIssueCreated
   alias MyApp.ReadModels.DecVariantWorkItem
@@ -13,7 +13,7 @@ defmodule MyApp.Projections.DecVariantBacklogItemProjection do
 end
 
 defmodule MyApp.Projections.DecVariantPullRequestItemProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.DecVariantPullRequestItem
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.DecVariantPullRequestItem
 
   alias MyApp.Events.DecVariantPullRequestCreated
   alias MyApp.ReadModels.DecVariantWorkItem

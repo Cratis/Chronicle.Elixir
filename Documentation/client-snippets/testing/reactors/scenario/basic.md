@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.TestingReactorScenarioSomeEvent do
-  use Chronicle.Events.EventType, id: "testing-reactor-scenario-some-event"
+  use Cratis.Chronicle.Events.EventType, id: "testing-reactor-scenario-some-event"
 
   defstruct [:value]
 end
 
 defmodule MyApp.Events.TestingReactorScenarioSomeOtherEvent do
-  use Chronicle.Events.EventType, id: "testing-reactor-scenario-some-other-event"
+  use Cratis.Chronicle.Events.EventType, id: "testing-reactor-scenario-some-other-event"
 
   defstruct [:value]
 end
@@ -18,7 +18,7 @@ end
 # The reactor resolves its collaborator from the application environment, so a spec
 # can swap in a recording stand-in.
 defmodule MyApp.Reactors.TestingReactorScenarioMyReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.TestingReactorScenarioSomeEvent
 
@@ -42,7 +42,7 @@ defmodule MyApp.TestingReactorScenarioRecordingService do
 end
 
 defmodule MyApp.TestingReactorScenarioBasicTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [
       MyApp.Events.TestingReactorScenarioSomeEvent,
       MyApp.Events.TestingReactorScenarioSomeOtherEvent
@@ -62,7 +62,7 @@ defmodule MyApp.TestingReactorScenarioBasicTest do
     some_id = "some-#{System.unique_integer([:positive])}"
 
     :ok =
-      Chronicle.EventSequences.EventLog.append_many(
+      Cratis.Chronicle.EventSequences.EventLog.append_many(
         some_id,
         [
           %TestingReactorScenarioSomeEvent{value: "value"},
@@ -71,7 +71,7 @@ defmodule MyApp.TestingReactorScenarioBasicTest do
         client: client
       )
 
-    :ok = Chronicle.Testing.wait_for_observers(client)
+    :ok = Cratis.Chronicle.Testing.wait_for_observers(client)
 
     # Assert on the side effects the stand-in recorded
     assert Service.calls() == ["value"]

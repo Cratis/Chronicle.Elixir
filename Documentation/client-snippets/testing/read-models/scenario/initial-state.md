@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.TestingReadModelScenarioItemAdded do
-  use Chronicle.Events.EventType, id: "testing-read-model-scenario-item-added"
+  use Cratis.Chronicle.Events.EventType, id: "testing-read-model-scenario-item-added"
 
   defstruct []
 end
 
 defmodule MyApp.ReadModels.TestingReadModelScenarioCountingReadModel do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.TestingReadModelScenarioItemAdded
 
@@ -25,7 +25,7 @@ defmodule MyApp.TestingReadModelScenarioInitialStateTest do
     initial = %TestingReadModelScenarioCountingReadModel{count: 10}
 
     {:ok, counting} =
-      Chronicle.Testing.Projections.apply_event(
+      Cratis.Chronicle.Testing.Projections.apply_event(
         TestingReadModelScenarioCountingReadModel,
         initial,
         %TestingReadModelScenarioItemAdded{},

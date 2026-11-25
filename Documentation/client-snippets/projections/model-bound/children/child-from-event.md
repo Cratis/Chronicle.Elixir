@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.MbChildrenChildFromEventConfigurationAdded do
-  use Chronicle.Events.EventType, id: "mb-children-child-from-event-configuration-added"
+  use Cratis.Chronicle.Events.EventType, id: "mb-children-child-from-event-configuration-added"
 
   defstruct [:dashboard_id, :configuration_id, :name]
 end
 
 defmodule MyApp.Events.MbChildrenChildFromEventConfigurationRenamed do
-  use Chronicle.Events.EventType, id: "mb-children-child-from-event-configuration-renamed"
+  use Cratis.Chronicle.Events.EventType, id: "mb-children-child-from-event-configuration-renamed"
 
   defstruct [:dashboard_id, :id, :name]
 end
@@ -16,7 +16,7 @@ defmodule MyApp.ReadModels.MbChildrenChildFromEventConfiguration do
 end
 
 defmodule MyApp.ReadModels.MbChildrenChildFromEventDashboard do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [configurations: {:list, MyApp.ReadModels.MbChildrenChildFromEventConfiguration}]
 
   defstruct id: nil, name: nil, configurations: []

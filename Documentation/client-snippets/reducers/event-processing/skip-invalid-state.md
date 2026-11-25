@@ -1,6 +1,6 @@
 ```elixir
 defmodule EventProcessingSkipItemAdded do
-  use Chronicle.Events.EventType, id: "event-processing-skip-item-added"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-skip-item-added"
 
   defstruct [:price]
 end
@@ -10,7 +10,7 @@ defmodule EventProcessingSkipOrderSummary do
 end
 
 defmodule EventProcessingSkipOrderSummaryReducer do
-  use Chronicle.Reducers.Reducer, model: EventProcessingSkipOrderSummary
+  use Cratis.Chronicle.Reducers.Reducer, model: EventProcessingSkipOrderSummary
 
   alias EventProcessingSkipItemAdded
 

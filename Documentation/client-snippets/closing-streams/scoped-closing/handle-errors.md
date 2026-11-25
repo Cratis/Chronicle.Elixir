@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.ScopedClosingErrorHandling do
-  alias Chronicle.EventSequences.Streams
+  alias Cratis.Chronicle.EventSequences.Streams
 
   def close(scope) when is_list(scope) do
     case Streams.complete_scope(scope) do

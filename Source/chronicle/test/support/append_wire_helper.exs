@@ -1,30 +1,30 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.AppendWireCase do
+defmodule Cratis.Chronicle.AppendWireCase do
   use ExUnit.CaseTemplate
 
   alias Cratis.Chronicle.Contracts.Clients.{CompatibilityRequest, CompatibilityResponse}
   alias Cratis.Chronicle.Contracts.Sequences, as: Wire
 
   defmodule Event do
-    use Chronicle.Events.EventType, id: "append-wire-event"
+    use Cratis.Chronicle.Events.EventType, id: "append-wire-event"
     defstruct [:some_value]
   end
 
   defmodule Interceptor do
     def call(stream, request, _next, opts) do
-      Chronicle.AppendWireCase.respond(stream, request, opts)
+      Cratis.Chronicle.AppendWireCase.respond(stream, request, opts)
     end
   end
 
   using do
     quote do
-      alias Chronicle.AppendWireCase.Event
-      alias Chronicle.EventSequences.{EventForEventSourceId, EventLog}
-      alias Chronicle.Transactions.UnitOfWork
+      alias Cratis.Chronicle.AppendWireCase.Event
+      alias Cratis.Chronicle.EventSequences.{EventForEventSourceId, EventLog}
+      alias Cratis.Chronicle.Transactions.UnitOfWork
       alias Cratis.Chronicle.Contracts.Sequences, as: Wire
-      import Chronicle.AppendWireCase, only: [append: 2, take_request: 0, put_response: 2]
+      import Cratis.Chronicle.AppendWireCase, only: [append: 2, take_request: 0, put_response: 2]
     end
   end
 
@@ -41,20 +41,20 @@ defmodule Chronicle.AppendWireCase do
 
     connection =
       start_supervised!(
-        {Chronicle.Connections.Connection,
+        {Cratis.Chronicle.Connections.Connection,
          connect_fun: fn _, _ -> {:ok, channel} end, disconnect_fun: fn _ -> :ok end}
       )
 
-    :ok = Chronicle.Connections.Connection.connect(connection)
+    :ok = Cratis.Chronicle.Connections.Connection.connect(connection)
     client = self()
 
-    :persistent_term.put({Chronicle.Client, client}, %{
+    :persistent_term.put({Cratis.Chronicle.Client, client}, %{
       connection: connection,
       event_store: "store",
       namespace: "namespace"
     })
 
-    on_exit(fn -> :persistent_term.erase({Chronicle.Client, client}) end)
+    on_exit(fn -> :persistent_term.erase({Cratis.Chronicle.Client, client}) end)
     %{opts: [client: client], connection: connection, responses: responses}
   end
 
@@ -147,10 +147,15 @@ defmodule Chronicle.AppendWireCase do
   end
 
   def append(:single, opts),
-    do: Chronicle.EventSequences.EventLog.append("source", %Event{some_value: 42}, opts)
+    do: Cratis.Chronicle.EventSequences.EventLog.append("source", %Event{some_value: 42}, opts)
 
   def append(:ordinary, opts),
-    do: Chronicle.EventSequences.EventLog.append_many("source", [%Event{some_value: 42}], opts)
+    do:
+      Cratis.Chronicle.EventSequences.EventLog.append_many(
+        "source",
+        [%Event{some_value: 42}],
+        opts
+      )
 
   def append(:rich, opts) do
     {metadata, options} =
@@ -168,24 +173,24 @@ defmodule Chronicle.AppendWireCase do
 
     entry =
       struct(
-        Chronicle.EventSequences.EventForEventSourceId,
+        Cratis.Chronicle.EventSequences.EventForEventSourceId,
         Keyword.merge([event_source_id: "source", event: %Event{some_value: 42}], metadata)
       )
 
-    Chronicle.EventSequences.EventLog.append_many_for_event_sources([entry], options)
+    Cratis.Chronicle.EventSequences.EventLog.append_many_for_event_sources([entry], options)
   end
 
   def append(:transaction, opts) do
     unit =
-      Chronicle.Transactions.UnitOfWork.begin(
+      Cratis.Chronicle.Transactions.UnitOfWork.begin(
         correlation_id: Keyword.get(opts, :correlation_id, "00112233-4455-6677-8899-aabbccddeeff")
       )
 
     :ok = append(:ordinary, opts)
-    result = Chronicle.Transactions.UnitOfWork.commit(unit)
+    result = Cratis.Chronicle.Transactions.UnitOfWork.commit(unit)
 
-    if not Chronicle.Transactions.UnitOfWork.is_completed?(unit),
-      do: Chronicle.Transactions.UnitOfWork.rollback(unit)
+    if not Cratis.Chronicle.Transactions.UnitOfWork.is_completed?(unit),
+      do: Cratis.Chronicle.Transactions.UnitOfWork.rollback(unit)
 
     result
   end

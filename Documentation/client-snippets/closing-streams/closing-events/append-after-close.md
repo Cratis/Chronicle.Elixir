@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.ClosingEventsLedgerPeriodClosed do
-  use Chronicle.Events.EventType, id: "closing-events-ledger-period-closed"
+  use Cratis.Chronicle.Events.EventType, id: "closing-events-ledger-period-closed"
 
   defstruct [:period, :closing_balance]
 
@@ -8,14 +8,14 @@ defmodule MyApp.Events.ClosingEventsLedgerPeriodClosed do
 end
 
 defmodule MyApp.Events.ClosingEventsEntryPosted do
-  use Chronicle.Events.EventType, id: "closing-events-entry-posted"
+  use Cratis.Chronicle.Events.EventType, id: "closing-events-entry-posted"
 
   defstruct [:description]
 end
 
 defmodule MyApp.ClosingEventsAfterClose do
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.Events.ConstraintViolation
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.Events.ConstraintViolation
   alias MyApp.Events.{ClosingEventsEntryPosted, ClosingEventsLedgerPeriodClosed}
 
   def run(ledger_id) do

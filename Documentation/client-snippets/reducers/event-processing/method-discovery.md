@@ -1,12 +1,12 @@
 ```elixir
 defmodule EventProcessingOrderCreated do
-  use Chronicle.Events.EventType, id: "event-processing-order-created"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-order-created"
 
   defstruct [:order_id]
 end
 
 defmodule EventProcessingItemAdded do
-  use Chronicle.Events.EventType, id: "event-processing-item-added"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-item-added"
 
   defstruct [:price]
 end
@@ -16,7 +16,7 @@ defmodule EventProcessingOrderSummary do
 end
 
 defmodule EventProcessingOrderSummaryReducer do
-  use Chronicle.Reducers.Reducer, model: EventProcessingOrderSummary
+  use Cratis.Chronicle.Reducers.Reducer, model: EventProcessingOrderSummary
 
   alias EventProcessingOrderCreated
   alias EventProcessingItemAdded

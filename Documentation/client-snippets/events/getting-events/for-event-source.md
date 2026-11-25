@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.GettingEventsOrderPlaced do
-  use Chronicle.Events.EventType, id: "getting-events-order-placed"
+  use Cratis.Chronicle.Events.EventType, id: "getting-events-order-placed"
 
   defstruct [:order_id, :total]
 end
 
 defmodule MyApp.Events.GettingEventsOrderCancelled do
-  use Chronicle.Events.EventType, id: "getting-events-order-cancelled"
+  use Cratis.Chronicle.Events.EventType, id: "getting-events-order-cancelled"
 
   defstruct [:order_id, :reason]
 end
 
 defmodule MyApp.GettingEventsOrderHistoryReader do
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.{GettingEventsOrderCancelled, GettingEventsOrderPlaced}
 
   def get_order_events(order_id) do

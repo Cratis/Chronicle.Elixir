@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.AutoMapDisabledAccountRegistered do
-  use Chronicle.Events.EventType, id: "auto-map-disabled-account-registered"
+  use Cratis.Chronicle.Events.EventType, id: "auto-map-disabled-account-registered"
 
   defstruct [:account_name, :contact_email]
 end
 
 defmodule MyApp.ReadModels.AutoMapDisabledAccount do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct name: nil, email: nil, created_at: nil
 

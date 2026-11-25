@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.TestingReactorScenarioRoutedPaymentReceived do
-  use Chronicle.Events.EventType, id: "testing-reactor-scenario-routed-payment-received"
+  use Cratis.Chronicle.Events.EventType, id: "testing-reactor-scenario-routed-payment-received"
 
   defstruct [:amount]
 end
 
 defmodule MyApp.Events.TestingReactorScenarioPaymentRouteObserved do
-  use Chronicle.Events.EventType, id: "testing-reactor-scenario-payment-route-observed"
+  use Cratis.Chronicle.Events.EventType, id: "testing-reactor-scenario-payment-route-observed"
 
   defstruct [:amount, :source_type, :stream_type, :stream_id]
 end
 
 defmodule MyApp.Reactors.TestingReactorScenarioRouteReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.{
     TestingReactorScenarioPaymentRouteObserved,
@@ -34,14 +34,14 @@ defmodule MyApp.Reactors.TestingReactorScenarioRouteReactor do
 end
 
 defmodule MyApp.TestingReactorScenarioRoutedEventsTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [
       MyApp.Events.TestingReactorScenarioRoutedPaymentReceived,
       MyApp.Events.TestingReactorScenarioPaymentRouteObserved
     ],
     reactors: [MyApp.Reactors.TestingReactorScenarioRouteReactor]
 
-  import Chronicle.Testing.Assertions
+  import Cratis.Chronicle.Testing.Assertions
 
   alias MyApp.Events.{
     TestingReactorScenarioPaymentRouteObserved,
@@ -50,7 +50,7 @@ defmodule MyApp.TestingReactorScenarioRoutedEventsTest do
 
   test "the reactor sees where the event was routed", %{chronicle: client} do
     :ok =
-      Chronicle.EventSequences.EventLog.append(
+      Cratis.Chronicle.EventSequences.EventLog.append(
         "order-1",
         %TestingReactorScenarioRoutedPaymentReceived{amount: 100},
         client: client,
@@ -59,7 +59,7 @@ defmodule MyApp.TestingReactorScenarioRoutedEventsTest do
         event_stream_id: "monthly"
       )
 
-    :ok = Chronicle.Testing.wait_for_observers(client)
+    :ok = Cratis.Chronicle.Testing.wait_for_observers(client)
 
     assert_appended(client, %TestingReactorScenarioPaymentRouteObserved{
       amount: 100,

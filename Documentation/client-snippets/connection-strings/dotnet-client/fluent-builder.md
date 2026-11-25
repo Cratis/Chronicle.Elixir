@@ -2,7 +2,7 @@
 defmodule MyApp.ConnectionStringsFluentBuilder do
   @moduledoc false
 
-  alias Chronicle.Connections.ConnectionString
+  alias Cratis.Chronicle.Connections.ConnectionString
 
   def connection_string do
     "chronicle://server.example.com:35000"
@@ -13,7 +13,7 @@ defmodule MyApp.ConnectionStringsFluentBuilder do
 
   def start_link do
     children = [
-      {Chronicle.Client, connection_string: connection_string()}
+      {Cratis.Chronicle.Client, connection_string: connection_string()}
     ]
 
     Supervisor.start_link(children, strategy: :one_for_one)

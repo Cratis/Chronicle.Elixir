@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.ConstraintsUniqueCasingUserRegistered do
-  use Chronicle.Events.EventType, id: "constraints-unique-casing-user-registered"
+  use Cratis.Chronicle.Events.EventType, id: "constraints-unique-casing-user-registered"
 
   unique :email, ignore_casing: true
 

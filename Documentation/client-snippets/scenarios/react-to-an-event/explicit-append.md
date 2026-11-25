@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.ScenariosReactBookReserved do
-  use Chronicle.Events.EventType, id: "scenarios-react-book-reserved"
+  use Cratis.Chronicle.Events.EventType, id: "scenarios-react-book-reserved"
 
   defstruct [:isbn]
 end
 
 defmodule MyApp.Events.ScenariosReactStockDecreased do
-  use Chronicle.Events.EventType, id: "scenarios-react-stock-decreased"
+  use Cratis.Chronicle.Events.EventType, id: "scenarios-react-stock-decreased"
 
   defstruct [:isbn, :quantity]
 end
@@ -20,7 +20,7 @@ defmodule MyApp.ScenariosReactStockCouldNotBeDecreased do
 end
 
 defmodule MyApp.Reactors.ScenariosReactStockKeepingExplicit do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.{ScenariosReactBookReserved, ScenariosReactStockDecreased}
   alias MyApp.ScenariosReactStockCouldNotBeDecreased
@@ -29,7 +29,7 @@ defmodule MyApp.Reactors.ScenariosReactStockKeepingExplicit do
 
   @impl true
   def handle(%ScenariosReactBookReserved{isbn: isbn}, %{event_source_id: event_source_id}) do
-    case Chronicle.append(event_source_id, %ScenariosReactStockDecreased{isbn: isbn, quantity: 1}) do
+    case Cratis.Chronicle.append(event_source_id, %ScenariosReactStockDecreased{isbn: isbn, quantity: 1}) do
       :ok -> :ok
       {:error, _reason} -> raise ScenariosReactStockCouldNotBeDecreased, isbn
     end

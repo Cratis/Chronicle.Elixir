@@ -1,13 +1,13 @@
 ```elixir
 defmodule MyApp.Events.ExplicitIdOrderPlaced do
-  use Chronicle.Events.EventType, id: "explicit-id-order-placed"
+  use Cratis.Chronicle.Events.EventType, id: "explicit-id-order-placed"
 
   defstruct []
 end
 
 defmodule MyApp.Reactors.SendWelcomeEmail do
   # For an already deployed reactor, use its existing stored observer id here.
-  use Chronicle.Reactors.Reactor, id: "MyApp.Orders.SendWelcomeEmail"
+  use Cratis.Chronicle.Reactors.Reactor, id: "MyApp.Orders.SendWelcomeEmail"
 
   alias MyApp.Events.ExplicitIdOrderPlaced
 

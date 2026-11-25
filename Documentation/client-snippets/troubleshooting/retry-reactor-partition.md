@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.InvitationSent do
-  use Chronicle.Events.EventType, id: "troubleshooting-invitation-sent"
+  use Cratis.Chronicle.Events.EventType, id: "troubleshooting-invitation-sent"
 
   defstruct [:email]
 end
 
 defmodule MyApp.Reactors.InvitationMailReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   @handles MyApp.Events.InvitationSent
 
@@ -19,12 +19,12 @@ defmodule MyApp.Troubleshooting.RetryReactorPartition do
 
   def retry do
     observer_id = InvitationMailReactor.__chronicle_reactor__(:id)
-    {:ok, failed_partitions} = Chronicle.FailedPartitions.get_for(observer_id)
+    {:ok, failed_partitions} = Cratis.Chronicle.FailedPartitions.get_for(observer_id)
 
     case failed_partitions do
       [failed_partition | _] ->
         {:ok, outcome} =
-          Chronicle.Observers.retry_partition(InvitationMailReactor, failed_partition.partition)
+          Cratis.Chronicle.Observers.retry_partition(InvitationMailReactor, failed_partition.partition)
 
         # Handle outcome before reporting recovery as successful.
         outcome

@@ -1,19 +1,19 @@
 ```elixir
 defmodule MyApp.Events.ScenariosReactReturnBookReserved do
-  use Chronicle.Events.EventType, id: "scenarios-react-return-book-reserved"
+  use Cratis.Chronicle.Events.EventType, id: "scenarios-react-return-book-reserved"
 
   defstruct [:isbn]
 end
 
 defmodule MyApp.Events.ScenariosReactReturnStockDecreased do
-  use Chronicle.Events.EventType, id: "scenarios-react-return-stock-decreased"
+  use Cratis.Chronicle.Events.EventType, id: "scenarios-react-return-stock-decreased"
 
   defstruct [:isbn, :quantity]
 end
 
 defmodule MyApp.Reactors.ScenariosReactReturnStockKeeping do
   # Without `once_only`, a replay of this reactor appends StockDecreased again.
-  use Chronicle.Reactors.Reactor,
+  use Cratis.Chronicle.Reactors.Reactor,
     once_only: [MyApp.Events.ScenariosReactReturnBookReserved]
 
   alias MyApp.Events.{ScenariosReactReturnBookReserved, ScenariosReactReturnStockDecreased}

@@ -1,12 +1,12 @@
 ```elixir title="Map event context"
 defmodule MyApp.Events.OrderPlacedForAudit do
-  use Chronicle.Events.EventType, id: "order-placed-for-audit-v1"
+  use Cratis.Chronicle.Events.EventType, id: "order-placed-for-audit-v1"
 
   defstruct [:customer_name]
 end
 
 defmodule MyApp.ReadModels.AuditedOrder do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.OrderPlacedForAudit
 

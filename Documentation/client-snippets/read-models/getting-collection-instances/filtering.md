@@ -1,7 +1,7 @@
 ```elixir
 alias MyApp.ReadModels.Account
 
-{:ok, accounts} = Chronicle.ReadModels.get_instances(Account)
+{:ok, accounts} = Cratis.Chronicle.ReadModels.get_instances(Account)
 
 high_value_accounts =
   accounts

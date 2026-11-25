@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.NotRewindableUserAction do
-  use Chronicle.Events.EventType, id: "not-rewindable-user-action"
+  use Cratis.Chronicle.Events.EventType, id: "not-rewindable-user-action"
 
   defstruct [:action]
 end
 
 defmodule MyApp.ReadModels.NotRewindableAuditLogEntry do
-  use Chronicle.ReadModels.ReadModel, not_rewindable: true
+  use Cratis.Chronicle.ReadModels.ReadModel, not_rewindable: true
 
   defstruct id: nil, action: nil, processed_at: nil, occurred_at: nil
 

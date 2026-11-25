@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.IdempotencyOrderPlaced do
-  use Chronicle.Events.EventType, id: "idempotency-order-placed"
+  use Cratis.Chronicle.Events.EventType, id: "idempotency-order-placed"
 
   defstruct [:customer, :idempotency_token]
 
@@ -8,7 +8,7 @@ defmodule MyApp.Events.IdempotencyOrderPlaced do
 end
 
 defmodule MyApp.IdempotencyPlaceOrder do
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.IdempotencyOrderPlaced
 
   # The caller generates the token once per order and sends the same token on every retry.

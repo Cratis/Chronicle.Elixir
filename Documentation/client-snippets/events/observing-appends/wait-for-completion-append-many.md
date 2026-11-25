@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.ObservingAppendsFirstEvent do
-  use Chronicle.Events.EventType, id: "observing-appends-first-event"
+  use Cratis.Chronicle.Events.EventType, id: "observing-appends-first-event"
 
   defstruct [:data]
 end
 
 defmodule MyApp.Events.ObservingAppendsSecondEvent do
-  use Chronicle.Events.EventType, id: "observing-appends-second-event"
+  use Cratis.Chronicle.Events.EventType, id: "observing-appends-second-event"
 
   defstruct [:data]
 end
 
 defmodule MyApp.ObservingAppendsBatchCompletionWaiter do
-  alias Chronicle.EventSequences.{AppendResult, EventLog}
+  alias Cratis.Chronicle.EventSequences.{AppendResult, EventLog}
   alias MyApp.Events.{ObservingAppendsFirstEvent, ObservingAppendsSecondEvent}
 
   def append_many_and_wait(event_source_id) do

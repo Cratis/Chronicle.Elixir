@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.ConstraintsModelBoundUniqueEventTypeNamedUserRegistered do
-  use Chronicle.Events.EventType,
+  use Cratis.Chronicle.Events.EventType,
     id: "constraints-model-bound-unique-event-type-named-user-registered"
 
   defstruct [:email, :display_name]

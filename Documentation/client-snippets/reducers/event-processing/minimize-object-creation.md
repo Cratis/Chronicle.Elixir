@@ -1,6 +1,6 @@
 ```elixir
 defmodule EventProcessingMinimalMetricRecorded do
-  use Chronicle.Events.EventType, id: "event-processing-minimal-metric-recorded"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-minimal-metric-recorded"
 
   defstruct [:value]
 end
@@ -10,7 +10,7 @@ defmodule EventProcessingMinimalStats do
 end
 
 defmodule EventProcessingMinimalStatsReducer do
-  use Chronicle.Reducers.Reducer, model: EventProcessingMinimalStats
+  use Cratis.Chronicle.Reducers.Reducer, model: EventProcessingMinimalStats
 
   alias EventProcessingMinimalMetricRecorded
 

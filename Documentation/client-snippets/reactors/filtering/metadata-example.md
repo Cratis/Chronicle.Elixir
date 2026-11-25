@@ -1,6 +1,6 @@
 ```elixir
 defmodule ReactorsFilteringOrderPlaced do
-  use Chronicle.Events.EventType, id: "reactors-filtering-order-placed"
+  use Cratis.Chronicle.Events.EventType, id: "reactors-filtering-order-placed"
 
   defstruct [:total_amount]
 end
@@ -9,7 +9,7 @@ defmodule ReactorsFilteringMetadataExampleService do
   alias ReactorsFilteringOrderPlaced
 
   def place_order(order_id, total_amount) do
-    Chronicle.append(
+    Cratis.Chronicle.append(
       order_id,
       %ReactorsFilteringOrderPlaced{total_amount: total_amount},
       tags: ["priority"],

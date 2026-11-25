@@ -1,24 +1,24 @@
 ```elixir title="Count events per type using dictionary increment"
 defmodule MyApp.Events.OrderCreated do
-  use Chronicle.Events.EventType, id: "order-created-v1"
+  use Cratis.Chronicle.Events.EventType, id: "order-created-v1"
 
   defstruct [:order_id, :customer_id]
 end
 
 defmodule MyApp.Events.OrderShipped do
-  use Chronicle.Events.EventType, id: "order-shipped-v1"
+  use Cratis.Chronicle.Events.EventType, id: "order-shipped-v1"
 
   defstruct [:order_id, :tracking_number]
 end
 
 defmodule MyApp.Events.OrderCancelled do
-  use Chronicle.Events.EventType, id: "order-cancelled-v1"
+  use Cratis.Chronicle.Events.EventType, id: "order-cancelled-v1"
 
   defstruct [:order_id, :reason]
 end
 
 defmodule MyApp.ReadModels.CustomerActivity do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{OrderCreated, OrderShipped, OrderCancelled}
 

@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.BookId do
-  use Chronicle.Concept, type: :uuid, event_source_id: true
+  use Cratis.Chronicle.Concept, type: :uuid, event_source_id: true
 
   def new do
     <<a::32, b::16, _::4, c::12, _::2, d::14, e::48>> = :crypto.strong_rand_bytes(16)

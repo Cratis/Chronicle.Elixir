@@ -1,24 +1,24 @@
 ```elixir
 defmodule MyApp.Events.MbVariantFullIssueCreated do
-  use Chronicle.Events.EventType, id: "mb-variant-full-issue-created-v1"
+  use Cratis.Chronicle.Events.EventType, id: "mb-variant-full-issue-created-v1"
 
   defstruct [:title]
 end
 
 defmodule MyApp.Events.MbVariantFullPullRequestCreated do
-  use Chronicle.Events.EventType, id: "mb-variant-full-pull-request-created-v1"
+  use Cratis.Chronicle.Events.EventType, id: "mb-variant-full-pull-request-created-v1"
 
   defstruct [:pull_request_url]
 end
 
 defmodule MyApp.Events.MbVariantFullBuildCompleted do
-  use Chronicle.Events.EventType, id: "mb-variant-full-build-completed-v1"
+  use Cratis.Chronicle.Events.EventType, id: "mb-variant-full-build-completed-v1"
 
   defstruct [:build_status]
 end
 
 defmodule MyApp.Events.MbVariantFullTitleChanged do
-  use Chronicle.Events.EventType, id: "mb-variant-full-title-changed-v1"
+  use Cratis.Chronicle.Events.EventType, id: "mb-variant-full-title-changed-v1"
 
   defstruct [:title]
 end
@@ -30,7 +30,7 @@ end
 
 # The variant an entity is in before a pull request exists for it.
 defmodule MyApp.ReadModels.MbVariantFullBacklogItem do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.MbVariantFullIssueCreated
   alias MyApp.ReadModels.MbVariantFullWorkItem
@@ -48,7 +48,7 @@ end
 # from MbVariantFullBuildCompleted - an event that is NOT this variant's entering event, so it
 # becomes an update-only join and can never create the row on its own.
 defmodule MyApp.ReadModels.MbVariantFullPullRequestItem do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{MbVariantFullPullRequestCreated, MbVariantFullBuildCompleted}
   alias MyApp.ReadModels.MbVariantFullWorkItem
@@ -67,7 +67,7 @@ end
 
 # Declares a mapping every variant of MbVariantFullWorkItem shares.
 defmodule MyApp.Projections.MbVariantFullSharedHandlers do
-  use Chronicle.Projections.GlobalHandler, identity: MyApp.ReadModels.MbVariantFullWorkItem
+  use Cratis.Chronicle.Projections.GlobalHandler, identity: MyApp.ReadModels.MbVariantFullWorkItem
 
   alias MyApp.Events.MbVariantFullTitleChanged
 

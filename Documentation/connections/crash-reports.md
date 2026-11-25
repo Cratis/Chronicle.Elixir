@@ -9,7 +9,7 @@ Those safeguards matter because the client authenticates every call with an API 
 
 ## What the client redacts
 
-`Connection.connect/2` installs a primary Logger filter (`Chronicle.Connections.ResponseCrashRedaction`). A primary filter runs before any handler formats the event, including Elixir's own OTP report translator, so it covers the console, files and every handler you add. The filter replaces only the parts that carry credentials and keeps the rest of the report readable:
+`Connection.connect/2` installs a primary Logger filter (`Cratis.Chronicle.Connections.ResponseCrashRedaction`). A primary filter runs before any handler formats the event, including Elixir's own OTP report translator, so it covers the console, files and every handler you add. The filter replaces only the parts that carry credentials and keeps the rest of the report readable:
 
 | Report | What is replaced | What stays |
 | --- | --- | --- |
