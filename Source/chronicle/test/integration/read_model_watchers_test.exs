@@ -5,32 +5,32 @@
 # model reactors, ad-hoc projection querying and projection waiting. Opt in like the other
 # integration tests: point CHRONICLE_INTEGRATION_CONNECTION_STRING at a development kernel and run
 # `mix test --include integration`.
-defmodule Chronicle.Integration.ReadModelWatchersTest do
+defmodule Cratis.Chronicle.Integration.ReadModelWatchersTest do
   use ExUnit.Case, async: false
 
   @moduletag :integration
 
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.Projections
-  alias Chronicle.ReadModels
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.Projections
+  alias Cratis.Chronicle.ReadModels
 
   defmodule AccountOpened do
-    use Chronicle.Events.EventType, id: "RmwAccountOpened"
+    use Cratis.Chronicle.Events.EventType, id: "RmwAccountOpened"
     defstruct balance: 0
   end
 
   defmodule BalanceChanged do
-    use Chronicle.Events.EventType, id: "RmwBalanceChanged"
+    use Cratis.Chronicle.Events.EventType, id: "RmwBalanceChanged"
     defstruct amount: 0
   end
 
   defmodule AccountClosed do
-    use Chronicle.Events.EventType, id: "RmwAccountClosed"
+    use Cratis.Chronicle.Events.EventType, id: "RmwAccountClosed"
     defstruct []
   end
 
   defmodule Account do
-    use Chronicle.ReadModels.ReadModel, id: "rmwAccount"
+    use Cratis.Chronicle.ReadModels.ReadModel, id: "rmwAccount"
 
     defstruct id: "", balance: 0
 
@@ -40,7 +40,7 @@ defmodule Chronicle.Integration.ReadModelWatchersTest do
   end
 
   defmodule NotifierReactor do
-    use Chronicle.ReadModels.Reactor, model: Account, id: "rmwNotifier"
+    use Cratis.Chronicle.ReadModels.Reactor, model: Account, id: "rmwNotifier"
 
     @impl true
     def on_modified(account, _changeset), do: send(:rmw_it, {:modified, account})
@@ -53,7 +53,7 @@ defmodule Chronicle.Integration.ReadModelWatchersTest do
     prefix = System.get_env("CHRONICLE_INTEGRATION_EVENT_STORE_PREFIX", "rmw-elixir")
 
     {:ok, _} =
-      Chronicle.Client.start_link(
+      Cratis.Chronicle.Client.start_link(
         name: :rmw_it_client,
         connection_string: System.fetch_env!("CHRONICLE_INTEGRATION_CONNECTION_STRING"),
         event_store:
@@ -64,7 +64,7 @@ defmodule Chronicle.Integration.ReadModelWatchersTest do
         read_model_reactors: [NotifierReactor]
       )
 
-    :ok = Chronicle.Client.await_registration(:rmw_it_client, 60_000)
+    :ok = Cratis.Chronicle.Client.await_registration(:rmw_it_client, 60_000)
     :ok
   end
 

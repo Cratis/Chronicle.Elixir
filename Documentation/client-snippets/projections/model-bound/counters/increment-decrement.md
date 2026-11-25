@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.CountersUserConnected do
-  use Chronicle.Events.EventType, id: "counters-user-connected-v1"
+  use Cratis.Chronicle.Events.EventType, id: "counters-user-connected-v1"
 
   defstruct []
 end
 
 defmodule MyApp.Events.CountersUserDisconnected do
-  use Chronicle.Events.EventType, id: "counters-user-disconnected-v1"
+  use Cratis.Chronicle.Events.EventType, id: "counters-user-disconnected-v1"
 
   defstruct []
 end
 
 defmodule MyApp.ReadModels.CountersServerStatistics do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{CountersUserConnected, CountersUserDisconnected}
 

@@ -4,20 +4,20 @@
 # Round trip against a real kernel for the client-parity features. Opt in like the other
 # integration tests: point CHRONICLE_INTEGRATION_CONNECTION_STRING at a development kernel and run
 # `mix test --include integration`.
-defmodule Chronicle.Integration.ClientParityTest do
+defmodule Cratis.Chronicle.Integration.ClientParityTest do
   use ExUnit.Case, async: false
 
   @moduletag :integration
 
-  alias Chronicle.EventSequences.{AppendResult, EventLog, Streams}
-  alias Chronicle.Events.ConcurrencyScope
+  alias Cratis.Chronicle.EventSequences.{AppendResult, EventLog, Streams}
+  alias Cratis.Chronicle.Events.ConcurrencyScope
 
   defmodule Line do
     defstruct line_name: "", item_count: 0
   end
 
   defmodule Registered do
-    use Chronicle.Events.EventType,
+    use Cratis.Chronicle.Events.EventType,
       id: "pt-registered",
       subject: :user_id,
       tags: ["parity"],
@@ -29,19 +29,19 @@ defmodule Chronicle.Integration.ClientParityTest do
   end
 
   defmodule PeriodClosed do
-    use Chronicle.Events.EventType, id: "pt-period-closed"
+    use Cratis.Chronicle.Events.EventType, id: "pt-period-closed"
     defstruct period: ""
 
     closes_stream(event_stream_id_from: :period)
   end
 
   defmodule BasketCreated do
-    use Chronicle.Events.EventType, id: "pt-basket-created"
+    use Cratis.Chronicle.Events.EventType, id: "pt-basket-created"
     defstruct []
   end
 
   defmodule ItemAdded do
-    use Chronicle.Events.EventType, id: "pt-item-added"
+    use Cratis.Chronicle.Events.EventType, id: "pt-item-added"
     defstruct item_id: "", name: ""
   end
 
@@ -50,7 +50,7 @@ defmodule Chronicle.Integration.ClientParityTest do
   end
 
   defmodule Basket do
-    use Chronicle.ReadModels.ReadModel, id: "ptBasket", types: [items: {:list, BasketItem}]
+    use Cratis.Chronicle.ReadModels.ReadModel, id: "ptBasket", types: [items: {:list, BasketItem}]
 
     defstruct basket_id: "", items: []
 
@@ -66,27 +66,27 @@ defmodule Chronicle.Integration.ClientParityTest do
   end
 
   defmodule LedgerCreated do
-    use Chronicle.Events.EventType, id: "pt-ledger-created"
+    use Cratis.Chronicle.Events.EventType, id: "pt-ledger-created"
     defstruct []
   end
 
   defmodule LedgerEntryAdded do
-    use Chronicle.Events.EventType, id: "pt-ledger-entry-added"
+    use Cratis.Chronicle.Events.EventType, id: "pt-ledger-entry-added"
     defstruct entry_id: "", name: ""
   end
 
   defmodule LedgerEntryRemoved do
-    use Chronicle.Events.EventType, id: "pt-ledger-entry-removed"
+    use Cratis.Chronicle.Events.EventType, id: "pt-ledger-entry-removed"
     defstruct entry_id: ""
   end
 
   defmodule LedgerNoteAdded do
-    use Chronicle.Events.EventType, id: "pt-ledger-note-added"
+    use Cratis.Chronicle.Events.EventType, id: "pt-ledger-note-added"
     defstruct entry_id: "", note_id: "", text: ""
   end
 
   defmodule LedgerDiscountRemoved do
-    use Chronicle.Events.EventType, id: "pt-ledger-discount-removed"
+    use Cratis.Chronicle.Events.EventType, id: "pt-ledger-discount-removed"
     defstruct []
   end
 
@@ -99,7 +99,9 @@ defmodule Chronicle.Integration.ClientParityTest do
   end
 
   defmodule Ledger do
-    use Chronicle.ReadModels.ReadModel, id: "ptLedger", types: [entries: {:list, LedgerEntry}]
+    use Cratis.Chronicle.ReadModels.ReadModel,
+      id: "ptLedger",
+      types: [entries: {:list, LedgerEntry}]
 
     defstruct ledger_id: "", entries: [], promo_code: nil, item_count: 0
 
@@ -124,7 +126,7 @@ defmodule Chronicle.Integration.ClientParityTest do
   end
 
   defmodule EntryAddedOneLine do
-    use Chronicle.Events.EventType, id: "pt-one-line-entry-added"
+    use Cratis.Chronicle.Events.EventType, id: "pt-one-line-entry-added"
     defstruct entry_id: "", name: ""
   end
 
@@ -133,7 +135,7 @@ defmodule Chronicle.Integration.ClientParityTest do
   end
 
   defmodule OneLineLedger do
-    use Chronicle.ReadModels.ReadModel,
+    use Cratis.Chronicle.ReadModels.ReadModel,
       id: "ptOneLineLedger",
       types: [entries: {:list, OneLineEntry}]
 
@@ -150,34 +152,35 @@ defmodule Chronicle.Integration.ClientParityTest do
   end
 
   defmodule SeededNote do
-    use Chronicle.Events.EventType, id: "pt-seeded-note", tags: ["seed"]
+    use Cratis.Chronicle.Events.EventType, id: "pt-seeded-note", tags: ["seed"]
     defstruct text: ""
   end
 
   defmodule NoteSeeder do
-    use Chronicle.Seeding.Seeder
+    use Cratis.Chronicle.Seeding.Seeder
 
     @impl true
     def seed(builder) do
       builder
-      |> Chronicle.Seeding.for(SeededNote, "seed-src", [%SeededNote{text: "first"}])
+      |> Cratis.Chronicle.Seeding.for(SeededNote, "seed-src", [%SeededNote{text: "first"}])
       |> then(fn b ->
         if Process.get(:second_seed),
-          do: Chronicle.Seeding.for(b, SeededNote, "seed-src", [%SeededNote{text: "second"}]),
+          do:
+            Cratis.Chronicle.Seeding.for(b, SeededNote, "seed-src", [%SeededNote{text: "second"}]),
           else: b
       end)
     end
   end
 
   defmodule Watcher do
-    use Chronicle.ReadModels.Reactor, model: Basket
+    use Cratis.Chronicle.ReadModels.Reactor, model: Basket
 
     def on_added(basket, _changeset), do: send(:parity_it, {:rm_added, basket})
     def on_modified(basket, _changeset), do: send(:parity_it, {:rm_modified, basket})
   end
 
   defmodule Spy do
-    use Chronicle.Reactors.Reactor
+    use Cratis.Chronicle.Reactors.Reactor
     @handles Registered
 
     def handle(event, context) do
@@ -190,7 +193,7 @@ defmodule Chronicle.Integration.ClientParityTest do
     prefix = System.get_env("CHRONICLE_INTEGRATION_EVENT_STORE_PREFIX", "parity-elixir")
 
     {:ok, _} =
-      Chronicle.Client.start_link(
+      Cratis.Chronicle.Client.start_link(
         name: :parity_it_client,
         connection_string: System.fetch_env!("CHRONICLE_INTEGRATION_CONNECTION_STRING"),
         event_store:
@@ -214,10 +217,10 @@ defmodule Chronicle.Integration.ClientParityTest do
         reactors: [Spy]
       )
 
-    :ok = Chronicle.Client.await_registration(:parity_it_client, 60_000)
+    :ok = Cratis.Chronicle.Client.await_registration(:parity_it_client, 60_000)
 
     {:ok, _} =
-      Chronicle.Client.start_link(
+      Cratis.Chronicle.Client.start_link(
         name: :parity_it_optimistic_client,
         connection_string: System.fetch_env!("CHRONICLE_INTEGRATION_CONNECTION_STRING"),
         event_store:
@@ -227,7 +230,7 @@ defmodule Chronicle.Integration.ClientParityTest do
         concurrency: [default: :optimistic, check_first_append: true]
       )
 
-    :ok = Chronicle.Client.await_registration(:parity_it_optimistic_client, 60_000)
+    :ok = Cratis.Chronicle.Client.await_registration(:parity_it_optimistic_client, 60_000)
     :ok
   end
 
@@ -253,7 +256,7 @@ defmodule Chronicle.Integration.ClientParityTest do
   end
 
   test "registration reports registered" do
-    assert %{state: :registered} = Chronicle.Client.registration_status(:parity_it_client)
+    assert %{state: :registered} = Cratis.Chronicle.Client.registration_status(:parity_it_client)
   end
 
   test "maps and nested multi-word fields round-trip, and reads decode into the struct" do
@@ -268,7 +271,7 @@ defmodule Chronicle.Integration.ClientParityTest do
   end
 
   test "the declared subject, tags and the full context reach the reactor" do
-    identity = Chronicle.Identity.new("u-1", "Ada", "ada")
+    identity = Cratis.Chronicle.Identity.new("u-1", "Ada", "ada")
     assert :ok = EventLog.append("ctx-1", registered("ctx-1"), @opts ++ [identity: identity])
 
     assert_receive {:handled, %Registered{user_id: "ctx-1"}, context}, 15_000
@@ -451,7 +454,7 @@ defmodule Chronicle.Integration.ClientParityTest do
 
     basket =
       await_read_model(
-        fn -> Chronicle.ReadModels.get(Basket, "bk-1", @opts) end,
+        fn -> Cratis.Chronicle.ReadModels.get(Basket, "bk-1", @opts) end,
         &(length(&1.items) == 2)
       )
 
@@ -466,7 +469,7 @@ defmodule Chronicle.Integration.ClientParityTest do
 
     ledger =
       await_read_model(
-        fn -> Chronicle.ReadModels.get(OneLineLedger, id, @opts) end,
+        fn -> Cratis.Chronicle.ReadModels.get(OneLineLedger, id, @opts) end,
         &(length(&1.entries) == 2)
       )
 
@@ -481,7 +484,7 @@ defmodule Chronicle.Integration.ClientParityTest do
 
     _ =
       await_read_model(
-        fn -> Chronicle.ReadModels.get(Ledger, id, @opts) end,
+        fn -> Cratis.Chronicle.ReadModels.get(Ledger, id, @opts) end,
         &(length(&1.entries) == 2)
       )
 
@@ -489,7 +492,7 @@ defmodule Chronicle.Integration.ClientParityTest do
 
     ledger =
       await_read_model(
-        fn -> Chronicle.ReadModels.get(Ledger, id, @opts) end,
+        fn -> Cratis.Chronicle.ReadModels.get(Ledger, id, @opts) end,
         &(length(&1.entries) == 1)
       )
 
@@ -514,7 +517,7 @@ defmodule Chronicle.Integration.ClientParityTest do
 
     ledger =
       await_read_model(
-        fn -> Chronicle.ReadModels.get(Ledger, id, @opts) end,
+        fn -> Cratis.Chronicle.ReadModels.get(Ledger, id, @opts) end,
         &match?([%{notes: [_ | _]}], &1.entries),
         80
       )
@@ -533,7 +536,7 @@ defmodule Chronicle.Integration.ClientParityTest do
 
     _ =
       await_read_model(
-        fn -> Chronicle.ReadModels.get(Ledger, id, @opts) end,
+        fn -> Cratis.Chronicle.ReadModels.get(Ledger, id, @opts) end,
         &(&1.promo_code == "promo-first")
       )
 
@@ -541,7 +544,7 @@ defmodule Chronicle.Integration.ClientParityTest do
 
     ledger =
       await_read_model(
-        fn -> Chronicle.ReadModels.get(Ledger, id, @opts) end,
+        fn -> Cratis.Chronicle.ReadModels.get(Ledger, id, @opts) end,
         &is_nil(&1.promo_code)
       )
 
@@ -554,22 +557,24 @@ defmodule Chronicle.Integration.ClientParityTest do
     end
 
     await_read_model(
-      fn -> Chronicle.ReadModels.query(Basket, @opts) |> then(fn {:ok, r} -> {:ok, r} end) end,
+      fn ->
+        Cratis.Chronicle.ReadModels.query(Basket, @opts) |> then(fn {:ok, r} -> {:ok, r} end)
+      end,
       &(&1.total_count >= 3)
     )
 
     assert {:ok, result} =
-             Chronicle.ReadModels.query(Basket, @opts ++ [filter: [basket_id: "q-2"]])
+             Cratis.Chronicle.ReadModels.query(Basket, @opts ++ [filter: [basket_id: "q-2"]])
 
     assert result.total_count == 1
     assert [%{basket_id: "q-2"}] = result.instances
 
     assert {:error, {:unknown_field, :nope}} =
-             Chronicle.ReadModels.query(Basket, @opts ++ [filter: [nope: 1]])
+             Cratis.Chronicle.ReadModels.query(Basket, @opts ++ [filter: [nope: 1]])
   end
 
   test "observers can be listed and their lag measured" do
-    assert {:ok, entries} = Chronicle.Observers.Lag.measure(@opts)
+    assert {:ok, entries} = Cratis.Chronicle.Observers.Lag.measure(@opts)
     assert Enum.all?(entries, &(&1.lag >= 0))
   end
 
@@ -582,7 +587,9 @@ defmodule Chronicle.Integration.ClientParityTest do
   end
 
   test "retry of a partition that never failed reports it as not found" do
-    assert {:ok, outcome} = Chronicle.Observers.retry_partition(Spy, "no-such-partition", @opts)
+    assert {:ok, outcome} =
+             Cratis.Chronicle.Observers.retry_partition(Spy, "no-such-partition", @opts)
+
     assert outcome in [:partition_not_found, :started]
   end
 
@@ -591,13 +598,13 @@ defmodule Chronicle.Integration.ClientParityTest do
       if second?, do: Process.put(:second_seed, true), else: Process.delete(:second_seed)
 
       builder =
-        NoteSeeder.seed(%Chronicle.Seeding{
-          event_store: Chronicle.Client.config(:parity_it_client).event_store,
-          namespace: Chronicle.Client.config(:parity_it_client).namespace,
+        NoteSeeder.seed(%Cratis.Chronicle.Seeding{
+          event_store: Cratis.Chronicle.Client.config(:parity_it_client).event_store,
+          namespace: Cratis.Chronicle.Client.config(:parity_it_client).namespace,
           client: :parity_it_client
         })
 
-      assert :ok = Chronicle.Seeding.register(builder)
+      assert :ok = Cratis.Chronicle.Seeding.register(builder)
     end
 
     texts = fn ->
@@ -634,7 +641,7 @@ defmodule Chronicle.Integration.ClientParityTest do
   end
 
   test "observe sends the collection now and again when it changes" do
-    {:ok, observer} = Chronicle.ReadModels.observe(Basket, @opts)
+    {:ok, observer} = Cratis.Chronicle.ReadModels.observe(Basket, @opts)
 
     assert :ok = EventLog.append("obs-1", %BasketCreated{}, @opts)
 
@@ -650,7 +657,7 @@ defmodule Chronicle.Integration.ClientParityTest do
              end
            end)
 
-    Chronicle.ReadModels.unobserve(observer)
+    Cratis.Chronicle.ReadModels.unobserve(observer)
   end
 
   test "a read model reactor is told when its read model changes" do
@@ -660,7 +667,7 @@ defmodule Chronicle.Integration.ClientParityTest do
   end
 
   test "allowing a new encryption key is accepted by the kernel" do
-    assert :ok = Chronicle.Compliance.allow_new_encryption_key_for("nobody-here", @opts)
+    assert :ok = Cratis.Chronicle.Compliance.allow_new_encryption_key_for("nobody-here", @opts)
   end
 
   defp wait_for(fun, attempts \\ 60) do

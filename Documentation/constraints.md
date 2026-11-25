@@ -22,7 +22,7 @@ event store. Mirrors the C# client's `IConstraintBuilder.PerEventSourceType()` /
 
 ```elixir
 defmodule MyApp.Events.EmailChanged do
-  use Chronicle.Events.EventType, id: "email-changed"
+  use Cratis.Chronicle.Events.EventType, id: "email-changed"
 
   defstruct [:email]
 
@@ -65,14 +65,14 @@ carries, in the same order as the constrained properties:
 
 ```elixir
 defmodule MyApp.Events.MappingVersionRegistered do
-  use Chronicle.Events.EventType, id: "mapping-version-registered"
+  use Cratis.Chronicle.Events.EventType, id: "mapping-version-registered"
   defstruct version_id: ""
 
   unique(:version_id, name: "UniqueMappingVersionId", mode: :per_value)
 end
 
 defmodule MyApp.Events.MappingVersionRemoved do
-  use Chronicle.Events.EventType, id: "mapping-version-removed"
+  use Cratis.Chronicle.Events.EventType, id: "mapping-version-removed"
   defstruct version_id: ""
 
   remove_constraint("UniqueMappingVersionId", properties: [:version_id])
@@ -82,13 +82,13 @@ end
 ## Standalone constraint modules
 
 `unique/2` and `unique_event_type/1` declared as event type attributes cover a constraint that
-belongs to exactly one event type's own module. `use Chronicle.Events.Constraint` is for a
+belongs to exactly one event type's own module. `use Cratis.Chronicle.Events.Constraint` is for a
 constraint spanning several event types under one name, or one defined apart from any single
 event type's module — mirroring the C# client's `IConstraint`/`IConstraintBuilder`:
 
 ```elixir
 defmodule MyApp.Constraints.UniqueEmail do
-  use Chronicle.Events.Constraint
+  use Cratis.Chronicle.Events.Constraint
 
   unique name: "UniqueEmail" do
     on MyApp.Events.UserRegistered, [:email]
@@ -109,7 +109,7 @@ source:
 
 ```elixir
 defmodule MyApp.Constraints.PersonTerminalOutcome do
-  use Chronicle.Events.Constraint
+  use Cratis.Chronicle.Events.Constraint
 
   unique_event_type MyApp.Events.PersonAliasedTo, name: "PersonTerminal"
   unique_event_type MyApp.Events.PersonErased, name: "PersonTerminal"
@@ -120,7 +120,7 @@ Standalone constraint modules are discovered automatically (like event types and
 registered explicitly with the `:constraints` client option:
 
 ```elixir
-{Chronicle.Client,
+{Cratis.Chronicle.Client,
   connection_string: "chronicle://localhost:35000",
   event_store: "my-store",
   constraints: [MyApp.Constraints.UniqueEmail]}
@@ -130,13 +130,13 @@ registered explicitly with the `:constraints` client option:
 
 `:message` accepts a string or a `{Module, :function}` callback, invoked with the violation when
 an append is rejected. The violation's `:details` carry the keys Chronicle itself assigns a
-meaning to; `Chronicle.Events.ConstraintViolation.details/1` maps them onto atoms —
+meaning to; `Cratis.Chronicle.Events.ConstraintViolation.details/1` maps them onto atoms —
 `:property_name`, `:property_value`, `:closed_by`, `:closed_at_sequence_number` — leaving any other
 key as-is:
 
 ```elixir
 defmodule MyApp.Constraints.Messages do
-  alias Chronicle.Events.ConstraintViolation
+  alias Cratis.Chronicle.Events.ConstraintViolation
 
   def project_name_taken(violation) do
     "A project named '#{ConstraintViolation.details(violation)[:property_value]}' already exists."
@@ -144,7 +144,7 @@ defmodule MyApp.Constraints.Messages do
 end
 
 defmodule MyApp.Events.ProjectCreated do
-  use Chronicle.Events.EventType, id: "project-created"
+  use Cratis.Chronicle.Events.EventType, id: "project-created"
   defstruct name: ""
 
   unique(:name, name: "UniqueProjectName", message: {MyApp.Constraints.Messages, :project_name_taken})
@@ -158,7 +158,7 @@ later event inside that scope is refused, events elsewhere are not. Mirrors .NET
 
 ```elixir
 defmodule MyApp.Events.PeriodClosed do
-  use Chronicle.Events.EventType, id: "period-closed"
+  use Cratis.Chronicle.Events.EventType, id: "period-closed"
   defstruct period: ""
 
   closes_stream event_stream_id_from: :period, reopened_by: [MyApp.Events.PeriodReopened]
@@ -170,4 +170,4 @@ Options: `:dimensions` (`:event_source_id`, `:event_source_type`, `:event_stream
 (event types that lift the closure of exactly that scope), `:name` and `:event_sequences`.
 Declarations that share a `:name` merge, and must agree on dimensions and stream id field. A
 registration closes nothing in history; only later appends close scopes. Inspect and operate on
-closed scopes with `Chronicle.EventSequences.Streams`.
+closed scopes with `Cratis.Chronicle.EventSequences.Streams`.

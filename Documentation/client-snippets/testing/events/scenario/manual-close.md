@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.TestingScenarioManualCloseReportEdited do
-  use Chronicle.Events.EventType, id: "testing-scenario-manual-close-report-edited"
+  use Cratis.Chronicle.Events.EventType, id: "testing-scenario-manual-close-report-edited"
 
   defstruct [:text]
 end
@@ -11,16 +11,16 @@ defmodule MyApp.TestingScenarioManualCloseTest do
 
   @moduletag :integration
 
-  import Chronicle.Testing.Assertions
+  import Cratis.Chronicle.Testing.Assertions
 
-  alias Chronicle.EventSequences.{EventLog, Streams}
+  alias Cratis.Chronicle.EventSequences.{EventLog, Streams}
   alias MyApp.Events.TestingScenarioManualCloseReportEdited
 
   setup do
     name = :"manual_close_#{System.unique_integer([:positive])}"
 
     {:ok, client} =
-      Chronicle.Testing.Integration.setup_isolated_client(
+      Cratis.Chronicle.Testing.Integration.setup_isolated_client(
         [event_types: [MyApp.Events.TestingScenarioManualCloseReportEdited]],
         name
       )

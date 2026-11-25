@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.MbClearingChildItemAdded do
-  use Chronicle.Events.EventType, id: "mb-clearing-child-item-added"
+  use Cratis.Chronicle.Events.EventType, id: "mb-clearing-child-item-added"
 
   defstruct [:item_id, :note]
 end
 
 defmodule MyApp.Events.MbClearingChildItemNoteCleared do
-  use Chronicle.Events.EventType, id: "mb-clearing-child-item-note-cleared"
+  use Cratis.Chronicle.Events.EventType, id: "mb-clearing-child-item-note-cleared"
 
   defstruct [:item_id]
 end
@@ -16,7 +16,7 @@ defmodule MyApp.ReadModels.MbClearingChildItem do
 end
 
 defmodule MyApp.ReadModels.MbClearingChildBasket do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [items: {:list, MyApp.ReadModels.MbClearingChildItem}]
 
   defstruct basket_id: nil, items: []

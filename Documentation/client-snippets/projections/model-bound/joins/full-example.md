@@ -1,37 +1,37 @@
 ```elixir
 # Events
 defmodule MyApp.Events.MbJoinsFullOrderPlaced do
-  use Chronicle.Events.EventType, id: "mb-joins-full-order-placed"
+  use Cratis.Chronicle.Events.EventType, id: "mb-joins-full-order-placed"
 
   defstruct [:customer_id, :placed_at]
 end
 
 defmodule MyApp.Events.MbJoinsFullCustomerRegistered do
-  use Chronicle.Events.EventType, id: "mb-joins-full-customer-registered"
+  use Cratis.Chronicle.Events.EventType, id: "mb-joins-full-customer-registered"
 
   defstruct [:name, :email]
 end
 
 defmodule MyApp.Events.MbJoinsFullCustomerProfileUpdated do
-  use Chronicle.Events.EventType, id: "mb-joins-full-customer-profile-updated"
+  use Cratis.Chronicle.Events.EventType, id: "mb-joins-full-customer-profile-updated"
 
   defstruct [:phone_number]
 end
 
 defmodule MyApp.Events.MbJoinsFullLineItemAdded do
-  use Chronicle.Events.EventType, id: "mb-joins-full-line-item-added"
+  use Cratis.Chronicle.Events.EventType, id: "mb-joins-full-line-item-added"
 
   defstruct [:product_id, :quantity]
 end
 
 defmodule MyApp.Events.MbJoinsFullProductCreated do
-  use Chronicle.Events.EventType, id: "mb-joins-full-product-created"
+  use Cratis.Chronicle.Events.EventType, id: "mb-joins-full-product-created"
 
   defstruct [:name, :price]
 end
 
 defmodule MyApp.Events.MbJoinsFullProductPriceChanged do
-  use Chronicle.Events.EventType, id: "mb-joins-full-product-price-changed"
+  use Cratis.Chronicle.Events.EventType, id: "mb-joins-full-product-price-changed"
 
   defstruct [:new_price]
 end
@@ -42,7 +42,7 @@ defmodule MyApp.ReadModels.MbJoinsFullLineItemDetails do
 end
 
 defmodule MyApp.ReadModels.MbJoinsFullOrderDetails do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [items: {:list, MyApp.ReadModels.MbJoinsFullLineItemDetails}]
 
   alias MyApp.Events.{

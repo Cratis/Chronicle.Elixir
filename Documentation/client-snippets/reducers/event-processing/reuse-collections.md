@@ -1,6 +1,6 @@
 ```elixir
 defmodule EventProcessingReuseItemAdded do
-  use Chronicle.Events.EventType, id: "event-processing-reuse-item-added"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-reuse-item-added"
 
   defstruct [:item_id, :name]
 end
@@ -14,7 +14,7 @@ defmodule EventProcessingItemList do
 end
 
 defmodule EventProcessingItemListReducer do
-  use Chronicle.Reducers.Reducer, model: EventProcessingItemList
+  use Cratis.Chronicle.Reducers.Reducer, model: EventProcessingItemList
 
   alias EventProcessingReuseItemAdded
   alias EventProcessingItem

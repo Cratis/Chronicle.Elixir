@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.ScopedClosingReportCloser do
-  alias Chronicle.EventSequences.Streams
+  alias Cratis.Chronicle.EventSequences.Streams
 
   def close_approved_report(report_id) do
     # Close one report's "2026-04" stream. Other reports that use the same

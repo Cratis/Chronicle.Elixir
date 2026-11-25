@@ -12,7 +12,7 @@ Configure the client in your supervision tree, then wait for registration before
 Start a client in your supervision tree with a connection string:
 
 ```elixir
-{Chronicle.Client,
+{Cratis.Chronicle.Client,
  connection_string: "chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000",
  event_store: "my-app",
  otp_app: :my_app}
@@ -23,9 +23,9 @@ That connection string carries the development kernel's well-known credentials. 
 The client connects in the background. Until it has a channel, appends and most other calls return `{:error, :not_connected}` rather than waiting, and registration of your artifacts finishes a little later. Wait for readiness before your first call:
 
 ```elixir
-alias Chronicle.Connections.Lifecycle
+alias Cratis.Chronicle.Connections.Lifecycle
 
-:ok = Lifecycle.wait_until(Lifecycle.name_for(Chronicle.Client), :registered)
+:ok = Lifecycle.wait_until(Lifecycle.name_for(Cratis.Chronicle.Client), :registered)
 ```
 
 You never manage the socket, the session, or re-registration yourself.

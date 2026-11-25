@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.PiiAttrEmployeeRegistered do
-  use Chronicle.Events.EventType, id: "pii-attr-employee-registered"
+  use Cratis.Chronicle.Events.EventType, id: "pii-attr-employee-registered"
 
   defstruct [:first_name, :last_name, :department]
 

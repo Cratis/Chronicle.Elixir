@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.TransferMoneyWithdrawn do
-  use Chronicle.Events.EventType, id: "transfer-money-withdrawn-v1"
+  use Cratis.Chronicle.Events.EventType, id: "transfer-money-withdrawn-v1"
 
   defstruct [:amount]
 end
 
 defmodule MyApp.Events.TransferMoneyDeposited do
-  use Chronicle.Events.EventType, id: "transfer-money-deposited-v1"
+  use Cratis.Chronicle.Events.EventType, id: "transfer-money-deposited-v1"
 
   defstruct [:amount]
 end
 
 defmodule MyApp.TransferService do
-  alias Chronicle.EventSequences.{EventForEventSourceId, EventLog}
+  alias Cratis.Chronicle.EventSequences.{EventForEventSourceId, EventLog}
   alias MyApp.Events.{TransferMoneyDeposited, TransferMoneyWithdrawn}
 
   # Appends both events atomically in a single append-many, each carrying

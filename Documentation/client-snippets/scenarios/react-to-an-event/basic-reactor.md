@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.ScenariosReactBookReturned do
-  use Chronicle.Events.EventType, id: "scenarios-react-book-returned"
+  use Cratis.Chronicle.Events.EventType, id: "scenarios-react-book-returned"
 
   defstruct [:isbn]
 end
@@ -11,7 +11,7 @@ defmodule MyApp.ScenariosReactNotificationService do
 end
 
 defmodule MyApp.Reactors.ScenariosReactWaitlistNotifier do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.ScenariosReactBookReturned
   alias MyApp.ScenariosReactNotificationService

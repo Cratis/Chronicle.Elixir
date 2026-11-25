@@ -1,12 +1,12 @@
 ```elixir title="Equivalent explicit mappings"
 defmodule MyApp.Events.ExplicitConventionUserRegistered do
-  use Chronicle.Events.EventType, id: "explicit-convention-user-registered-v1"
+  use Cratis.Chronicle.Events.EventType, id: "explicit-convention-user-registered-v1"
 
   defstruct [:name, :email, :registered_at]
 end
 
 defmodule MyApp.ReadModels.ExplicitConventionUser do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.ExplicitConventionUserRegistered
 

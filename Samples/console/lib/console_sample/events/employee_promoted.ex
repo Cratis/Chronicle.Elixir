@@ -4,7 +4,7 @@
 defmodule ConsoleSample.Events.EmployeePromoted do
   @moduledoc "An employee has been promoted to a new title."
 
-  use Chronicle.Events.EventType, id: "employee-promoted"
+  use Cratis.Chronicle.Events.EventType, id: "employee-promoted"
 
   defstruct [:new_title]
 end

@@ -1,31 +1,31 @@
 ```elixir
 defmodule MyApp.Events.TestingSeqAssertFullAuthorRegistered do
-  use Chronicle.Events.EventType, id: "testing-seq-assert-full-author-registered"
+  use Cratis.Chronicle.Events.EventType, id: "testing-seq-assert-full-author-registered"
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.TestingSeqAssertFullBookAdded do
-  use Chronicle.Events.EventType, id: "testing-seq-assert-full-book-added"
+  use Cratis.Chronicle.Events.EventType, id: "testing-seq-assert-full-book-added"
 
   defstruct [:title]
 end
 
 defmodule MyApp.Events.TestingSeqAssertFullLibraryCreated do
-  use Chronicle.Events.EventType, id: "testing-seq-assert-full-library-created"
+  use Cratis.Chronicle.Events.EventType, id: "testing-seq-assert-full-library-created"
 
   defstruct [:name]
 end
 
 defmodule MyApp.TestingSeqAssertFullExampleTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [
       MyApp.Events.TestingSeqAssertFullLibraryCreated,
       MyApp.Events.TestingSeqAssertFullAuthorRegistered,
       MyApp.Events.TestingSeqAssertFullBookAdded
     ]
 
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.{TestingSeqAssertFullAuthorRegistered, TestingSeqAssertFullBookAdded, TestingSeqAssertFullLibraryCreated}
 
   test "registering an author and adding a book appends both events in order", %{chronicle: client} do
@@ -40,7 +40,7 @@ defmodule MyApp.TestingSeqAssertFullExampleTest do
     # The tail includes the seeded event (0) plus the two appended events (1, 2)
     assert {:ok, 2} = EventLog.get_tail_sequence_number(nil, client: client)
 
-    [_seeded, author, book] = Chronicle.Testing.appended_events(client, author_id)
+    [_seeded, author, book] = Cratis.Chronicle.Testing.appended_events(client, author_id)
 
     assert %{event: %TestingSeqAssertFullAuthorRegistered{name: "Jane Smith"}, context: %{sequence_number: 1}} = author
     assert %{event: %TestingSeqAssertFullBookAdded{title: "Clean Code"}, context: %{sequence_number: 2}} = book

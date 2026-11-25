@@ -1,10 +1,10 @@
 ```elixir
 defmodule MyApp.Concepts.ConstraintsModelBoundUniqueEmailAddress do
-  use Chronicle.Concept, type: :string
+  use Cratis.Chronicle.Concept, type: :string
 end
 
 defmodule MyApp.Events.ConstraintsModelBoundUniqueAuthorRegistered do
-  use Chronicle.Events.EventType, id: "constraints-model-bound-unique-author-registered"
+  use Cratis.Chronicle.Events.EventType, id: "constraints-model-bound-unique-author-registered"
 
   unique :email, name: "UniqueAuthorEmail"
 

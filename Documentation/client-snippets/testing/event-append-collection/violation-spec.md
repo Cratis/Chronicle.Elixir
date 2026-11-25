@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.TestingCollectionViolationSpecTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [
       MyApp.Events.TestingCollectionUniqueValueRecorded,
       MyApp.Events.TestingCollectionUniqueValueFollowUp
@@ -15,14 +15,14 @@ defmodule MyApp.TestingCollectionViolationSpecTest do
     second_event_source_id = "value-#{System.unique_integer([:positive])}-b"
 
     :ok =
-      Chronicle.EventSequences.EventLog.append(
+      Cratis.Chronicle.EventSequences.EventLog.append(
         first_event_source_id,
         %TestingCollectionUniqueValueRecorded{unique_value: unique_value},
         client: client
       )
 
     :ok =
-      Chronicle.EventSequences.EventLog.append(
+      Cratis.Chronicle.EventSequences.EventLog.append(
         second_event_source_id,
         %TestingCollectionUniqueValueRecorded{unique_value: unique_value},
         client: client
@@ -32,18 +32,18 @@ defmodule MyApp.TestingCollectionViolationSpecTest do
     # `appended_events/2` — the rejection surfaces through `wait_for_observers/1`
     # instead, as a reactor failure.
     assert {:error, [{:reactor, MyApp.Reactors.TestingCollectionUniqueValueReactor, reason}]} =
-             Chronicle.Testing.wait_for_observers(client)
+             Cratis.Chronicle.Testing.wait_for_observers(client)
 
     assert {:constraint_violations, _violations} = reason
 
     assert [%TestingCollectionUniqueValueFollowUp{unique_value: ^unique_value}] =
              first_event_source_id
-             |> then(&Chronicle.Testing.appended_events(client, &1))
+             |> then(&Cratis.Chronicle.Testing.appended_events(client, &1))
              |> Enum.map(& &1.event)
              |> Enum.filter(&match?(%TestingCollectionUniqueValueFollowUp{}, &1))
 
     assert second_event_source_id
-           |> then(&Chronicle.Testing.appended_events(client, &1))
+           |> then(&Cratis.Chronicle.Testing.appended_events(client, &1))
            |> Enum.map(& &1.event)
            |> Enum.filter(&match?(%TestingCollectionUniqueValueFollowUp{}, &1)) == []
   end

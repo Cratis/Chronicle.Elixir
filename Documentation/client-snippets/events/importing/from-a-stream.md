@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.LegacyCustomerRegistered do
-  use Chronicle.Events.EventType, id: "legacy-customer-registered"
+  use Cratis.Chronicle.Events.EventType, id: "legacy-customer-registered"
 
   defstruct name: ""
 end
 
 defmodule MyApp.CustomerMigration do
-  alias Chronicle.EventSequences.EventForEventSourceId
+  alias Cratis.Chronicle.EventSequences.EventForEventSourceId
 
   # rows is any Enumerable, a lazy Stream included: it is read while the import uploads.
   def run(rows) do
     rows
     |> Stream.map(&to_event/1)
-    |> Chronicle.Imports.import(on_invalid: :reject, progress: self())
+    |> Cratis.Chronicle.Imports.import(on_invalid: :reject, progress: self())
   end
 
   def report_progress do

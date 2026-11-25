@@ -1,16 +1,16 @@
 ```elixir
 defmodule MyApp.Events.SubscriptionsExplicitStockReserved do
-  use Chronicle.Events.EventType, id: "subscriptions-explicit-stock-reserved"
+  use Cratis.Chronicle.Events.EventType, id: "subscriptions-explicit-stock-reserved"
 
   defstruct [:item_id, :quantity]
 end
 
 defmodule MyApp.SubscriptionsExplicitFiltering do
-  alias Chronicle.EventStoreSubscriptions.DefinitionBuilder
+  alias Cratis.Chronicle.EventStoreSubscriptions.DefinitionBuilder
   alias MyApp.Events.{SubscriptionsExplicitStockAdjusted, SubscriptionsExplicitStockReserved}
 
   def run do
-    Chronicle.subscribe_to_event_store(
+    Cratis.Chronicle.subscribe_to_event_store(
       "inventory-updates",
       "warehouse-service",
       fn builder ->

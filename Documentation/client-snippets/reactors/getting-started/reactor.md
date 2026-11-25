@@ -4,7 +4,7 @@ defmodule MyApp.EmailGateway do
 end
 
 defmodule MyApp.Reactors.OrderNotificationsReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.ReactorOrderPlaced
 

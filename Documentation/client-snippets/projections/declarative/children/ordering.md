@@ -1,12 +1,12 @@
 ```elixir title="Ordering new children"
 defmodule MyApp.Events.DecOrderingCommentPosted do
-  use Chronicle.Events.EventType, id: "dec-ordering-comment-posted"
+  use Cratis.Chronicle.Events.EventType, id: "dec-ordering-comment-posted"
 
   defstruct comment_id: "", text: ""
 end
 
 defmodule MyApp.Events.DecOrderingTaskAdded do
-  use Chronicle.Events.EventType, id: "dec-ordering-task-added"
+  use Cratis.Chronicle.Events.EventType, id: "dec-ordering-task-added"
 
   defstruct task_id: "", title: "", priority: 0
 end
@@ -20,7 +20,7 @@ defmodule MyApp.ReadModels.DecOrderingTask do
 end
 
 defmodule MyApp.ReadModels.DecOrderingBoard do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [
       comments: {:list, MyApp.ReadModels.DecOrderingComment},
       tasks: {:list, MyApp.ReadModels.DecOrderingTask}
@@ -30,7 +30,7 @@ defmodule MyApp.ReadModels.DecOrderingBoard do
 end
 
 defmodule MyApp.Projections.DecOrderingBoardProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.DecOrderingBoard
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.DecOrderingBoard
 
   alias MyApp.Events.{DecOrderingCommentPosted, DecOrderingTaskAdded}
 

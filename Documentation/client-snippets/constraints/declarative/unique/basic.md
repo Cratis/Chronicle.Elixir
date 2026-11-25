@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.ConstraintsUniqueProjectCreated do
-  use Chronicle.Events.EventType, id: "constraints-unique-project-created"
+  use Cratis.Chronicle.Events.EventType, id: "constraints-unique-project-created"
 
   unique :name, name: "ConstraintsUniqueProjectName"
 
@@ -8,7 +8,7 @@ defmodule MyApp.Events.ConstraintsUniqueProjectCreated do
 end
 
 defmodule MyApp.Events.ConstraintsUniqueProjectRemoved do
-  use Chronicle.Events.EventType, id: "constraints-unique-project-removed"
+  use Cratis.Chronicle.Events.EventType, id: "constraints-unique-project-removed"
 
   remove_constraint "ConstraintsUniqueProjectName"
 

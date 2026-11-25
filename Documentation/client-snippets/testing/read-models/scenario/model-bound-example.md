@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.TestingReadModelScenarioModelBoundShipmentDispatched do
-  use Chronicle.Events.EventType, id: "testing-read-model-scenario-model-bound-shipment-dispatched"
+  use Cratis.Chronicle.Events.EventType, id: "testing-read-model-scenario-model-bound-shipment-dispatched"
 
   defstruct [:carrier]
 end
 
 defmodule MyApp.Events.TestingReadModelScenarioModelBoundShipmentDelivered do
-  use Chronicle.Events.EventType, id: "testing-read-model-scenario-model-bound-shipment-delivered"
+  use Cratis.Chronicle.Events.EventType, id: "testing-read-model-scenario-model-bound-shipment-delivered"
 
   defstruct [:delivered_at]
 end
 
 defmodule MyApp.ReadModels.TestingReadModelScenarioModelBoundDeliveryStatus do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{
     TestingReadModelScenarioModelBoundShipmentDelivered,
@@ -41,7 +41,7 @@ defmodule MyApp.TestingReadModelScenarioModelBoundExampleTest do
     shipment_id = "shipment-1"
 
     {:ok, status} =
-      Chronicle.Testing.Projections.apply_event(
+      Cratis.Chronicle.Testing.Projections.apply_event(
         TestingReadModelScenarioModelBoundDeliveryStatus,
         nil,
         %TestingReadModelScenarioModelBoundShipmentDispatched{carrier: "FedEx"},
@@ -49,7 +49,7 @@ defmodule MyApp.TestingReadModelScenarioModelBoundExampleTest do
       )
 
     {:ok, status} =
-      Chronicle.Testing.Projections.apply_event(
+      Cratis.Chronicle.Testing.Projections.apply_event(
         TestingReadModelScenarioModelBoundDeliveryStatus,
         status,
         %TestingReadModelScenarioModelBoundShipmentDelivered{delivered_at: DateTime.utc_now()},

@@ -4,8 +4,8 @@ defmodule MyApp.BookQueryService do
   alias MyApp.ReadModels.GetStartedBorrowedBook
 
   def query_books do
-    {:ok, books} = Chronicle.all(GetStartedBook)
-    {:ok, borrowed_books} = Chronicle.all(GetStartedBorrowedBook)
+    {:ok, books} = Cratis.Chronicle.all(GetStartedBook)
+    {:ok, borrowed_books} = Cratis.Chronicle.all(GetStartedBorrowedBook)
 
     {books, borrowed_books}
   end

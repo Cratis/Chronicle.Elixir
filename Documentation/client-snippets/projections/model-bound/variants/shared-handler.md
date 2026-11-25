@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.MbVariantSharedIssueCreated do
-  use Chronicle.Events.EventType, id: "mb-variant-shared-issue-created-v1"
+  use Cratis.Chronicle.Events.EventType, id: "mb-variant-shared-issue-created-v1"
 
   defstruct [:title]
 end
 
 defmodule MyApp.Events.MbVariantSharedPullRequestCreated do
-  use Chronicle.Events.EventType, id: "mb-variant-shared-pull-request-created-v1"
+  use Cratis.Chronicle.Events.EventType, id: "mb-variant-shared-pull-request-created-v1"
 
   defstruct [:pull_request_url]
 end
 
 defmodule MyApp.Events.MbVariantSharedTitleChanged do
-  use Chronicle.Events.EventType, id: "mb-variant-shared-title-changed-v1"
+  use Cratis.Chronicle.Events.EventType, id: "mb-variant-shared-title-changed-v1"
 
   defstruct [:title]
 end
@@ -21,7 +21,7 @@ defmodule MyApp.ReadModels.MbVariantSharedWorkItem do
 end
 
 defmodule MyApp.ReadModels.MbVariantSharedBacklogItem do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.MbVariantSharedIssueCreated
   alias MyApp.ReadModels.MbVariantSharedWorkItem
@@ -36,7 +36,7 @@ defmodule MyApp.ReadModels.MbVariantSharedBacklogItem do
 end
 
 defmodule MyApp.ReadModels.MbVariantSharedPullRequestItem do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.MbVariantSharedPullRequestCreated
   alias MyApp.ReadModels.MbVariantSharedWorkItem
@@ -54,7 +54,7 @@ end
 # title member - one that does not is a declaration error, not a silently skipped mapping. Never
 # registered as a projection on its own.
 defmodule MyApp.Projections.MbVariantSharedHandlers do
-  use Chronicle.Projections.GlobalHandler, identity: MyApp.ReadModels.MbVariantSharedWorkItem
+  use Cratis.Chronicle.Projections.GlobalHandler, identity: MyApp.ReadModels.MbVariantSharedWorkItem
 
   alias MyApp.Events.MbVariantSharedTitleChanged
 

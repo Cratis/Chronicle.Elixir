@@ -1,6 +1,6 @@
 ```elixir
 {:ok, result} =
-  Chronicle.Projections.query(
+  Cratis.Chronicle.Projections.query(
     """
     projection InboxMessages
       from MessageReceived

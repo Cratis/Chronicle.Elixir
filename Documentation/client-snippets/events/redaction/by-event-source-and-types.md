@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.RedactionPersonalDetailsRecorded do
-  use Chronicle.Events.EventType, id: "redaction-personal-details-recorded"
+  use Cratis.Chronicle.Events.EventType, id: "redaction-personal-details-recorded"
 
   defstruct [:name, :social_security_number]
 end
 
 defmodule MyApp.Events.RedactionAddressChanged do
-  use Chronicle.Events.EventType, id: "redaction-address-changed"
+  use Cratis.Chronicle.Events.EventType, id: "redaction-address-changed"
 
   defstruct [:street, :city]
 end
 
 defmodule MyApp.RedactionByEventSourceAndTypesService do
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.{RedactionAddressChanged, RedactionPersonalDetailsRecorded}
 
   def redact_personal_data(event_source_id) do

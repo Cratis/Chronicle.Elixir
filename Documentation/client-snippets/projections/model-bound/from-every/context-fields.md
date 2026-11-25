@@ -1,12 +1,12 @@
 ```elixir title="Track audit metadata from every event"
 defmodule MyApp.Events.AuditableInventoryChangedForEvery do
-  use Chronicle.Events.EventType, id: "auditable-inventory-changed-for-every-v1"
+  use Cratis.Chronicle.Events.EventType, id: "auditable-inventory-changed-for-every-v1"
 
   defstruct [:reason]
 end
 
 defmodule MyApp.ReadModels.AuditableInventoryStatusFromEvery do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.AuditableInventoryChangedForEvery
 

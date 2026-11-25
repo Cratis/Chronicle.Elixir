@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.ReactorAccountClosed do
-  use Chronicle.Events.EventType, id: "reactor-account-closed"
+  use Cratis.Chronicle.Events.EventType, id: "reactor-account-closed"
 
   defstruct [:account_id]
 end
 
 defmodule MyApp.Reactors.AuditReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.ReactorAccountClosed
 

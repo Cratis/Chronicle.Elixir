@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.TestSliceConstraintBookAdded do
-  use Chronicle.Events.EventType, id: "test-slice-constraint-book-added"
+  use Cratis.Chronicle.Events.EventType, id: "test-slice-constraint-book-added"
 
   defstruct [:title, :isbn]
 
@@ -9,11 +9,11 @@ end
 
 defmodule MyApp.TestSliceConstraintTest do
   # Runs against an in-memory kernel, which enforces unique constraints on append.
-  use Chronicle.Testing.Case, event_types: [MyApp.Events.TestSliceConstraintBookAdded]
+  use Cratis.Chronicle.Testing.Case, event_types: [MyApp.Events.TestSliceConstraintBookAdded]
 
-  import Chronicle.Testing.Assertions
+  import Cratis.Chronicle.Testing.Assertions
 
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.TestSliceConstraintBookAdded
 
   test "adding a second book with an isbn already in use is rejected", %{chronicle: client} do

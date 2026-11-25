@@ -1,16 +1,16 @@
 ```elixir
 defmodule MyApp.Compliance.Client.CombiningPersonName do
-  use Chronicle.Concept, type: :string
+  use Cratis.Chronicle.Concept, type: :string
   pii()
 end
 
 defmodule MyApp.Compliance.Client.CombiningEmailAddress do
-  use Chronicle.Concept, type: :string
+  use Cratis.Chronicle.Concept, type: :string
   pii()
 end
 
 defmodule MyApp.Compliance.Client.CustomerRegistered do
-  use Chronicle.Events.EventType, id: "compliance-client-customer-registered"
+  use Cratis.Chronicle.Events.EventType, id: "compliance-client-customer-registered"
 
   defstruct name: %MyApp.Compliance.Client.CombiningPersonName{},
             email: %MyApp.Compliance.Client.CombiningEmailAddress{},

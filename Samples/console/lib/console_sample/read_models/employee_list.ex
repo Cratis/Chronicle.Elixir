@@ -4,7 +4,7 @@
 defmodule ConsoleSample.ReadModels.EmployeeList do
   @moduledoc "Employee list read model — pure data structure populated by the declarative `EmployeeListProjection`."
 
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: "",
             first_name: "",

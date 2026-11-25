@@ -11,7 +11,7 @@ defmodule ConsoleSample.Reactors.HrNotificationReactor do
   equivalent `HrNotificationReactor` in the other Chronicle client samples.
   """
 
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias ConsoleSample.Events.{
     EmployeeAddressSet,

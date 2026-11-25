@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.OrderConfirmationQueued do
-  use Chronicle.Events.EventType, id: "order-confirmation-queued"
+  use Cratis.Chronicle.Events.EventType, id: "order-confirmation-queued"
 
   defstruct [:customer_id]
 end
 
 defmodule MyApp.Reactors.OrderNotifier do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.{OrderConfirmationQueued, OrderPlaced}
 

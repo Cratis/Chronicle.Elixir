@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.TaggingByCommunicationChannelExample do
-  use Chronicle.Events.EventType,
+  use Cratis.Chronicle.Events.EventType,
     id: "tagging-by-communication-channel-example",
     tags: ["Email", "SMS", "Push", "Webhook"]
 

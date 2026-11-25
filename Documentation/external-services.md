@@ -1,9 +1,9 @@
 ---
 title: External services
-description: Register HTTP and database external service definitions with Chronicle from Elixir using the Chronicle.ExternalServices API and inspect what is registered.
+description: Register HTTP and database external service definitions with Chronicle from Elixir using the Cratis.Chronicle.ExternalServices API and inspect what is registered.
 ---
 
-`Chronicle.ExternalServices` provides an idiomatic Elixir API for registering external service definitions with Chronicle.
+`Cratis.Chronicle.ExternalServices` provides an idiomatic Elixir API for registering external service definitions with Chronicle.
 
 External services let the Chronicle kernel talk to systems outside the event store — an HTTP API or a MsSql/PostgreSql database — under a name other kernel features (such as [captures](captures.md)) can reference. They are usually configured in the Workbench, but the Elixir client also exposes a programmatic API.
 
@@ -17,15 +17,15 @@ Register an HTTP endpoint with bearer-token authentication and a custom header:
 
 ```elixir
 :ok =
-  Chronicle.ExternalServices.register("CustomersApi", fn builder ->
+  Cratis.Chronicle.ExternalServices.register("CustomersApi", fn builder ->
     builder
-    |> Chronicle.ExternalServices.DefinitionBuilder.http("https://api.example.com")
-    |> Chronicle.ExternalServices.DefinitionBuilder.with_bearer_token(token)
-    |> Chronicle.ExternalServices.DefinitionBuilder.with_header("X-Tenant", "acme")
+    |> Cratis.Chronicle.ExternalServices.DefinitionBuilder.http("https://api.example.com")
+    |> Cratis.Chronicle.ExternalServices.DefinitionBuilder.with_bearer_token(token)
+    |> Cratis.Chronicle.ExternalServices.DefinitionBuilder.with_header("X-Tenant", "acme")
   end)
 ```
 
-`configure` receives a `Chronicle.ExternalServices.DefinitionBuilder` and must return it (or a continuation of it) once the endpoint is configured.
+`configure` receives a `Cratis.Chronicle.ExternalServices.DefinitionBuilder` and must return it (or a continuation of it) once the endpoint is configured.
 
 ## Registering a database service
 
@@ -33,8 +33,8 @@ Register a PostgreSQL database endpoint:
 
 ```elixir
 :ok =
-  Chronicle.ExternalServices.register("CustomersDb", fn builder ->
-    Chronicle.ExternalServices.DefinitionBuilder.postgre_sql(
+  Cratis.Chronicle.ExternalServices.register("CustomersDb", fn builder ->
+    Cratis.Chronicle.ExternalServices.DefinitionBuilder.postgre_sql(
       builder,
       "db.example.com",
       "customers",
@@ -45,11 +45,11 @@ Register a PostgreSQL database endpoint:
   end)
 ```
 
-Use `Chronicle.ExternalServices.DefinitionBuilder.ms_sql/6` instead for a Microsoft SQL Server endpoint — it takes the same host, database, username, password, and port arguments.
+Use `Cratis.Chronicle.ExternalServices.DefinitionBuilder.ms_sql/6` instead for a Microsoft SQL Server endpoint — it takes the same host, database, username, password, and port arguments.
 
 ## Builder API
 
-`Chronicle.ExternalServices.DefinitionBuilder` is immutable and pipeline-friendly.
+`Cratis.Chronicle.ExternalServices.DefinitionBuilder` is immutable and pipeline-friendly.
 
 The scope argument of `with_oauth/5` is optional. Omit it and no scope is requested from the authority. It applies to the outbound OAuth client-credentials call only, not to the client's own connection to the kernel.
 
@@ -75,9 +75,9 @@ builder
 
 ```elixir
 :ok =
-  Chronicle.ExternalServices.register(
+  Cratis.Chronicle.ExternalServices.register(
     "CustomersApi",
-    fn builder -> Chronicle.ExternalServices.DefinitionBuilder.http(builder, "https://api.example.com") end,
+    fn builder -> Cratis.Chronicle.ExternalServices.DefinitionBuilder.http(builder, "https://api.example.com") end,
     client: :bank_chronicle
   )
 ```

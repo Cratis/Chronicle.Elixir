@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.EcWatchBookCreated do
-  use Chronicle.Events.EventType, id: "ec-watch-book-created"
+  use Cratis.Chronicle.Events.EventType, id: "ec-watch-book-created"
 
   defstruct [:title, :author]
 end
 
 defmodule MyApp.ReadModels.EcWatchBookInventory do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.EcWatchBookCreated
 
@@ -17,12 +17,12 @@ defmodule MyApp.ReadModels.EcWatchBookInventory do
 end
 
 defmodule MyApp.EcWatchBookService do
-  alias Chronicle.ReadModels
+  alias Cratis.Chronicle.ReadModels
   alias MyApp.Events.EcWatchBookCreated
   alias MyApp.ReadModels.EcWatchBookInventory
 
   # Subscribes the calling process to live changesets for every instance of
-  # EcWatchBookInventory. Chronicle.ReadModels.watch/2 is Elixir's equivalent
+  # EcWatchBookInventory. Cratis.Chronicle.ReadModels.watch/2 is Elixir's equivalent
   # of the C#/TypeScript clients' Watch<TReadModel>(): instead of an
   # IObservable, the calling process receives
   # {:chronicle_read_model_changed, EcWatchBookInventory, changeset} messages
@@ -36,7 +36,7 @@ defmodule MyApp.EcWatchBookService do
     # projection catches up.
     {:ok, watcher} = watch_book_changes()
 
-    :ok = Chronicle.append(book_id, %EcWatchBookCreated{title: title, author: author})
+    :ok = Cratis.Chronicle.append(book_id, %EcWatchBookCreated{title: title, author: author})
 
     receive do
       {:chronicle_read_model_changed, EcWatchBookInventory, %{model_key: ^book_id} = changeset} ->

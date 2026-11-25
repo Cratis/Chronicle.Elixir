@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Compliance.PiiWithConcepts.PersonName do
-  use Chronicle.Concept, type: :string
+  use Cratis.Chronicle.Concept, type: :string
   pii()
 end
 ```

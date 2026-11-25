@@ -5,7 +5,7 @@ defmodule MyApp.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      {Chronicle.Client,
+      {Cratis.Chronicle.Client,
        connection_string: "chronicle://localhost:35000",
        event_store: "my-store",
        default_sink_type_id: :sql,

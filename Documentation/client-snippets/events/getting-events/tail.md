@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.GettingEventsTailReader do
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
 
   def read_last(count) do
     # Reads from the computed start and trims in memory to the requested count.

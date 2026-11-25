@@ -1,24 +1,24 @@
 ```elixir
 defmodule MyApp.Events.TestingReadModelScenarioReducerOrderCreated do
-  use Chronicle.Events.EventType, id: "testing-read-model-scenario-reducer-order-created"
+  use Cratis.Chronicle.Events.EventType, id: "testing-read-model-scenario-reducer-order-created"
 
   defstruct [:order_id]
 end
 
 defmodule MyApp.Events.TestingReadModelScenarioReducerItemAdded do
-  use Chronicle.Events.EventType, id: "testing-read-model-scenario-reducer-item-added"
+  use Cratis.Chronicle.Events.EventType, id: "testing-read-model-scenario-reducer-item-added"
 
   defstruct [:price_in_cents]
 end
 
 defmodule MyApp.ReadModels.TestingReadModelScenarioReducerOrderSummary do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct order_id: nil, total_in_cents: 0
 end
 
 defmodule MyApp.Reducers.TestingReadModelScenarioReducerOrderSummaryReducer do
-  use Chronicle.Reducers.Reducer, model: MyApp.ReadModels.TestingReadModelScenarioReducerOrderSummary
+  use Cratis.Chronicle.Reducers.Reducer, model: MyApp.ReadModels.TestingReadModelScenarioReducerOrderSummary
 
   alias MyApp.Events.{
     TestingReadModelScenarioReducerItemAdded,
@@ -39,7 +39,7 @@ defmodule MyApp.Reducers.TestingReadModelScenarioReducerOrderSummaryReducer do
 end
 
 defmodule MyApp.TestingReadModelScenarioReducerExampleTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [
       MyApp.Events.TestingReadModelScenarioReducerOrderCreated,
       MyApp.Events.TestingReadModelScenarioReducerItemAdded
@@ -57,7 +57,7 @@ defmodule MyApp.TestingReadModelScenarioReducerExampleTest do
     order_id = "order-1"
 
     :ok =
-      Chronicle.EventSequences.EventLog.append_many(
+      Cratis.Chronicle.EventSequences.EventLog.append_many(
         order_id,
         [
           %TestingReadModelScenarioReducerOrderCreated{order_id: order_id},
@@ -67,10 +67,10 @@ defmodule MyApp.TestingReadModelScenarioReducerExampleTest do
         client: client
       )
 
-    :ok = Chronicle.Testing.wait_for_observers(client)
+    :ok = Cratis.Chronicle.Testing.wait_for_observers(client)
 
     {:ok, summary} =
-      Chronicle.Testing.read_model(
+      Cratis.Chronicle.Testing.read_model(
         client,
         TestingReadModelScenarioReducerOrderSummaryReducer,
         order_id

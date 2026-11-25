@@ -1,12 +1,12 @@
 ```elixir title="Initial values"
 defmodule MyApp.Events.DecInitialValuesUserCreated do
-  use Chronicle.Events.EventType, id: "dec-initial-values-user-created"
+  use Cratis.Chronicle.Events.EventType, id: "dec-initial-values-user-created"
 
   defstruct [:name, :email]
 end
 
 defmodule MyApp.ReadModels.DecInitialValuesUserProfile do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   # Elixir has no separate WithInitialValues builder call — the struct's own
   # defaults are captured as the projection's initial model state.
@@ -20,7 +20,7 @@ defmodule MyApp.ReadModels.DecInitialValuesUserProfile do
 end
 
 defmodule MyApp.Projections.DecInitialValuesUserProfileProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.DecInitialValuesUserProfile
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.DecInitialValuesUserProfile
 
   alias MyApp.Events.DecInitialValuesUserCreated
 

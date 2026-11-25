@@ -1,18 +1,18 @@
 ```elixir title="Matching nested structures and collections"
 defmodule MyApp.Events.ConventionCustomerRegistered do
-  use Chronicle.Events.EventType, id: "convention-customer-registered-v1"
+  use Cratis.Chronicle.Events.EventType, id: "convention-customer-registered-v1"
 
   defstruct [:first_name, :last_name, :billing_address, :shipping_address]
 end
 
 defmodule MyApp.Events.ConventionOrderCreated do
-  use Chronicle.Events.EventType, id: "convention-order-created-v1"
+  use Cratis.Chronicle.Events.EventType, id: "convention-order-created-v1"
 
   defstruct [:customer_email, :items, :tags]
 end
 
 defmodule MyApp.ReadModels.ConventionCustomer do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.ConventionCustomerRegistered
 
@@ -24,7 +24,7 @@ defmodule MyApp.ReadModels.ConventionCustomer do
 end
 
 defmodule MyApp.ReadModels.ConventionOrder do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.ConventionOrderCreated
 

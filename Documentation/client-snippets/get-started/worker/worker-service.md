@@ -1,7 +1,7 @@
 ```elixir
 defmodule MyApp.GetStartedWorker do
   @moduledoc """
-  Appends a book-added event once `Chronicle.Client` is running as part of
+  Appends a book-added event once `Cratis.Chronicle.Client` is running as part of
   the application's supervision tree.
 
   Reactors and projections keep processing events in the background for as
@@ -14,7 +14,7 @@ defmodule MyApp.GetStartedWorker do
   def add_book do
     book_id = Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
 
-    Chronicle.append(book_id, %GetStartedBookAdded{
+    Cratis.Chronicle.append(book_id, %GetStartedBookAdded{
       title: "The Pragmatic Programmer",
       isbn: "978-0135957059"
     })

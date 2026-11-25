@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.MbClearingNullableNoted do
-  use Chronicle.Events.EventType, id: "mb-clearing-nullable-noted"
+  use Cratis.Chronicle.Events.EventType, id: "mb-clearing-nullable-noted"
 
   defstruct [:note]
 end
 
 defmodule MyApp.Events.MbClearingNullableCleared do
-  use Chronicle.Events.EventType, id: "mb-clearing-nullable-cleared"
+  use Cratis.Chronicle.Events.EventType, id: "mb-clearing-nullable-cleared"
 
   defstruct []
 end
 
 defmodule MyApp.ReadModels.MbClearingNullableProject do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   # The member a clear_with/2 or clear: target names has to default to `nil`. A struct field
   # that defaults to a concrete value such as "" is not nullable to the kernel, and clearing it

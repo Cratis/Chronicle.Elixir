@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.ConstraintsModelBoundUniqueUserRemoved do
-  use Chronicle.Events.EventType, id: "constraints-model-bound-unique-user-removed"
+  use Cratis.Chronicle.Events.EventType, id: "constraints-model-bound-unique-user-removed"
 
   defstruct [:user_id]
 

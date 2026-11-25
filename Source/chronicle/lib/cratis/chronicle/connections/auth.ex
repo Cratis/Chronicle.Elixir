@@ -1,0 +1,260 @@
+# Copyright (c) Cratis. All rights reserved.
+# Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
+defmodule Cratis.Chronicle.Connections.Auth do
+  @moduledoc false
+
+  # Fetches OAuth2 Bearer tokens using the client credentials grant via HTTP/2.
+
+  @doc """
+  Fetches an OAuth2 access token using the client credentials grant.
+
+  POSTs to `http(s)://host:port/connect/token` with
+  `grant_type=client_credentials`, `client_id`, and `client_secret`.
+
+  `skip_tls_validation` mirrors the same option on the gRPC channel
+  (`Cratis.Chronicle.Connections.Connection`): when `true` (the default), the TLS
+  certificate chain is not validated; set it to `false` to validate against
+  the system trust store instead. Ignored when `disable_tls` is `true`.
+
+  Returns `{:ok, token}` or `{:error, reason}`.
+  """
+  @spec fetch_token(
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          String.t(),
+          boolean(),
+          boolean()
+        ) :: {:ok, String.t()} | {:error, term()}
+  def fetch_token(host, port, client_id, client_secret, disable_tls, skip_tls_validation \\ true) do
+    case fetch_token_with_expiry(
+           host,
+           port,
+           client_id,
+           client_secret,
+           disable_tls,
+           skip_tls_validation
+         ) do
+      {:ok, {token, _expires_in}} -> {:ok, token}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Like `fetch_token/6`, but also returns the token's lifetime.
+
+  Returns `{:ok, {token, expires_in_seconds | nil}}` — `nil` when the token
+  response does not carry `expires_in` — or `{:error, reason}`.
+  """
+  @spec fetch_token_with_expiry(
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          String.t(),
+          boolean(),
+          boolean()
+        ) :: {:ok, {String.t(), non_neg_integer() | nil}} | {:error, term()}
+  def fetch_token_with_expiry(
+        host,
+        port,
+        client_id,
+        client_secret,
+        disable_tls,
+        skip_tls_validation \\ true
+      ) do
+    fetch_token_with_expiry(
+      host,
+      port,
+      client_id,
+      client_secret,
+      disable_tls,
+      skip_tls_validation,
+      []
+    )
+  end
+
+  @doc false
+  @spec fetch_token_with_expiry(
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          String.t(),
+          boolean(),
+          boolean(),
+          keyword()
+        ) :: {:ok, {String.t(), non_neg_integer() | nil}} | {:error, term()}
+  def fetch_token_with_expiry(
+        host,
+        port,
+        client_id,
+        client_secret,
+        disable_tls,
+        skip_tls_validation,
+        client_certificate
+      ) do
+    fetch_token_with_expiry(
+      host,
+      port,
+      client_id,
+      client_secret,
+      disable_tls,
+      skip_tls_validation,
+      client_certificate,
+      &Mint.HTTP.request/5
+    )
+  end
+
+  @doc false
+  @spec fetch_token_with_expiry(
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          String.t(),
+          boolean(),
+          boolean(),
+          keyword(),
+          function()
+        ) :: {:ok, {String.t(), non_neg_integer() | nil}} | {:error, term()}
+  def fetch_token_with_expiry(
+        host,
+        port,
+        client_id,
+        client_secret,
+        disable_tls,
+        skip_tls_validation,
+        client_certificate,
+        request_fun
+      ) do
+    scheme = if disable_tls, do: :http, else: :https
+
+    body =
+      URI.encode_query(%{
+        "grant_type" => "client_credentials",
+        "client_id" => client_id,
+        "client_secret" => client_secret
+      })
+
+    headers = [
+      {"content-type", "application/x-www-form-urlencoded"},
+      {"content-length", Integer.to_string(byte_size(body))},
+      {"accept", "application/json"}
+    ]
+
+    mint_opts = transport_opts(disable_tls, skip_tls_validation, client_certificate)
+
+    with {:ok, conn} <- Mint.HTTP.connect(scheme, host, port, mint_opts),
+         {:ok, conn, _ref} <- request_fun.(conn, "POST", "/connect/token", headers, body),
+         {:ok, {status, resp_body}} <- receive_response(conn) do
+      case status do
+        200 ->
+          case Jason.decode(resp_body) do
+            {:ok, %{"access_token" => token} = resp} -> {:ok, {token, expires_in(resp)}}
+            {:ok, resp} -> {:error, {:missing_access_token, resp}}
+            {:error, reason} -> {:error, {:json_decode, reason}}
+          end
+
+        other ->
+          {:error, {:http_error, other, resp_body}}
+      end
+    else
+      {:error, conn, reason} ->
+        close_connection(conn)
+        {:error, {:request_error, reason}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  rescue
+    e -> {:error, {:exception, e}}
+  end
+
+  # `expires_in` is RECOMMENDED but not required by OAuth2, and some servers
+  # send it as a string.
+  defp expires_in(%{"expires_in" => seconds}) when is_integer(seconds) and seconds > 0,
+    do: seconds
+
+  defp expires_in(%{"expires_in" => seconds}) when is_binary(seconds) do
+    case Integer.parse(seconds) do
+      {parsed, ""} when parsed > 0 -> parsed
+      _ -> nil
+    end
+  end
+
+  defp expires_in(_resp), do: nil
+
+  @doc false
+  @spec transport_opts(boolean(), boolean(), keyword()) :: keyword()
+  def transport_opts(disable_tls, skip_tls_validation, client_certificate) do
+    # `:cacerts` is not part of the client identity: it carries the certificate authorities from
+    # the connection string's `caCertificatePath` and replaces the system trust store.
+    {cacerts, identity} = Keyword.pop(client_certificate, :cacerts)
+    build_transport_opts(disable_tls, skip_tls_validation, identity, cacerts)
+  end
+
+  defp build_transport_opts(true, _skip_tls_validation, [], _cacerts), do: []
+
+  defp build_transport_opts(true, _skip_tls_validation, _client_certificate, _cacerts) do
+    raise ArgumentError, "client certificate cannot be used when TLS is disabled"
+  end
+
+  defp build_transport_opts(false, true, client_certificate, _cacerts),
+    do: [transport_opts: [verify: :verify_none] ++ client_certificate]
+
+  defp build_transport_opts(false, false, client_certificate, cacerts) do
+    trust = [verify: :verify_peer, cacerts: cacerts || :public_key.cacerts_get()]
+    [transport_opts: trust ++ client_certificate]
+  end
+
+  # Mint's close/1 is a no-op once its state is :closed, even if a stream
+  # error marked that state before closing the underlying socket.
+  defp close_connection(%{state: :closed, transport: transport, socket: socket}) do
+    transport.close(socket)
+  end
+
+  defp close_connection(conn), do: Mint.HTTP.close(conn)
+
+  defp receive_response(conn, status \\ nil, body \\ "") do
+    socket = conn.socket
+
+    receive do
+      {:tcp, ^socket, _} = message -> stream_response(conn, message, status, body)
+      {:ssl, ^socket, _} = message -> stream_response(conn, message, status, body)
+      {:tcp_closed, ^socket} = message -> stream_response(conn, message, status, body)
+      {:ssl_closed, ^socket} = message -> stream_response(conn, message, status, body)
+      {:tcp_error, ^socket, _} = message -> stream_response(conn, message, status, body)
+      {:ssl_error, ^socket, _} = message -> stream_response(conn, message, status, body)
+    after
+      10_000 ->
+        close_connection(conn)
+        {:error, :timeout}
+    end
+  end
+
+  defp stream_response(conn, message, status, body) do
+    case Mint.HTTP.stream(conn, message) do
+      {:ok, conn, responses} ->
+        {new_status, new_body, done?} =
+          Enum.reduce(responses, {status, body, false}, fn
+            {:status, _ref, s}, {_, b, d} -> {s, b, d}
+            {:data, _ref, d}, {s, b, _} -> {s, b <> d, false}
+            {:done, _ref}, {s, b, _} -> {s, b, true}
+            _other, acc -> acc
+          end)
+
+        if done? do
+          close_connection(conn)
+          {:ok, {new_status, new_body}}
+        else
+          receive_response(conn, new_status, new_body)
+        end
+
+      {:error, conn, reason, _} ->
+        close_connection(conn)
+        {:error, {:stream_error, reason}}
+
+      :unknown ->
+        receive_response(conn, status, body)
+    end
+  end
+end

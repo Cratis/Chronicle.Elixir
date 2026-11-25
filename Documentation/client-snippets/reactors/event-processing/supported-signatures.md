@@ -1,12 +1,12 @@
 ```elixir
 defmodule ReactorSupportedSignaturesOrderPlaced do
-  use Chronicle.Events.EventType, id: "reactor-supported-signatures-order-placed"
+  use Cratis.Chronicle.Events.EventType, id: "reactor-supported-signatures-order-placed"
 
   defstruct [:order_id]
 end
 
 defmodule ReactorSupportedSignaturesReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias ReactorSupportedSignaturesOrderPlaced
 

@@ -1,24 +1,24 @@
 ```elixir
 defmodule ReactorSideEffectsMultipleBookReserved do
-  use Chronicle.Events.EventType, id: "reactor-side-effects-multiple-book-reserved"
+  use Cratis.Chronicle.Events.EventType, id: "reactor-side-effects-multiple-book-reserved"
 
   defstruct [:isbn]
 end
 
 defmodule ReactorSideEffectsMultipleStockDecreased do
-  use Chronicle.Events.EventType, id: "reactor-side-effects-multiple-stock-decreased"
+  use Cratis.Chronicle.Events.EventType, id: "reactor-side-effects-multiple-stock-decreased"
 
   defstruct [:isbn, :quantity]
 end
 
 defmodule ReactorSideEffectsMultipleStockLow do
-  use Chronicle.Events.EventType, id: "reactor-side-effects-multiple-stock-low"
+  use Cratis.Chronicle.Events.EventType, id: "reactor-side-effects-multiple-stock-low"
 
   defstruct [:isbn]
 end
 
 defmodule ReactorSideEffectsMultipleInventoryReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias ReactorSideEffectsMultipleBookReserved
   alias ReactorSideEffectsMultipleStockDecreased

@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.UniqueUsernameUserRegistered do
-  use Chronicle.Events.EventType, id: "unique-username-user-registered"
+  use Cratis.Chronicle.Events.EventType, id: "unique-username-user-registered"
 
   defstruct [:username, :email]
 
@@ -8,7 +8,7 @@ defmodule MyApp.Events.UniqueUsernameUserRegistered do
 end
 
 defmodule MyApp.UniqueUsernameRegistration do
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.UniqueUsernameUserRegistered
 
   def register(user_id, username, email) do

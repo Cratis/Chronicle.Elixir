@@ -4,12 +4,12 @@
 # Round trip against a real kernel for tombstone, compensation and generation_for registration.
 # Opt in like the other integration tests: point CHRONICLE_INTEGRATION_CONNECTION_STRING at a
 # development kernel and run `mix test --include integration`.
-defmodule Chronicle.Integration.EventTypeRegistrationTest do
+defmodule Cratis.Chronicle.Integration.EventTypeRegistrationTest do
   use ExUnit.Case, async: false
 
   @moduletag :integration
 
-  alias Chronicle.Connections.Connection
+  alias Cratis.Chronicle.Connections.Connection
 
   alias Cratis.Chronicle.Contracts.EventTypes.{
     AllEventTypeGenerationsRequest,
@@ -18,17 +18,17 @@ defmodule Chronicle.Integration.EventTypeRegistrationTest do
   }
 
   defmodule AccountClosed do
-    use Chronicle.Events.EventType, id: "etr-account-closed", tombstone: true
+    use Cratis.Chronicle.Events.EventType, id: "etr-account-closed", tombstone: true
     defstruct []
   end
 
   defmodule PaymentFailed do
-    use Chronicle.Events.EventType, id: "etr-payment-failed"
+    use Cratis.Chronicle.Events.EventType, id: "etr-payment-failed"
     defstruct []
   end
 
   defmodule PaymentReversed do
-    use Chronicle.Events.EventType,
+    use Cratis.Chronicle.Events.EventType,
       id: "etr-payment-reversed",
       compensation_for: PaymentFailed
 
@@ -36,17 +36,17 @@ defmodule Chronicle.Integration.EventTypeRegistrationTest do
   end
 
   defmodule OrderPlacedV2 do
-    use Chronicle.Events.EventType, id: "etr-order-placed", generation: 2
+    use Cratis.Chronicle.Events.EventType, id: "etr-order-placed", generation: 2
     defstruct []
   end
 
   defmodule OrderPlacedV1 do
-    use Chronicle.Events.EventType, generation_for: OrderPlacedV2, generation: 1
+    use Cratis.Chronicle.Events.EventType, generation_for: OrderPlacedV2, generation: 1
     defstruct []
   end
 
   defmodule OrderPlacedV2Migration do
-    use Chronicle.Events.Migration,
+    use Cratis.Chronicle.Events.Migration,
       from: {OrderPlacedV1, generation: 1},
       to: {OrderPlacedV2, generation: 2}
 
@@ -58,7 +58,7 @@ defmodule Chronicle.Integration.EventTypeRegistrationTest do
     prefix = System.get_env("CHRONICLE_INTEGRATION_EVENT_STORE_PREFIX", "etr-elixir")
 
     {:ok, _} =
-      Chronicle.Client.start_link(
+      Cratis.Chronicle.Client.start_link(
         name: :etr_it_client,
         connection_string: System.fetch_env!("CHRONICLE_INTEGRATION_CONNECTION_STRING"),
         event_store:
@@ -74,10 +74,10 @@ defmodule Chronicle.Integration.EventTypeRegistrationTest do
         migrations: [OrderPlacedV2Migration]
       )
 
-    :ok = Chronicle.Client.await_registration(:etr_it_client, 60_000)
+    :ok = Cratis.Chronicle.Client.await_registration(:etr_it_client, 60_000)
 
-    config = Chronicle.Client.config(:etr_it_client)
-    {:ok, channel} = Connection.channel(Chronicle.Client.connection_name(:etr_it_client))
+    config = Cratis.Chronicle.Client.config(:etr_it_client)
+    {:ok, channel} = Connection.channel(Cratis.Chronicle.Client.connection_name(:etr_it_client))
 
     %{channel: channel, event_store: config.event_store}
   end

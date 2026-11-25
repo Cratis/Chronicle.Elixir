@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.GettingStateObserverProgressSomethingHappened do
-  use Chronicle.Events.EventType, id: "getting-state-observer-progress-something-happened"
+  use Cratis.Chronicle.Events.EventType, id: "getting-state-observer-progress-something-happened"
 
   defstruct []
 end
 
 defmodule MyApp.Reactors.GettingStateObserverProgressReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.GettingStateObserverProgressSomethingHappened
 
@@ -17,7 +17,7 @@ defmodule MyApp.Reactors.GettingStateObserverProgressReactor do
 end
 
 defmodule MyApp.GettingStateObserverProgress do
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Reactors.GettingStateObserverProgressReactor
 
   def get_relevant_tail do

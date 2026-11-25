@@ -1,21 +1,21 @@
 ```elixir
 defmodule MyApp.Events.TestingScenarioManyItemAddedToCart do
-  use Chronicle.Events.EventType, id: "testing-scenario-many-item-added-to-cart"
+  use Cratis.Chronicle.Events.EventType, id: "testing-scenario-many-item-added-to-cart"
 
   defstruct [:item_id]
 end
 
 defmodule MyApp.Events.TestingScenarioManyItemQuantityAdjusted do
-  use Chronicle.Events.EventType, id: "testing-scenario-many-item-quantity-adjusted"
+  use Cratis.Chronicle.Events.EventType, id: "testing-scenario-many-item-quantity-adjusted"
 
   defstruct [:item_id, :quantity]
 end
 
 defmodule MyApp.TestingScenarioAppendManyTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [MyApp.Events.TestingScenarioManyItemAddedToCart, MyApp.Events.TestingScenarioManyItemQuantityAdjusted]
 
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.{TestingScenarioManyItemAddedToCart, TestingScenarioManyItemQuantityAdjusted}
 
   test "several events are appended atomically", %{chronicle: client} do

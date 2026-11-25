@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.UcDedicatedUserRegistered do
-  use Chronicle.Events.EventType, id: "uc-dedicated-user-registered"
+  use Cratis.Chronicle.Events.EventType, id: "uc-dedicated-user-registered"
 
   defstruct [:email, :display_name]
 
@@ -12,7 +12,7 @@ defmodule MyApp.Events.UcDedicatedUserRegistered do
 end
 
 defmodule MyApp.Events.UcDedicatedUserEmailChanged do
-  use Chronicle.Events.EventType, id: "uc-dedicated-user-email-changed"
+  use Cratis.Chronicle.Events.EventType, id: "uc-dedicated-user-email-changed"
 
   defstruct [:new_email]
 
@@ -24,7 +24,7 @@ defmodule MyApp.Events.UcDedicatedUserEmailChanged do
 end
 
 defmodule MyApp.Events.UcDedicatedUserRemoved do
-  use Chronicle.Events.EventType, id: "uc-dedicated-user-removed"
+  use Cratis.Chronicle.Events.EventType, id: "uc-dedicated-user-removed"
 
   defstruct []
 

@@ -6,27 +6,27 @@
 # `mix test --include integration`.
 #
 # Needs a kernel that resolves generation delivery per observer registration (Cratis/Chronicle#4747).
-defmodule Chronicle.Integration.GenerationDeliveryTest do
+defmodule Cratis.Chronicle.Integration.GenerationDeliveryTest do
   use ExUnit.Case, async: false
 
   @moduletag :integration
 
   defmodule AccountOpenedV1 do
-    use Chronicle.Events.EventType, id: "gd-account-opened", generation: 1
+    use Cratis.Chronicle.Events.EventType, id: "gd-account-opened", generation: 1
     defstruct owner_name: ""
   end
 
   defmodule AccountOpened do
-    use Chronicle.Events.EventType, id: "gd-account-opened", generation: 2
+    use Cratis.Chronicle.Events.EventType, id: "gd-account-opened", generation: 2
     defstruct full_name: "", account_tier: ""
   end
 
   defmodule AccountOpenedV2Migration do
-    use Chronicle.Events.Migration,
+    use Cratis.Chronicle.Events.Migration,
       from: {AccountOpenedV1, generation: 1},
       to: {AccountOpened, generation: 2}
 
-    alias Chronicle.Events.MigrationBuilder
+    alias Cratis.Chronicle.Events.MigrationBuilder
 
     @impl true
     def upcast(builder) do
@@ -42,7 +42,7 @@ defmodule Chronicle.Integration.GenerationDeliveryTest do
   end
 
   defmodule PinnedSpy do
-    use Chronicle.Reactors.Reactor, generation_delivery: :pinned
+    use Cratis.Chronicle.Reactors.Reactor, generation_delivery: :pinned
 
     @handles AccountOpenedV1
 
@@ -56,7 +56,7 @@ defmodule Chronicle.Integration.GenerationDeliveryTest do
     prefix = System.get_env("CHRONICLE_INTEGRATION_EVENT_STORE_PREFIX", "gendelivery-elixir")
 
     {:ok, _} =
-      Chronicle.Client.start_link(
+      Cratis.Chronicle.Client.start_link(
         name: :generation_delivery_it_client,
         connection_string: System.fetch_env!("CHRONICLE_INTEGRATION_CONNECTION_STRING"),
         event_store:
@@ -67,7 +67,7 @@ defmodule Chronicle.Integration.GenerationDeliveryTest do
         reactors: [PinnedSpy]
       )
 
-    :ok = Chronicle.Client.await_registration(:generation_delivery_it_client, 60_000)
+    :ok = Cratis.Chronicle.Client.await_registration(:generation_delivery_it_client, 60_000)
     :ok
   end
 
@@ -84,7 +84,7 @@ defmodule Chronicle.Integration.GenerationDeliveryTest do
   test "a pinned reactor registered against the older generation receives the original content, with appended_generation reporting the generation actually appended" do
     event = %AccountOpened{full_name: "Ada Lovelace", account_tier: "standard"}
 
-    assert :ok = Chronicle.EventSequences.EventLog.append("gd-1", event, @opts)
+    assert :ok = Cratis.Chronicle.EventSequences.EventLog.append("gd-1", event, @opts)
 
     assert_receive {:handled, %AccountOpenedV1{owner_name: "Ada Lovelace"}, context}, 15_000
     assert context.appended_generation == 2

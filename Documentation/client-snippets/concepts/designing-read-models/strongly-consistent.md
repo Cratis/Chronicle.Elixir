@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.ReadModels.DesigningReadModelsCustomerDetail do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: "", name: ""
 end
@@ -9,7 +9,7 @@ defmodule MyApp.DesigningReadModelsCustomerDetailService do
   alias MyApp.ReadModels.DesigningReadModelsCustomerDetail
 
   def get_detail(customer_id) do
-    Chronicle.read_model(DesigningReadModelsCustomerDetail, customer_id)
+    Cratis.Chronicle.read_model(DesigningReadModelsCustomerDetail, customer_id)
   end
 end
 ```

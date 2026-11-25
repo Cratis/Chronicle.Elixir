@@ -4,7 +4,7 @@
 defmodule ConsoleSample.Seeders.EmployeeSeeder do
   @moduledoc "Seeds the three employees used by the interactive sample."
 
-  use Chronicle.Seeding.Seeder
+  use Cratis.Chronicle.Seeding.Seeder
 
   alias ConsoleSample.Employees
   alias ConsoleSample.Events.{EmployeeAddressSet, EmployeeEmailSet, EmployeeHired}
@@ -30,7 +30,7 @@ defmodule ConsoleSample.Seeders.EmployeeSeeder do
       address = Enum.at(@addresses, rem(index, length(@addresses)))
       title = Enum.at(@titles, rem(index, length(@titles)))
 
-      Chronicle.Seeding.for_event_source(acc, employee.id, [
+      Cratis.Chronicle.Seeding.for_event_source(acc, employee.id, [
         %EmployeeHired{
           first_name: employee.first_name,
           last_name: employee.last_name,

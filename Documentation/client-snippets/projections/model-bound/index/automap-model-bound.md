@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.ReadModels.IndexAutoMapMbAccountInfo do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.IndexAutoMapAccountOpened
 

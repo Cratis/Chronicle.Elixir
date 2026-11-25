@@ -1,30 +1,30 @@
 ```elixir
 defmodule MyApp.Events.JoinsMultipleOrderPlaced do
-  use Chronicle.Events.EventType, id: "joins-multiple-order-placed-v1"
+  use Cratis.Chronicle.Events.EventType, id: "joins-multiple-order-placed-v1"
 
   defstruct [:customer_id]
 end
 
 defmodule MyApp.Events.JoinsMultipleCustomerCreated do
-  use Chronicle.Events.EventType, id: "joins-multiple-customer-created-v1"
+  use Cratis.Chronicle.Events.EventType, id: "joins-multiple-customer-created-v1"
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.JoinsCustomerUpdated do
-  use Chronicle.Events.EventType, id: "joins-customer-updated-v1"
+  use Cratis.Chronicle.Events.EventType, id: "joins-customer-updated-v1"
 
   defstruct [:email]
 end
 
 defmodule MyApp.Events.JoinsShippingAddressSet do
-  use Chronicle.Events.EventType, id: "joins-shipping-address-set-v1"
+  use Cratis.Chronicle.Events.EventType, id: "joins-shipping-address-set-v1"
 
   defstruct [:address]
 end
 
 defmodule MyApp.ReadModels.JoinsEnrichedOrder do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{
     JoinsMultipleOrderPlaced,

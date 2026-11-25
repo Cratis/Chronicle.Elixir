@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.SetValueOrderPlaced do
-  use Chronicle.Events.EventType, id: "set-value-order-placed-v1"
+  use Cratis.Chronicle.Events.EventType, id: "set-value-order-placed-v1"
 
   defstruct [:customer_name]
 end
 
 defmodule MyApp.Events.SetValueOrderCanceled do
-  use Chronicle.Events.EventType, id: "set-value-order-canceled-v1"
+  use Cratis.Chronicle.Events.EventType, id: "set-value-order-canceled-v1"
 
   defstruct []
 end
 
 defmodule MyApp.ReadModels.SetValueOrder do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{SetValueOrderPlaced, SetValueOrderCanceled}
 

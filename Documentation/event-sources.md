@@ -13,7 +13,7 @@ Definitions are optional. Appends that don't name an event source behave exactly
 
 ```elixir
 defmodule MyApp.AccountEventSource do
-  use Chronicle.EventSources.EventSource,
+  use Cratis.Chronicle.EventSources.EventSource,
     name: "Account",
     description: "A bank account",
     concurrency: [:event_source_id]
@@ -28,20 +28,20 @@ end
 
 ## Register
 
-`Chronicle.Client` discovers event source modules together with event types and registers them on every (re)connect, right after event types and before any observer starts. You can also pass them explicitly:
+`Cratis.Chronicle.Client` discovers event source modules together with event types and registers them on every (re)connect, right after event types and before any observer starts. You can also pass them explicitly:
 
 ```elixir
-{Chronicle.Client,
+{Cratis.Chronicle.Client,
  connection_string: "chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000",
  event_sources: [MyApp.AccountEventSource]}
 ```
 
-Two modules that use the same source name raise `Chronicle.EventSources.DuplicateEventSourceName` when the client starts. Registration is an upsert; definitions you leave out of a later registration stay registered in the kernel.
+Two modules that use the same source name raise `Cratis.Chronicle.EventSources.DuplicateEventSourceName` when the client starts. Registration is an upsert; definitions you leave out of a later registration stay registered in the kernel.
 
 ## Append through a definition
 
 ```elixir
-Chronicle.EventSequences.EventLog.append("account-1", %MyApp.Events.FundsDeposited{amount: 50},
+Cratis.Chronicle.EventSequences.EventLog.append("account-1", %MyApp.Events.FundsDeposited{amount: 50},
   event_source: MyApp.AccountEventSource,
   event_stream: "Transactions",
   event_stream_id: "2024-05"
@@ -61,7 +61,7 @@ A source can be given by module or by name. A mismatch is rejected before anythi
 
 ### Mixed sources in one transaction
 
-Each `Chronicle.EventSequences.EventForEventSourceId` entry can carry its own `event_source` and `event_stream`. They win over the `:event_source` and `:event_stream` options of `append_many_for_event_sources/2`, which apply only to entries that name none. If one entry doesn't resolve, nothing is appended.
+Each `Cratis.Chronicle.EventSequences.EventForEventSourceId` entry can carry its own `event_source` and `event_stream`. They win over the `:event_source` and `:event_stream` options of `append_many_for_event_sources/2`, which apply only to entries that name none. If one entry doesn't resolve, nothing is appended.
 
 ## Concurrency
 

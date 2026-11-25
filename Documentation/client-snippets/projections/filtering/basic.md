@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.FilteringOrderPlaced do
-  use Chronicle.Events.EventType, id: "filtering-order-placed"
+  use Cratis.Chronicle.Events.EventType, id: "filtering-order-placed"
 
   defstruct [:customer_id, :total_amount]
 end
 
 defmodule MyApp.Events.FilteringOrderShipped do
-  use Chronicle.Events.EventType, id: "filtering-order-shipped"
+  use Cratis.Chronicle.Events.EventType, id: "filtering-order-shipped"
 
   defstruct [:shipped_at]
 end
 
 defmodule MyApp.ReadModels.FilteringOrderSummary do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct customer_id: nil, total_amount: nil, shipped_at: nil
 

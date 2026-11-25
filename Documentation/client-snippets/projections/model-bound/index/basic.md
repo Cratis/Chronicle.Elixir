@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.IndexAccountOpened do
-  use Chronicle.Events.EventType, id: "index-account-opened-v1"
+  use Cratis.Chronicle.Events.EventType, id: "index-account-opened-v1"
 
   defstruct [:name, :initial_balance]
 end
 
 defmodule MyApp.ReadModels.IndexAccountInfo do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.IndexAccountOpened
 

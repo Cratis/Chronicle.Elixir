@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.ArchitectureModelBoundItemAdded do
-  use Chronicle.Events.EventType, id: "architecture-model-bound-item-added"
+  use Cratis.Chronicle.Events.EventType, id: "architecture-model-bound-item-added"
 
   defstruct [:category]
 end
 
 defmodule MyApp.ReadModels.ArchitectureModelBoundSummary do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct category: nil, count: 0
 

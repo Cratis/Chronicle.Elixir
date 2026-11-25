@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.MbChildrenGroupMemberAdded do
-  use Chronicle.Events.EventType, id: "mb-children-group-member-added"
+  use Cratis.Chronicle.Events.EventType, id: "mb-children-group-member-added"
 
   defstruct [:member_id, :member_name]
 end
 
 defmodule MyApp.Events.MbChildrenMemberDeletedElsewhere do
-  use Chronicle.Events.EventType, id: "mb-children-member-deleted-elsewhere"
+  use Cratis.Chronicle.Events.EventType, id: "mb-children-member-deleted-elsewhere"
 
   defstruct [:member_id]
 end
@@ -16,7 +16,7 @@ defmodule MyApp.ReadModels.MbChildrenGroupMember do
 end
 
 defmodule MyApp.ReadModels.MbChildrenGroupWithJoinRemoval do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [members: {:list, MyApp.ReadModels.MbChildrenGroupMember}]
 
   defstruct group_id: nil, members: []

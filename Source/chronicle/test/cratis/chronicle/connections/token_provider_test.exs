@@ -1,0 +1,156 @@
+# Copyright (c) Cratis. All rights reserved.
+# Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
+defmodule Cratis.Chronicle.Connections.TokenProviderTest do
+  use ExUnit.Case, async: true
+
+  alias Cratis.Chronicle.Connections.{ConnectionString, TokenProvider}
+
+  # Long enough to stay outside the 60s refresh margin for the whole test.
+  @long_lifetime 3_600
+  # Short enough to be inside the refresh margin immediately.
+  @short_lifetime 30
+
+  defp start(responses) do
+    {:ok, calls} = Agent.start_link(fn -> 0 end)
+
+    fetch_fun = fn _connection_string ->
+      call = Agent.get_and_update(calls, fn n -> {n, n + 1} end)
+      # The last configured response repeats for any further calls.
+      Enum.at(responses, call, List.last(responses))
+    end
+
+    {:ok, provider} =
+      TokenProvider.start_link(
+        connection_string: ConnectionString.parse("chronicle://user:pass@localhost:35000"),
+        fetch_fun: fetch_fun
+      )
+
+    {provider, calls}
+  end
+
+  defp fetch_count(calls), do: Agent.get(calls, & &1)
+
+  test "redacts the connection secret, fetch closure and token from process status" do
+    {provider, _calls} = start([{:ok, {"private-token", @long_lifetime}}])
+    assert %{"authorization" => _} = TokenProvider.authorization_headers(provider)
+    status = :sys.get_status(provider) |> inspect(limit: :infinity)
+    refute status =~ "private-token"
+    refute status =~ "pass"
+  end
+
+  test "unexpected calls and casts never log a cached bearer token or credentials" do
+    secret = "BEARER-TOKEN-SECRET"
+    Process.flag(:trap_exit, true)
+
+    for callback <- [:call, :cast] do
+      {:ok, provider} =
+        TokenProvider.start_link(
+          connection_string: ConnectionString.parse("chronicle://user:private-pass@localhost"),
+          fetch_fun: fn _ -> {:ok, {secret, @long_lifetime}} end
+        )
+
+      assert TokenProvider.authorization_headers(provider) ==
+               %{"authorization" => "Bearer #{secret}"}
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          monitor = Process.monitor(provider)
+
+          case callback do
+            :call -> assert catch_exit(GenServer.call(provider, :unexpected_call))
+            :cast -> GenServer.cast(provider, :unexpected_cast)
+          end
+
+          assert_receive {:DOWN, ^monitor, :process, ^provider, _}, 2_000
+          Logger.flush()
+        end)
+
+      assert log =~ "handle_#{callback}"
+      refute log =~ secret
+      refute log =~ "private-pass"
+    end
+  end
+
+  test "fetches a token on first use and returns bearer headers" do
+    {provider, calls} = start([{:ok, {"token-1", @long_lifetime}}])
+
+    assert TokenProvider.authorization_headers(provider) ==
+             %{"authorization" => "Bearer token-1"}
+
+    assert fetch_count(calls) == 1
+  end
+
+  test "serves the cached token while it is fresh" do
+    {provider, calls} =
+      start([{:ok, {"token-1", @long_lifetime}}, {:ok, {"token-2", @long_lifetime}}])
+
+    assert TokenProvider.authorization_headers(provider) ==
+             %{"authorization" => "Bearer token-1"}
+
+    assert TokenProvider.authorization_headers(provider) ==
+             %{"authorization" => "Bearer token-1"}
+
+    assert fetch_count(calls) == 1
+  end
+
+  test "defaults the lifetime when the token response has no expires_in" do
+    {provider, calls} = start([{:ok, {"token-1", nil}}])
+
+    assert TokenProvider.authorization_headers(provider) ==
+             %{"authorization" => "Bearer token-1"}
+
+    assert TokenProvider.authorization_headers(provider) ==
+             %{"authorization" => "Bearer token-1"}
+
+    assert fetch_count(calls) == 1
+  end
+
+  test "refreshes ahead of expiry once inside the refresh margin" do
+    {provider, calls} =
+      start([{:ok, {"token-1", @short_lifetime}}, {:ok, {"token-2", @short_lifetime}}])
+
+    assert TokenProvider.authorization_headers(provider) ==
+             %{"authorization" => "Bearer token-1"}
+
+    # The short lifetime is already inside the margin, so the next request
+    # refreshes even though the first token has not expired yet.
+    assert TokenProvider.authorization_headers(provider) ==
+             %{"authorization" => "Bearer token-2"}
+
+    assert fetch_count(calls) == 2
+  end
+
+  @tag capture_log: true
+  test "keeps serving the cached token when a refresh fails before expiry" do
+    {provider, _calls} =
+      start([{:ok, {"token-1", @short_lifetime}}, {:error, :unavailable}])
+
+    assert TokenProvider.authorization_headers(provider) ==
+             %{"authorization" => "Bearer token-1"}
+
+    # Refresh is due (inside the margin) and fails — the token is still valid
+    # for another 30s, so it must keep flowing rather than dropping auth.
+    assert TokenProvider.authorization_headers(provider) ==
+             %{"authorization" => "Bearer token-1"}
+  end
+
+  @tag capture_log: true
+  test "returns no headers when no token can be fetched" do
+    {provider, _calls} = start([{:error, :unavailable}])
+
+    assert TokenProvider.authorization_headers(provider) == %{}
+  end
+
+  @tag capture_log: true
+  test "throttles fetch attempts after a failure" do
+    {provider, calls} = start([{:error, :unavailable}])
+
+    assert TokenProvider.authorization_headers(provider) == %{}
+    assert TokenProvider.authorization_headers(provider) == %{}
+
+    # The second request arrives well inside the retry delay — one attempt,
+    # not one per RPC (the session answers a keepalive every second).
+    assert fetch_count(calls) == 1
+  end
+end

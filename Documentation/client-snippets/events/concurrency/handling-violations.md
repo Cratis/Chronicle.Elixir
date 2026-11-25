@@ -1,19 +1,19 @@
 ```elixir
 defmodule MyApp.Events.ConcurrencySafeAccountOpened do
-  use Chronicle.Events.EventType, id: "concurrency-safe-account-opened"
+  use Cratis.Chronicle.Events.EventType, id: "concurrency-safe-account-opened"
 
   defstruct account_name: ""
 end
 
 defmodule MyApp.ConcurrencySafeAccountService do
-  alias Chronicle.Events.ConcurrencyScope
+  alias Cratis.Chronicle.Events.ConcurrencyScope
   alias MyApp.Events.ConcurrencySafeAccountOpened
 
   def try_open_account(account_id, account_name) do
     # Expect no event for this account yet
     scope = ConcurrencyScope.expecting_no_matching_event(event_source_id: true)
 
-    case Chronicle.append(
+    case Cratis.Chronicle.append(
            account_id,
            %ConcurrencySafeAccountOpened{account_name: account_name},
            concurrency_scope: scope

@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.MbJoinsSourcesLineItemAdded do
-  use Chronicle.Events.EventType, id: "mb-joins-sources-line-item-added"
+  use Cratis.Chronicle.Events.EventType, id: "mb-joins-sources-line-item-added"
 
   defstruct [:product_id]
 end
 
 defmodule MyApp.Events.MbJoinsSourcesProductCatalogUpdated do
-  use Chronicle.Events.EventType, id: "mb-joins-sources-product-catalog-updated"
+  use Cratis.Chronicle.Events.EventType, id: "mb-joins-sources-product-catalog-updated"
 
   defstruct [:name, :description]
 end
 
 defmodule MyApp.Events.MbJoinsSourcesPricingUpdated do
-  use Chronicle.Events.EventType, id: "mb-joins-sources-pricing-updated"
+  use Cratis.Chronicle.Events.EventType, id: "mb-joins-sources-pricing-updated"
 
   defstruct [:current_price]
 end
@@ -22,7 +22,7 @@ defmodule MyApp.ReadModels.MbJoinsSourcesOrderLine do
 end
 
 defmodule MyApp.ReadModels.MbJoinsSourcesOrder do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [lines: {:list, MyApp.ReadModels.MbJoinsSourcesOrderLine}]
 
   defstruct order_id: nil, lines: []

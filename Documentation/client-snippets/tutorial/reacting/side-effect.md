@@ -4,7 +4,7 @@ defmodule MyApp.WaitlistSideEffectNotificationService do
 end
 
 defmodule MyApp.Reactors.WaitlistNotifierSideEffect do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.BookReturned
   alias MyApp.Events.WaitlistNotificationSent

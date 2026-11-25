@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.ReadModels.DecSetPropsAccount do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct [
     :account_number,

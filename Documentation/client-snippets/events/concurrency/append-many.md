@@ -1,19 +1,19 @@
 ```elixir
 defmodule MyApp.Events.ConcurrencyMoneyWithdrawnForTransfer do
-  use Chronicle.Events.EventType, id: "concurrency-money-withdrawn-for-transfer"
+  use Cratis.Chronicle.Events.EventType, id: "concurrency-money-withdrawn-for-transfer"
 
   defstruct [:amount]
 end
 
 defmodule MyApp.Events.ConcurrencyMoneyDepositedForTransfer do
-  use Chronicle.Events.EventType, id: "concurrency-money-deposited-for-transfer"
+  use Cratis.Chronicle.Events.EventType, id: "concurrency-money-deposited-for-transfer"
 
   defstruct [:amount]
 end
 
 defmodule MyApp.ConcurrencyTransferService do
-  alias Chronicle.Events.ConcurrencyScope
-  alias Chronicle.Transactions.UnitOfWork
+  alias Cratis.Chronicle.Events.ConcurrencyScope
+  alias Cratis.Chronicle.Transactions.UnitOfWork
   alias MyApp.Events.{ConcurrencyMoneyDepositedForTransfer, ConcurrencyMoneyWithdrawnForTransfer}
 
   def transfer_money(from_account, to_account, amount) do
@@ -21,14 +21,14 @@ defmodule MyApp.ConcurrencyTransferService do
 
     try do
       :ok =
-        Chronicle.append(
+        Cratis.Chronicle.append(
           from_account,
           %ConcurrencyMoneyWithdrawnForTransfer{amount: amount},
           concurrency_scope: ConcurrencyScope.for_event_source(50)
         )
 
       :ok =
-        Chronicle.append(
+        Cratis.Chronicle.append(
           to_account,
           %ConcurrencyMoneyDepositedForTransfer{amount: amount},
           concurrency_scope: ConcurrencyScope.for_event_source(25)

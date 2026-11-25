@@ -1,22 +1,22 @@
 ```elixir
 defmodule MyApp.Events.MigrationsCombineShippingAddressRecordedV1 do
-  use Chronicle.Events.EventType, id: "shipping-address-recorded", generation: 1
+  use Cratis.Chronicle.Events.EventType, id: "shipping-address-recorded", generation: 1
 
   defstruct [:street, :city]
 end
 
 defmodule MyApp.Events.MigrationsCombineShippingAddressRecorded do
-  use Chronicle.Events.EventType, id: "shipping-address-recorded", generation: 2
+  use Cratis.Chronicle.Events.EventType, id: "shipping-address-recorded", generation: 2
 
   defstruct [:formatted_address]
 end
 
 defmodule MyApp.Migrations.MigrationsCombineShippingAddressRecordedMigration do
-  use Chronicle.Events.Migration,
+  use Cratis.Chronicle.Events.Migration,
     from: {MyApp.Events.MigrationsCombineShippingAddressRecordedV1, generation: 1},
     to: {MyApp.Events.MigrationsCombineShippingAddressRecorded, generation: 2}
 
-  alias Chronicle.Events.MigrationBuilder
+  alias Cratis.Chronicle.Events.MigrationBuilder
 
   @impl true
   def upcast(builder) do

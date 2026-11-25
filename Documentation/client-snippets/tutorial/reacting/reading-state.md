@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Reactors.WaitlistNotifierWithBookTitle do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.BookReturned
   alias MyApp.NotificationService
@@ -10,7 +10,7 @@ defmodule MyApp.Reactors.WaitlistNotifierWithBookTitle do
 
   @impl true
   def handle(%BookReturned{}, %{event_source_id: book_id}) do
-    case Chronicle.read_model(Book, book_id) do
+    case Cratis.Chronicle.read_model(Book, book_id) do
       {:ok, %Book{title: title}} ->
         NotificationService.notify_next_in_line(book_id, title)
         :ok

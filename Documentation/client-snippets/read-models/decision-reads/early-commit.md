@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.DecisionReadsEarlyOrderPlaced do
-  use Chronicle.Events.EventType, id: "decision-reads-early-order-placed"
+  use Cratis.Chronicle.Events.EventType, id: "decision-reads-early-order-placed"
 
   defstruct []
 end
 
 defmodule MyApp.ReadModels.DecisionReadsEarlyOrderEligibility do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: nil, placed: 0
 
@@ -14,16 +14,16 @@ defmodule MyApp.ReadModels.DecisionReadsEarlyOrderEligibility do
 end
 
 defmodule MyApp.DecisionReadsEarlyCommit do
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.ReadModels.{DecisionConflict, DecisionReads}
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.ReadModels.{DecisionConflict, DecisionReads}
   alias MyApp.Events.DecisionReadsEarlyOrderPlaced
   alias MyApp.ReadModels.DecisionReadsEarlyOrderEligibility
 
-  # Chronicle.decide/2 commits as soon as the function returns, so the outcome is known
+  # Cratis.Chronicle.decide/2 commits as soon as the function returns, so the outcome is known
   # while you can still choose the response.
   def place(order_id) do
     outcome =
-      Chronicle.decide(fn _unit_of_work ->
+      Cratis.Chronicle.decide(fn _unit_of_work ->
         {:ok, read} = DecisionReads.get(DecisionReadsEarlyOrderEligibility, order_id)
 
         if read.instance == nil do

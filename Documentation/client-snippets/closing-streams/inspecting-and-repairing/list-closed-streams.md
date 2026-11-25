@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.InspectingClosedStreams do
-  alias Chronicle.EventSequences.Streams
+  alias Cratis.Chronicle.EventSequences.Streams
 
   def print(report_id) do
     # Everything closed for one event source. Omit the options to list every closure.

@@ -1,20 +1,20 @@
 ```elixir
 defmodule MyApp.Events.TestingReactorScenarioDestinationPaymentReceived do
-  use Chronicle.Events.EventType, id: "testing-reactor-scenario-destination-payment-received"
+  use Cratis.Chronicle.Events.EventType, id: "testing-reactor-scenario-destination-payment-received"
 
   defstruct [:amount]
 end
 
 defmodule MyApp.Events.TestingReactorScenarioDestinationPaymentRecorded do
-  use Chronicle.Events.EventType, id: "testing-reactor-scenario-destination-payment-recorded"
+  use Cratis.Chronicle.Events.EventType, id: "testing-reactor-scenario-destination-payment-recorded"
 
   defstruct [:amount]
 end
 
 defmodule MyApp.Reactors.TestingReactorScenarioDestinationReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
-  alias Chronicle.EventSequences.EventForEventSourceId
+  alias Cratis.Chronicle.EventSequences.EventForEventSourceId
 
   alias MyApp.Events.{
     TestingReactorScenarioDestinationPaymentReceived,
@@ -37,14 +37,14 @@ defmodule MyApp.Reactors.TestingReactorScenarioDestinationReactor do
 end
 
 defmodule MyApp.TestingReactorScenarioProducedDestinationsTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [
       MyApp.Events.TestingReactorScenarioDestinationPaymentReceived,
       MyApp.Events.TestingReactorScenarioDestinationPaymentRecorded
     ],
     reactors: [MyApp.Reactors.TestingReactorScenarioDestinationReactor]
 
-  import Chronicle.Testing.Assertions
+  import Cratis.Chronicle.Testing.Assertions
 
   alias MyApp.Events.{
     TestingReactorScenarioDestinationPaymentReceived,
@@ -53,24 +53,24 @@ defmodule MyApp.TestingReactorScenarioProducedDestinationsTest do
 
   test "the reactor records the payment on the ledger", %{chronicle: client} do
     :ok =
-      Chronicle.EventSequences.EventLog.append(
+      Cratis.Chronicle.EventSequences.EventLog.append(
         "order-1",
         %TestingReactorScenarioDestinationPaymentReceived{amount: 100},
         client: client
       )
 
-    :ok = Chronicle.Testing.wait_for_observers(client)
+    :ok = Cratis.Chronicle.Testing.wait_for_observers(client)
 
     assert_appended(client, %TestingReactorScenarioDestinationPaymentRecorded{amount: 100},
       event_source_id: "ledger"
     )
 
-    for produced <- Chronicle.Testing.appended_events(client, "ledger") do
+    for produced <- Cratis.Chronicle.Testing.appended_events(client, "ledger") do
       context = produced.context
       IO.puts("#{inspect(produced.event.__struct__)}: #{context.event_source_type}/#{context.event_stream_type}/#{context.event_stream_id}")
     end
 
-    [recorded] = Chronicle.Testing.appended_events(client, "ledger")
+    [recorded] = Cratis.Chronicle.Testing.appended_events(client, "ledger")
     assert recorded.context.event_source_type == "Ledger"
     assert recorded.context.event_stream_type == "Payments"
     assert recorded.context.event_stream_id == "monthly"

@@ -1,30 +1,30 @@
 ```elixir title="Complete balance projection"
 defmodule MyApp.Events.BankAccountOpened do
-  use Chronicle.Events.EventType, id: "bank-account-opened-v1"
+  use Cratis.Chronicle.Events.EventType, id: "bank-account-opened-v1"
 
   defstruct [:account_name, :initial_balance]
 end
 
 defmodule MyApp.Events.BankAccountRenamed do
-  use Chronicle.Events.EventType, id: "bank-account-renamed-v1"
+  use Cratis.Chronicle.Events.EventType, id: "bank-account-renamed-v1"
 
   defstruct [:new_name]
 end
 
 defmodule MyApp.Events.FundsDeposited do
-  use Chronicle.Events.EventType, id: "funds-deposited-v1"
+  use Cratis.Chronicle.Events.EventType, id: "funds-deposited-v1"
 
   defstruct [:amount]
 end
 
 defmodule MyApp.Events.FundsWithdrawn do
-  use Chronicle.Events.EventType, id: "funds-withdrawn-v1"
+  use Cratis.Chronicle.Events.EventType, id: "funds-withdrawn-v1"
 
   defstruct [:amount]
 end
 
 defmodule MyApp.ReadModels.BankAccount do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{BankAccountOpened, BankAccountRenamed, FundsDeposited, FundsWithdrawn}
 

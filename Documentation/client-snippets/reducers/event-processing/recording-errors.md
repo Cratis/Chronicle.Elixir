@@ -1,6 +1,6 @@
 ```elixir
 defmodule EventProcessingInvalidDataDetected do
-  use Chronicle.Events.EventType, id: "event-processing-invalid-data-detected"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-invalid-data-detected"
 
   defstruct [:reason]
 end
@@ -10,7 +10,7 @@ defmodule EventProcessingValidationResult do
 end
 
 defmodule EventProcessingValidationResultReducer do
-  use Chronicle.Reducers.Reducer, model: EventProcessingValidationResult
+  use Cratis.Chronicle.Reducers.Reducer, model: EventProcessingValidationResult
 
   alias EventProcessingInvalidDataDetected
 

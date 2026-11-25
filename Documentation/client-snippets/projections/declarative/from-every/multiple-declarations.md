@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.UserChangedEveryMultiple do
-  use Chronicle.Events.EventType, id: "user-changed-every-multiple"
+  use Cratis.Chronicle.Events.EventType, id: "user-changed-every-multiple"
 
   defstruct [:name]
 end
 
 defmodule MyApp.ReadModels.UserAuditEveryMultiple do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: nil, name: nil, last_updated: nil, subject_id: nil
 

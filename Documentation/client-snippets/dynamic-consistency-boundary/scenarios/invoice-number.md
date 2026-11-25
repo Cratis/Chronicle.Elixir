@@ -1,13 +1,13 @@
 ```elixir
 defmodule MyApp.Events.InvoiceNumberInvoiceCreated do
-  use Chronicle.Events.EventType, id: "invoice-number-invoice-created"
+  use Cratis.Chronicle.Events.EventType, id: "invoice-number-invoice-created"
 
   defstruct [:number, :customer]
 end
 
 # The decision model: the last number issued. Every invoice is created on one numbering event source.
 defmodule MyApp.ReadModels.InvoiceNumbering do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: nil, last: 0
 
@@ -15,8 +15,8 @@ defmodule MyApp.ReadModels.InvoiceNumbering do
 end
 
 defmodule MyApp.InvoiceNumberCreateInvoice do
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.ReadModels.DecisionReads
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.ReadModels.DecisionReads
   alias MyApp.Events.InvoiceNumberInvoiceCreated
   alias MyApp.ReadModels.InvoiceNumbering
 
@@ -24,7 +24,7 @@ defmodule MyApp.InvoiceNumberCreateInvoice do
 
   def handle(customer) do
     result =
-      Chronicle.decide(fn _unit_of_work ->
+      Cratis.Chronicle.decide(fn _unit_of_work ->
         {:ok, numbering} = DecisionReads.get(InvoiceNumbering, @numbering_source)
         next = if numbering.instance, do: numbering.instance.last + 1, else: 1
 

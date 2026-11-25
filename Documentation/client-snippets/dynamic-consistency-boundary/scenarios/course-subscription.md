@@ -1,44 +1,44 @@
 ```elixir
 defmodule MyApp.Events.CourseSubscriptionCourseDefined do
-  use Chronicle.Events.EventType, id: "course-subscription-course-defined"
+  use Cratis.Chronicle.Events.EventType, id: "course-subscription-course-defined"
 
   defstruct [:name, :capacity]
 end
 
 defmodule MyApp.Events.CourseSubscriptionCourseCapacityChanged do
-  use Chronicle.Events.EventType, id: "course-subscription-course-capacity-changed"
+  use Cratis.Chronicle.Events.EventType, id: "course-subscription-course-capacity-changed"
 
   defstruct [:capacity]
 end
 
 # Events of the course's own story.
 defmodule MyApp.Events.CourseSubscriptionSeatTaken do
-  use Chronicle.Events.EventType, id: "course-subscription-seat-taken"
+  use Cratis.Chronicle.Events.EventType, id: "course-subscription-seat-taken"
 
   defstruct [:student_id]
 end
 
 defmodule MyApp.Events.CourseSubscriptionSeatReleased do
-  use Chronicle.Events.EventType, id: "course-subscription-seat-released"
+  use Cratis.Chronicle.Events.EventType, id: "course-subscription-seat-released"
 
   defstruct [:student_id]
 end
 
 # Events of the student's own story.
 defmodule MyApp.Events.CourseSubscriptionStudentJoinedCourse do
-  use Chronicle.Events.EventType, id: "course-subscription-student-joined-course"
+  use Cratis.Chronicle.Events.EventType, id: "course-subscription-student-joined-course"
 
   defstruct [:course_id]
 end
 
 defmodule MyApp.Events.CourseSubscriptionStudentLeftCourse do
-  use Chronicle.Events.EventType, id: "course-subscription-student-left-course"
+  use Cratis.Chronicle.Events.EventType, id: "course-subscription-student-left-course"
 
   defstruct [:course_id]
 end
 
 defmodule MyApp.ReadModels.CourseSeats do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: nil, capacity: 0, subscribed: 0
 
@@ -49,7 +49,7 @@ defmodule MyApp.ReadModels.CourseSeats do
 end
 
 defmodule MyApp.ReadModels.StudentCourses do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: nil, subscribed: 0
 
@@ -61,8 +61,8 @@ defmodule MyApp.ReadModels.StudentCourses do
 end
 
 defmodule MyApp.CourseSubscriptionSubscribeStudent do
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.ReadModels.{DecisionConflict, DecisionReads}
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.ReadModels.{DecisionConflict, DecisionReads}
   alias MyApp.Events.{CourseSubscriptionSeatTaken, CourseSubscriptionStudentJoinedCourse}
   alias MyApp.ReadModels.{CourseSeats, StudentCourses}
 
@@ -70,7 +70,7 @@ defmodule MyApp.CourseSubscriptionSubscribeStudent do
 
   def handle(course_id, student_id) do
     result =
-      Chronicle.decide(fn _unit_of_work ->
+      Cratis.Chronicle.decide(fn _unit_of_work ->
         # One decision read per event source: the commit guards both.
         {:ok, course} = DecisionReads.get(CourseSeats, course_id)
         {:ok, student} = DecisionReads.get(StudentCourses, student_id)

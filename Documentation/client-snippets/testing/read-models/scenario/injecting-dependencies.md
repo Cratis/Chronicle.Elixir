@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.TestingReadModelScenarioOrderCreated do
-  use Chronicle.Events.EventType, id: "testing-read-model-scenario-order-created"
+  use Cratis.Chronicle.Events.EventType, id: "testing-read-model-scenario-order-created"
 
   defstruct [:order_id]
 end
 
 defmodule MyApp.ReadModels.TestingReadModelScenarioOrderSummary do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct order_id: nil, total_in_cents: 0
 end
@@ -16,7 +16,7 @@ defmodule MyApp.TestingReadModelScenarioPricingService do
 end
 
 defmodule MyApp.Reducers.TestingReadModelScenarioOrderSummaryReducer do
-  use Chronicle.Reducers.Reducer, model: MyApp.ReadModels.TestingReadModelScenarioOrderSummary
+  use Cratis.Chronicle.Reducers.Reducer, model: MyApp.ReadModels.TestingReadModelScenarioOrderSummary
 
   alias MyApp.Events.TestingReadModelScenarioOrderCreated
   alias MyApp.ReadModels.TestingReadModelScenarioOrderSummary
@@ -42,7 +42,7 @@ defmodule MyApp.TestingReadModelScenarioFixedPricing do
 end
 
 defmodule MyApp.TestingReadModelScenarioInjectingDependenciesTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [MyApp.Events.TestingReadModelScenarioOrderCreated],
     reducers: [MyApp.Reducers.TestingReadModelScenarioOrderSummaryReducer]
 
@@ -57,16 +57,16 @@ defmodule MyApp.TestingReadModelScenarioInjectingDependenciesTest do
 
   test "the reducer uses the injected pricing service", %{chronicle: client} do
     :ok =
-      Chronicle.EventSequences.EventLog.append(
+      Cratis.Chronicle.EventSequences.EventLog.append(
         "order-1",
         %TestingReadModelScenarioOrderCreated{order_id: "order-1"},
         client: client
       )
 
-    :ok = Chronicle.Testing.wait_for_observers(client)
+    :ok = Cratis.Chronicle.Testing.wait_for_observers(client)
 
     {:ok, summary} =
-      Chronicle.Testing.read_model(client, TestingReadModelScenarioOrderSummaryReducer, "order-1")
+      Cratis.Chronicle.Testing.read_model(client, TestingReadModelScenarioOrderSummaryReducer, "order-1")
 
     assert summary.total_in_cents == 2500
   end

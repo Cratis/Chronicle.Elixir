@@ -4,13 +4,13 @@ defmodule MyApp.Events.DecSetPropsCustomer do
 end
 
 defmodule MyApp.Events.DecSetPropsAccountOpened do
-  use Chronicle.Events.EventType, id: "dec-set-props-account-opened"
+  use Cratis.Chronicle.Events.EventType, id: "dec-set-props-account-opened"
 
   defstruct [:number, :owner, :timestamp]
 end
 
 defmodule MyApp.Events.DecSetPropsMoneyDeposited do
-  use Chronicle.Events.EventType, id: "dec-set-props-money-deposited"
+  use Cratis.Chronicle.Events.EventType, id: "dec-set-props-money-deposited"
 
   defstruct [:amount, :timestamp]
 end

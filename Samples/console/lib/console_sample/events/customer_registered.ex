@@ -4,7 +4,7 @@
 defmodule ConsoleSample.Events.CustomerRegistered do
   @moduledoc "Registers a customer whose data contains personally identifiable information."
 
-  use Chronicle.Events.EventType, id: "customer-registered"
+  use Cratis.Chronicle.Events.EventType, id: "customer-registered"
 
   defstruct [:customer_id, :email, :full_name, :phone_number]
 

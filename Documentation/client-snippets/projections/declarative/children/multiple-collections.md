@@ -1,18 +1,18 @@
 ```elixir title="Multiple child collections"
 defmodule MyApp.Events.GroupCreatedWithMultipleCollections do
-  use Chronicle.Events.EventType, id: "group-created-with-multiple-collections"
+  use Cratis.Chronicle.Events.EventType, id: "group-created-with-multiple-collections"
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.MemberAddedToGroup do
-  use Chronicle.Events.EventType, id: "member-added-to-group"
+  use Cratis.Chronicle.Events.EventType, id: "member-added-to-group"
 
   defstruct [:user_id, :role]
 end
 
 defmodule MyApp.Events.TaskAssignedToGroup do
-  use Chronicle.Events.EventType, id: "task-assigned-to-group"
+  use Cratis.Chronicle.Events.EventType, id: "task-assigned-to-group"
 
   defstruct [:task_id, :title]
 end
@@ -26,7 +26,7 @@ defmodule MyApp.ReadModels.GroupTaskInMultipleCollections do
 end
 
 defmodule MyApp.ReadModels.GroupWithMultipleCollections do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [
       members: {:list, MyApp.ReadModels.GroupMemberInMultipleCollections},
       tasks: {:list, MyApp.ReadModels.GroupTaskInMultipleCollections}
@@ -36,7 +36,7 @@ defmodule MyApp.ReadModels.GroupWithMultipleCollections do
 end
 
 defmodule MyApp.Projections.GroupWithMultipleCollectionsProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.GroupWithMultipleCollections
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.GroupWithMultipleCollections
 
   alias MyApp.Events.{GroupCreatedWithMultipleCollections, MemberAddedToGroup, TaskAssignedToGroup}
 

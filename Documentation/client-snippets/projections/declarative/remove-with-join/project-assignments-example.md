@@ -1,36 +1,36 @@
 ```elixir
 defmodule MyApp.Events.DecRwjDeveloperOnboarded do
-  use Chronicle.Events.EventType, id: "dec-rwj-developer-onboarded"
+  use Cratis.Chronicle.Events.EventType, id: "dec-rwj-developer-onboarded"
 
   defstruct [:name, skills: []]
 end
 
 defmodule MyApp.Events.DecRwjDeveloperAssignedToProject do
-  use Chronicle.Events.EventType, id: "dec-rwj-developer-assigned-to-project"
+  use Cratis.Chronicle.Events.EventType, id: "dec-rwj-developer-assigned-to-project"
 
   defstruct [:developer_id, :project_id, :role, allocation: 0]
 end
 
 defmodule MyApp.Events.DecRwjDeveloperUnassignedFromProject do
-  use Chronicle.Events.EventType, id: "dec-rwj-developer-unassigned-from-project"
+  use Cratis.Chronicle.Events.EventType, id: "dec-rwj-developer-unassigned-from-project"
 
   defstruct [:developer_id, :project_id]
 end
 
 defmodule MyApp.Events.DecRwjProjectInitiated do
-  use Chronicle.Events.EventType, id: "dec-rwj-project-initiated"
+  use Cratis.Chronicle.Events.EventType, id: "dec-rwj-project-initiated"
 
   defstruct [:project_name, :priority, :deadline]
 end
 
 defmodule MyApp.Events.DecRwjProjectCancelled do
-  use Chronicle.Events.EventType, id: "dec-rwj-project-cancelled"
+  use Cratis.Chronicle.Events.EventType, id: "dec-rwj-project-cancelled"
 
   defstruct []
 end
 
 defmodule MyApp.Events.DecRwjProjectCompleted do
-  use Chronicle.Events.EventType, id: "dec-rwj-project-completed"
+  use Cratis.Chronicle.Events.EventType, id: "dec-rwj-project-completed"
 
   defstruct []
 end
@@ -46,14 +46,14 @@ defmodule MyApp.ReadModels.DecRwjProjectAssignment do
 end
 
 defmodule MyApp.ReadModels.DecRwjDeveloperProfile do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [current_projects: {:list, MyApp.ReadModels.DecRwjProjectAssignment}]
 
   defstruct developer_id: nil, name: nil, onboarded_at: nil, current_projects: []
 end
 
 defmodule MyApp.Projections.DecRwjDeveloperProjectsProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.DecRwjDeveloperProfile
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.DecRwjDeveloperProfile
 
   alias MyApp.Events.{
     DecRwjDeveloperAssignedToProject,

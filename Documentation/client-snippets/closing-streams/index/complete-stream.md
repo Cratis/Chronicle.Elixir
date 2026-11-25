@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.ClosingStreamsInvoiceCloser do
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
 
   def close_invoice_stream(invoice_stream_id) do
     case EventLog.complete_stream("invoices", invoice_stream_id) do

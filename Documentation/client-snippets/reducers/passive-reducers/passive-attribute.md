@@ -1,12 +1,12 @@
 ```elixir
 defmodule PassiveReducersTransactionCompleted do
-  use Chronicle.Events.EventType, id: "passive-reducers-transaction-completed"
+  use Cratis.Chronicle.Events.EventType, id: "passive-reducers-transaction-completed"
 
   defstruct [:amount]
 end
 
 defmodule PassiveReducersAdHocReport do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct total_revenue: 0, transaction_count: 0, generated_at: nil
 end
@@ -14,7 +14,7 @@ end
 # active: false makes the reducer passive: the read model is computed on demand
 # instead of being kept up to date in the background.
 defmodule PassiveReducersAdHocReportReducer do
-  use Chronicle.Reducers.Reducer, model: PassiveReducersAdHocReport, active: false
+  use Cratis.Chronicle.Reducers.Reducer, model: PassiveReducersAdHocReport, active: false
 
   @handles PassiveReducersTransactionCompleted
 

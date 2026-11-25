@@ -1,22 +1,22 @@
 ```elixir
 defmodule MyApp.Events.MigrationsDotnetClientMigratorAuthorRegisteredV1 do
-  use Chronicle.Events.EventType, id: "dotnet-client-migrator-author-registered", generation: 1
+  use Cratis.Chronicle.Events.EventType, id: "dotnet-client-migrator-author-registered", generation: 1
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.MigrationsDotnetClientMigratorAuthorRegistered do
-  use Chronicle.Events.EventType, id: "dotnet-client-migrator-author-registered", generation: 2
+  use Cratis.Chronicle.Events.EventType, id: "dotnet-client-migrator-author-registered", generation: 2
 
   defstruct [:first_name, :last_name]
 end
 
 defmodule MyApp.Migrations.MigrationsDotnetClientMigratorAuthorRegisteredMigration do
-  use Chronicle.Events.Migration,
+  use Cratis.Chronicle.Events.Migration,
     from: {MyApp.Events.MigrationsDotnetClientMigratorAuthorRegisteredV1, generation: 1},
     to: {MyApp.Events.MigrationsDotnetClientMigratorAuthorRegistered, generation: 2}
 
-  alias Chronicle.Events.MigrationBuilder
+  alias Cratis.Chronicle.Events.MigrationBuilder
 
   @impl true
   def upcast(builder) do

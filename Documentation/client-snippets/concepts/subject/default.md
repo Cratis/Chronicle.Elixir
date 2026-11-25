@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.SubjectAuthorRegistered do
-  use Chronicle.Events.EventType, id: "subject-author-registered"
+  use Cratis.Chronicle.Events.EventType, id: "subject-author-registered"
 
   defstruct [:name]
 end
@@ -11,7 +11,7 @@ defmodule MyApp.SubjectAuthorService do
   def register(author_id, name) do
     # Subject defaults to author_id; encryption keys for any PII on SubjectAuthorRegistered
     # are keyed by author_id.
-    Chronicle.append(author_id, %SubjectAuthorRegistered{name: name})
+    Cratis.Chronicle.append(author_id, %SubjectAuthorRegistered{name: name})
   end
 end
 ```

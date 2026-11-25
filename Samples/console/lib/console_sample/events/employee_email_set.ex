@@ -4,7 +4,7 @@
 defmodule ConsoleSample.Events.EmployeeEmailSet do
   @moduledoc "An employee's email address has been set."
 
-  use Chronicle.Events.EventType, id: "employee-email-set"
+  use Cratis.Chronicle.Events.EventType, id: "employee-email-set"
 
   defstruct [:email]
 

@@ -1,30 +1,30 @@
 ```elixir
 defmodule MyApp.Events.DecNotRewindableOrderReceived do
-  use Chronicle.Events.EventType, id: "dec-not-rewindable-order-received"
+  use Cratis.Chronicle.Events.EventType, id: "dec-not-rewindable-order-received"
 
   defstruct order_id: ""
 end
 
 defmodule MyApp.Events.DecNotRewindableOrderProcessing do
-  use Chronicle.Events.EventType, id: "dec-not-rewindable-order-processing"
+  use Cratis.Chronicle.Events.EventType, id: "dec-not-rewindable-order-processing"
 
   defstruct order_id: ""
 end
 
 defmodule MyApp.Events.DecNotRewindableOrderCompleted do
-  use Chronicle.Events.EventType, id: "dec-not-rewindable-order-completed"
+  use Cratis.Chronicle.Events.EventType, id: "dec-not-rewindable-order-completed"
 
   defstruct order_id: ""
 end
 
 defmodule MyApp.ReadModels.DecNotRewindableOrderStatus do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct status: nil, last_updated_at: nil
 end
 
 defmodule MyApp.Projections.DecNotRewindableRealTimeOrderStatusProjection do
-  use Chronicle.Projections.Projection,
+  use Cratis.Chronicle.Projections.Projection,
     model: MyApp.ReadModels.DecNotRewindableOrderStatus,
     not_rewindable: true,
     event_sequence: "order-processing",

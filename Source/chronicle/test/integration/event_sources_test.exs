@@ -5,31 +5,34 @@
 # CHRONICLE_INTEGRATION_CONNECTION_STRING at a development kernel, for example
 # chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000
 # and run `mix test --include integration`.
-defmodule Chronicle.Integration.EventSourcesTest do
+defmodule Cratis.Chronicle.Integration.EventSourcesTest do
   use ExUnit.Case, async: false
 
   @moduletag :integration
 
-  alias Chronicle.EventSequences.{EventForEventSourceId, EventLog}
-  alias Chronicle.Events.ConcurrencyScope
+  alias Cratis.Chronicle.EventSequences.{EventForEventSourceId, EventLog}
+  alias Cratis.Chronicle.Events.ConcurrencyScope
 
   defmodule AccountOpened do
-    use Chronicle.Events.EventType, id: "it-account-opened"
+    use Cratis.Chronicle.Events.EventType, id: "it-account-opened"
     defstruct owner: ""
   end
 
   defmodule AccountEventSource do
-    use Chronicle.EventSources.EventSource, name: "ItAccount", concurrency: [:event_source_id]
+    use Cratis.Chronicle.EventSources.EventSource,
+      name: "ItAccount",
+      concurrency: [:event_source_id]
+
     stream("Transactions", description: "Money movements")
   end
 
   defmodule LedgerEventSource do
-    use Chronicle.EventSources.EventSource, name: "ItLedger"
+    use Cratis.Chronicle.EventSources.EventSource, name: "ItLedger"
     stream("Monthly", description: "Per month", concurrency: [:event_source_id, :event_stream_id])
   end
 
   defmodule Seen do
-    use Chronicle.Reactors.Reactor
+    use Cratis.Chronicle.Reactors.Reactor
     @handles AccountOpened
     def handle(_event, context) do
       send(:event_source_it, {:seen, context.event_source})
@@ -41,7 +44,7 @@ defmodule Chronicle.Integration.EventSourcesTest do
     prefix = System.get_env("CHRONICLE_INTEGRATION_EVENT_STORE_PREFIX", "eventsource-elixir")
 
     {:ok, _} =
-      Chronicle.Client.start_link(
+      Cratis.Chronicle.Client.start_link(
         name: :event_source_it_client,
         connection_string: System.fetch_env!("CHRONICLE_INTEGRATION_CONNECTION_STRING"),
         event_store:
@@ -65,8 +68,8 @@ defmodule Chronicle.Integration.EventSourcesTest do
   end
 
   defp wait_for_registration do
-    lifecycle = Chronicle.Connections.Lifecycle.name_for(:event_source_it_client)
-    :ok = Chronicle.Connections.Lifecycle.wait_until(lifecycle, :registered, 60_000)
+    lifecycle = Cratis.Chronicle.Connections.Lifecycle.name_for(:event_source_it_client)
+    :ok = Cratis.Chronicle.Connections.Lifecycle.wait_until(lifecycle, :registered, 60_000)
   end
 
   @opts [client: :event_source_it_client]

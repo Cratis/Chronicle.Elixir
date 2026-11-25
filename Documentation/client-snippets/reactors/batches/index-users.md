@@ -1,26 +1,26 @@
 ```elixir
 defmodule BatchUserRegistered do
-  use Chronicle.Events.EventType, id: "batch-user-registered"
+  use Cratis.Chronicle.Events.EventType, id: "batch-user-registered"
 
   defstruct name: ""
 end
 
 defmodule BatchUserRemoved do
-  use Chronicle.Events.EventType, id: "batch-user-removed"
+  use Cratis.Chronicle.Events.EventType, id: "batch-user-removed"
 
   defstruct name: ""
 end
 
 defmodule BatchUserEmailChanged do
-  use Chronicle.Events.EventType, id: "batch-user-email-changed"
+  use Cratis.Chronicle.Events.EventType, id: "batch-user-email-changed"
 
   defstruct email: ""
 end
 
 defmodule BatchUsersReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
-  alias Chronicle.Observers.EventBatch
+  alias Cratis.Chronicle.Observers.EventBatch
 
   # One call per page, with every BatchUserRegistered and BatchUserRemoved in it.
   @observes BatchUserRegistered

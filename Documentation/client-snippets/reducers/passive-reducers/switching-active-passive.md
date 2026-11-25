@@ -1,6 +1,6 @@
 ```elixir
 defmodule PassiveReducersSwitchableValueChanged do
-  use Chronicle.Events.EventType, id: "passive-reducers-switchable-value-changed"
+  use Cratis.Chronicle.Events.EventType, id: "passive-reducers-switchable-value-changed"
 
   defstruct [:value]
 end
@@ -11,7 +11,7 @@ end
 
 # Was active, now passive — only the `active:` option changed.
 defmodule PassiveReducersSwitchableReducer do
-  use Chronicle.Reducers.Reducer, model: PassiveReducersSwitchableReadModel, active: false
+  use Cratis.Chronicle.Reducers.Reducer, model: PassiveReducersSwitchableReadModel, active: false
 
   alias PassiveReducersSwitchableValueChanged
 

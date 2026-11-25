@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.CreateOnceAccountOpened do
-  use Chronicle.Events.EventType, id: "create-once-account-opened"
+  use Cratis.Chronicle.Events.EventType, id: "create-once-account-opened"
 
   defstruct [:owner]
 

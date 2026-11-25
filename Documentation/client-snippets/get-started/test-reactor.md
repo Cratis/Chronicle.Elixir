@@ -1,6 +1,6 @@
 ```elixir title="The reactor - does something when it happens"
 defmodule MyApp.Reactors.TestReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.TestEvent
 

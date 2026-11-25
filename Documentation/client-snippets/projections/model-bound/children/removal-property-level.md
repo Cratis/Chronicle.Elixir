@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.MbChildrenLineItemAddedForRemoval do
-  use Chronicle.Events.EventType, id: "mb-children-line-item-added-for-removal"
+  use Cratis.Chronicle.Events.EventType, id: "mb-children-line-item-added-for-removal"
 
   defstruct [:line_item_id, :product_name]
 end
 
 defmodule MyApp.Events.MbChildrenLineItemRemoved do
-  use Chronicle.Events.EventType, id: "mb-children-line-item-removed"
+  use Cratis.Chronicle.Events.EventType, id: "mb-children-line-item-removed"
 
   defstruct [:line_item_id]
 end
@@ -16,7 +16,7 @@ defmodule MyApp.ReadModels.MbChildrenRemovableLine do
 end
 
 defmodule MyApp.ReadModels.MbChildrenOrderWithRemoval do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [lines: {:list, MyApp.ReadModels.MbChildrenRemovableLine}]
 
   defstruct order_id: nil, lines: []

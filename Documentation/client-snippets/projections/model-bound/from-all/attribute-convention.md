@@ -1,18 +1,18 @@
 ```elixir title="Every-event mapping alongside per-event convention mapping"
 defmodule MyApp.Events.ProductRenamedFromAllConvention do
-  use Chronicle.Events.EventType, id: "product-renamed-from-all-convention-v1"
+  use Cratis.Chronicle.Events.EventType, id: "product-renamed-from-all-convention-v1"
 
   defstruct [:name, :version]
 end
 
 defmodule MyApp.Events.ProductPriceChangedFromAllConvention do
-  use Chronicle.Events.EventType, id: "product-price-changed-from-all-convention-v1"
+  use Cratis.Chronicle.Events.EventType, id: "product-price-changed-from-all-convention-v1"
 
   defstruct [:price, :version]
 end
 
 defmodule MyApp.ReadModels.ProductVersionFromAllConvention do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{ProductPriceChangedFromAllConvention, ProductRenamedFromAllConvention}
 

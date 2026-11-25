@@ -5,119 +5,119 @@
 # (test/fixtures/graphs/graph-views-organization.json), declared with its eight views. `Place` is
 # a node that is not part of the Organization graph; the rejection specs use it.
 
-defmodule Chronicle.GraphViewFixtures.Person do
-  use Chronicle.Graphs.Node
+defmodule Cratis.Chronicle.GraphViewFixtures.Person do
+  use Cratis.Chronicle.Graphs.Node
   defstruct person_id: "", name: ""
 end
 
-defmodule Chronicle.GraphViewFixtures.Group do
-  use Chronicle.Graphs.Node
+defmodule Cratis.Chronicle.GraphViewFixtures.Group do
+  use Cratis.Chronicle.Graphs.Node
   defstruct group_id: "", name: ""
 end
 
-defmodule Chronicle.GraphViewFixtures.Place do
-  use Chronicle.Graphs.Node
+defmodule Cratis.Chronicle.GraphViewFixtures.Place do
+  use Cratis.Chronicle.Graphs.Node
   defstruct place_id: ""
 end
 
-defmodule Chronicle.GraphViewFixtures.MemberOf do
-  use Chronicle.Graphs.Edge, type: "MEMBER_OF"
+defmodule Cratis.Chronicle.GraphViewFixtures.MemberOf do
+  use Cratis.Chronicle.Graphs.Edge, type: "MEMBER_OF"
   defstruct since: ""
 end
 
-defmodule Chronicle.GraphViewFixtures.PartOf do
-  use Chronicle.Graphs.Edge, type: "PART_OF"
+defmodule Cratis.Chronicle.GraphViewFixtures.PartOf do
+  use Cratis.Chronicle.Graphs.Edge, type: "PART_OF"
   defstruct []
 end
 
-defmodule Chronicle.GraphViewFixtures.HasRole do
-  use Chronicle.Graphs.Edge, type: "HAS_ROLE"
+defmodule Cratis.Chronicle.GraphViewFixtures.HasRole do
+  use Cratis.Chronicle.Graphs.Edge, type: "HAS_ROLE"
   defstruct assignment_id: "", role: "", since: ""
 end
 
-defmodule Chronicle.GraphViewFixtures.Views.GroupSummary do
-  use Chronicle.Graphs.View, root: Chronicle.GraphViewFixtures.Group
+defmodule Cratis.Chronicle.GraphViewFixtures.Views.GroupSummary do
+  use Cratis.Chronicle.Graphs.View, root: Cratis.Chronicle.GraphViewFixtures.Group
 
   property(:id, source: :group_id)
   property(:name)
 end
 
-defmodule Chronicle.GraphViewFixtures.Views.GroupMembership do
-  use Chronicle.Graphs.View, root: Chronicle.GraphViewFixtures.Group
+defmodule Cratis.Chronicle.GraphViewFixtures.Views.GroupMembership do
+  use Cratis.Chronicle.Graphs.View, root: Cratis.Chronicle.GraphViewFixtures.Group
 
   property(:id, source: :group_id)
   property(:name)
   edge_property(:since)
 end
 
-defmodule Chronicle.GraphViewFixtures.Views.MemberSummary do
-  use Chronicle.Graphs.View, root: Chronicle.GraphViewFixtures.Person
+defmodule Cratis.Chronicle.GraphViewFixtures.Views.MemberSummary do
+  use Cratis.Chronicle.Graphs.View, root: Cratis.Chronicle.GraphViewFixtures.Person
 
   property(:id, source: :person_id)
   property(:name)
   edge_property(:since)
 end
 
-defmodule Chronicle.GraphViewFixtures.Views.RoleAssignment do
-  use Chronicle.Graphs.View, root: Chronicle.GraphViewFixtures.Group
+defmodule Cratis.Chronicle.GraphViewFixtures.Views.RoleAssignment do
+  use Cratis.Chronicle.Graphs.View, root: Cratis.Chronicle.GraphViewFixtures.Group
 
   property(:id, source: :group_id)
   edge_property(:assignment_id)
   edge_property(:role)
 end
 
-defmodule Chronicle.GraphViewFixtures.Views.GroupWithMembers do
-  use Chronicle.Graphs.View, root: Chronicle.GraphViewFixtures.Group
+defmodule Cratis.Chronicle.GraphViewFixtures.Views.GroupWithMembers do
+  use Cratis.Chronicle.Graphs.View, root: Cratis.Chronicle.GraphViewFixtures.Group
 
   property(:id, source: :group_id)
   property(:name)
 
-  relation(:members, Chronicle.GraphViewFixtures.MemberOf,
-    view: Chronicle.GraphViewFixtures.Views.MemberSummary,
+  relation(:members, Cratis.Chronicle.GraphViewFixtures.MemberOf,
+    view: Cratis.Chronicle.GraphViewFixtures.Views.MemberSummary,
     cardinality: :many
   )
 end
 
-defmodule Chronicle.GraphViewFixtures.Views.GroupWithParent do
-  use Chronicle.Graphs.View, root: Chronicle.GraphViewFixtures.Group
+defmodule Cratis.Chronicle.GraphViewFixtures.Views.GroupWithParent do
+  use Cratis.Chronicle.Graphs.View, root: Cratis.Chronicle.GraphViewFixtures.Group
 
   property(:id, source: :group_id)
   property(:name)
 
-  relation(:parent, Chronicle.GraphViewFixtures.PartOf,
-    view: Chronicle.GraphViewFixtures.Views.GroupSummary,
+  relation(:parent, Cratis.Chronicle.GraphViewFixtures.PartOf,
+    view: Cratis.Chronicle.GraphViewFixtures.Views.GroupSummary,
     cardinality: :one,
     direction: :outgoing
   )
 end
 
-defmodule Chronicle.GraphViewFixtures.Views.PersonRoles do
-  use Chronicle.Graphs.View, root: Chronicle.GraphViewFixtures.Person
+defmodule Cratis.Chronicle.GraphViewFixtures.Views.PersonRoles do
+  use Cratis.Chronicle.Graphs.View, root: Cratis.Chronicle.GraphViewFixtures.Person
 
   property(:id, source: :person_id)
 
-  relation(:roles, Chronicle.GraphViewFixtures.HasRole,
-    view: Chronicle.GraphViewFixtures.Views.RoleAssignment,
+  relation(:roles, Cratis.Chronicle.GraphViewFixtures.HasRole,
+    view: Cratis.Chronicle.GraphViewFixtures.Views.RoleAssignment,
     cardinality: :many
   )
 end
 
-defmodule Chronicle.GraphViewFixtures.Views.PersonWithGroups do
-  use Chronicle.Graphs.View, root: Chronicle.GraphViewFixtures.Person
+defmodule Cratis.Chronicle.GraphViewFixtures.Views.PersonWithGroups do
+  use Cratis.Chronicle.Graphs.View, root: Cratis.Chronicle.GraphViewFixtures.Person
 
   property(:id, source: :person_id)
   property(:name)
 
-  relation(:groups, Chronicle.GraphViewFixtures.MemberOf,
-    view: Chronicle.GraphViewFixtures.Views.GroupMembership,
+  relation(:groups, Cratis.Chronicle.GraphViewFixtures.MemberOf,
+    view: Cratis.Chronicle.GraphViewFixtures.Views.GroupMembership,
     cardinality: :many
   )
 end
 
-defmodule Chronicle.GraphViewFixtures.Organization do
-  use Chronicle.Graphs.Graph, id: "Organization"
+defmodule Cratis.Chronicle.GraphViewFixtures.Organization do
+  use Cratis.Chronicle.Graphs.Graph, id: "Organization"
 
-  alias Chronicle.GraphViewFixtures.{Group, HasRole, MemberOf, PartOf, Person, Views}
+  alias Cratis.Chronicle.GraphViewFixtures.{Group, HasRole, MemberOf, PartOf, Person, Views}
 
   node Person, key: :person_id do
   end

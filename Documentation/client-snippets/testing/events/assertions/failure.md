@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.TestingAssertionsFailureAuthorRegistered do
-  use Chronicle.Events.EventType, id: "testing-assertions-failure-author-registered"
+  use Cratis.Chronicle.Events.EventType, id: "testing-assertions-failure-author-registered"
 
   defstruct [:name]
 
@@ -14,21 +14,21 @@ defmodule MyApp.TestingAssertionsFailureTest do
 
   test "appending a duplicate unique name fails" do
     {:ok, client} =
-      Chronicle.Testing.start_supervised_client(
+      Cratis.Chronicle.Testing.start_supervised_client(
         event_types: [TestingAssertionsFailureAuthorRegistered]
       )
 
-    on_exit(fn -> Chronicle.Testing.stop_supervised_client(client) end)
+    on_exit(fn -> Cratis.Chronicle.Testing.stop_supervised_client(client) end)
 
     :ok =
-      Chronicle.EventSequences.EventLog.append(
+      Cratis.Chronicle.EventSequences.EventLog.append(
         "author-#{System.unique_integer([:positive])}",
         %TestingAssertionsFailureAuthorRegistered{name: "Jane Smith"},
         client: client
       )
 
     result =
-      Chronicle.EventSequences.EventLog.append(
+      Cratis.Chronicle.EventSequences.EventLog.append(
         "author-#{System.unique_integer([:positive])}",
         %TestingAssertionsFailureAuthorRegistered{name: "Jane Smith"},
         client: client

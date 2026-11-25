@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Projections.DecRwjUserWithGroupsProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.DecRwjUserWithGroups
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.DecRwjUserWithGroups
 
   alias MyApp.Events.{DecRwjUserAddedToGroup, DecRwjGroupDeleted}
 

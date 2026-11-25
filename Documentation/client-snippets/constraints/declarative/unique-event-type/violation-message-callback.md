@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.ConstraintsUniqueEventTypeCallbackProjectInitialized do
-  use Chronicle.Events.EventType, id: "constraints-unique-event-type-callback-project-initialized"
+  use Cratis.Chronicle.Events.EventType, id: "constraints-unique-event-type-callback-project-initialized"
   defstruct []
 end
 
@@ -11,7 +11,7 @@ defmodule MyApp.Constraints.ConstraintsUniqueEventTypeCallbackMessages do
 end
 
 defmodule MyApp.Constraints.ConstraintsUniqueEventTypeCallbackProjectInitialization do
-  use Chronicle.Events.Constraint
+  use Cratis.Chronicle.Events.Constraint
 
   unique_event_type MyApp.Events.ConstraintsUniqueEventTypeCallbackProjectInitialized,
     name: "ConstraintsUniqueEventTypeCallbackProjectInitialization",

@@ -1,30 +1,30 @@
 ```elixir
 defmodule MyApp.Events.CountersUserLoggedInFull do
-  use Chronicle.Events.EventType, id: "counters-user-logged-in-full-v1"
+  use Cratis.Chronicle.Events.EventType, id: "counters-user-logged-in-full-v1"
 
   defstruct [:timestamp]
 end
 
 defmodule MyApp.Events.CountersUserLoggedOutFull do
-  use Chronicle.Events.EventType, id: "counters-user-logged-out-full-v1"
+  use Cratis.Chronicle.Events.EventType, id: "counters-user-logged-out-full-v1"
 
   defstruct [:timestamp]
 end
 
 defmodule MyApp.Events.CountersPurchaseMade do
-  use Chronicle.Events.EventType, id: "counters-purchase-made-v1"
+  use Cratis.Chronicle.Events.EventType, id: "counters-purchase-made-v1"
 
   defstruct [:amount]
 end
 
 defmodule MyApp.Events.CountersRefundIssued do
-  use Chronicle.Events.EventType, id: "counters-refund-issued-v1"
+  use Cratis.Chronicle.Events.EventType, id: "counters-refund-issued-v1"
 
   defstruct [:amount]
 end
 
 defmodule MyApp.ReadModels.CountersUserActivity do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{
     CountersUserLoggedInFull,

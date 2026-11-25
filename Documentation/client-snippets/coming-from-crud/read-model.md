@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.ReadModels.CrudComparisonCustomerCard do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{CrudComparisonCustomerRegistered, CrudComparisonAddressChanged}
 

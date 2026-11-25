@@ -4,7 +4,7 @@ defmodule MyApp.ReadModels.GroupMember do
 end
 
 defmodule MyApp.ReadModels.GroupWithMembers do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [members: {:list, MyApp.ReadModels.GroupMember}]
 
   defstruct name: nil, description: nil, members: []

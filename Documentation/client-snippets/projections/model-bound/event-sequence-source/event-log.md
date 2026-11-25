@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.MbEventSeqLocalEvent do
-  use Chronicle.Events.EventType, id: "mb-event-seq-local-event"
+  use Cratis.Chronicle.Events.EventType, id: "mb-event-seq-local-event"
 
   defstruct data: ""
 end
 
 defmodule MyApp.ReadModels.MbEventSeqLocalSnapshot do
-  use Chronicle.ReadModels.ReadModel, event_sequence: "event-log"
+  use Cratis.Chronicle.ReadModels.ReadModel, event_sequence: "event-log"
 
   defstruct id: nil, data: nil
 

@@ -1,6 +1,6 @@
 ```elixir
 defmodule WelcomeEmailRequested do
-  use Chronicle.Events.EventType, id: "welcome-email-requested"
+  use Cratis.Chronicle.Events.EventType, id: "welcome-email-requested"
 
   defstruct [:email]
 end
@@ -8,7 +8,7 @@ end
 defmodule SendWelcomeEmails do
   # Begin at the tail of the event sequence the first time this reactor is
   # registered, so it never acts on history that predates it.
-  use Chronicle.Reactors.Reactor, start_at_tail: true
+  use Cratis.Chronicle.Reactors.Reactor, start_at_tail: true
 
   @handles WelcomeEmailRequested
 

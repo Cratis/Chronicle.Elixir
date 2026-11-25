@@ -1,18 +1,18 @@
 ```elixir title="Aggregating an event does not map its other properties"
 defmodule MyApp.Events.AggOnlyArrangementSet do
-  use Chronicle.Events.EventType, id: "agg-only-arrangement-set-v1"
+  use Cratis.Chronicle.Events.EventType, id: "agg-only-arrangement-set-v1"
 
   defstruct [:location]
 end
 
 defmodule MyApp.Events.AggOnlyCandidateSubmitted do
-  use Chronicle.Events.EventType, id: "agg-only-candidate-submitted-v1"
+  use Cratis.Chronicle.Events.EventType, id: "agg-only-candidate-submitted-v1"
 
   defstruct [:name, :location]
 end
 
 defmodule MyApp.ReadModels.AggOnlyAssignmentSummary do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{AggOnlyArrangementSet, AggOnlyCandidateSubmitted}
 

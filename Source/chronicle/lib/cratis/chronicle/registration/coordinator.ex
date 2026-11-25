@@ -1,0 +1,1211 @@
+# Copyright (c) Cratis. All rights reserved.
+# Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
+defmodule Cratis.Chronicle.Registration.Coordinator do
+  @moduledoc false
+
+  # Drives the ordered registration of base artifacts on every (re)connect,
+  # mirroring the C# client's EventStore.RegisterAll. It subscribes to the
+  # connection lifecycle and, on the `:connected` phase, ensures the event store
+  # and namespace exist and registers event types, constraints, read models
+  # (including reducer read-model/observer definitions) and projections. Only
+  # after this base registration succeeds does it advance the lifecycle to the
+  # `:registered` phase — the signal that lets reactors, reducers, seeders and
+  # the webhook/subscription registrars safely register. This ordering is what
+  # prevents observers from registering their observation streams before their
+  # server-side definitions exist.
+
+  use GenServer, restart: :permanent
+
+  require Logger
+
+  alias Cratis.Chronicle.Connections.{Connection, Lifecycle}
+  alias Cratis.Chronicle.Events.Constraints
+  alias Cratis.Chronicle.Events.EventTypes
+  alias Cratis.Chronicle.EventSources
+  alias Cratis.Chronicle.Graphs.DefinitionBuilder
+  alias Cratis.Chronicle.Projections.DictionaryKeys
+  alias Cratis.Chronicle.Schemas.JsonSchemaGenerator
+  alias Cratis.Chronicle.Sinks.WellKnownSinkTypes
+
+  alias Cratis.Chronicle.WireResult
+  alias Cratis.Chronicle.Contracts.EventStores.{EventStores, EnsureEventStoreRequest}
+  alias Cratis.Chronicle.Contracts.Namespaces.{Namespaces, EnsureNamespaceRequest}
+
+  alias Cratis.Chronicle.Contracts.Projections.{
+    Projections,
+    RegisterRequest,
+    ProjectionDefinition,
+    FromDefinition,
+    JoinDefinition,
+    RemovedWithDefinition,
+    RemovedWithJoinDefinition,
+    FromEveryDefinition,
+    KeyValuePair_EventType_FromDefinition,
+    KeyValuePair_EventType_JoinDefinition,
+    KeyValuePair_EventType_RemovedWithDefinition,
+    KeyValuePair_EventType_RemovedWithJoinDefinition
+  }
+
+  alias Cratis.Chronicle.Contracts.Projections.EventType, as: ProtoEventType
+
+  alias Cratis.Chronicle.Contracts.ReadModels.{
+    ReadModels,
+    RegisterManyRequest,
+    ReadModelDefinition,
+    ReadModelType,
+    SinkDefinition
+  }
+
+  alias Bcl.Guid, as: BclGuid
+
+  alias Cratis.Chronicle.Discovery.{DriftDetector, Report}
+  alias Cratis.Chronicle.Registration.{AcceptedRegistration, RetryPolicy}
+
+  @drift_findings_key :chronicle_drift_findings
+  @drift_checked_key :chronicle_drift_checked
+
+  def start_link(opts) do
+    case Keyword.get(opts, :client) do
+      nil -> GenServer.start_link(__MODULE__, opts)
+      client -> GenServer.start_link(__MODULE__, opts, name: name_for(client))
+    end
+  end
+
+  @doc """
+  The registered name of a client's coordinator.
+  """
+  def name_for(client), do: :"#{client}.Registration"
+
+  @doc """
+  The registration status of a client.
+
+  Returns a map with `:state` (`:pending`, `:registering`, `:registered` or `:failed`), `:attempts`
+  (failed attempts since the last connect), `:error` (the last failure, or `nil`) and
+  `:next_retry_in` (milliseconds, or `nil`).
+  """
+  def status(server), do: GenServer.call(server, :status)
+
+  @doc """
+  The most recent artifact identity drift findings computed before registration.
+
+  Empty before the first attempt, when `drift_policy: :ignore`, or when none were found.
+  """
+  def identity_drift(server), do: GenServer.call(server, :identity_drift)
+
+  @doc """
+  Waits until registration succeeds (`:ok`) or fails for good (`{:error, {:failed, status}}`).
+  """
+  def await(server, timeout) do
+    GenServer.call(server, :await, call_timeout(timeout))
+  catch
+    :exit, {:timeout, _} -> {:error, :timeout}
+  end
+
+  defp call_timeout(:infinity), do: :infinity
+  defp call_timeout(timeout), do: timeout
+
+  @impl true
+  def init(opts) do
+    state = %{
+      connection: Keyword.fetch!(opts, :connection),
+      lifecycle: Keyword.get(opts, :lifecycle),
+      event_store: Keyword.fetch!(opts, :event_store),
+      namespace: Keyword.get(opts, :namespace, "Default"),
+      event_types: Keyword.get(opts, :event_types, []),
+      event_sources: Keyword.get(opts, :event_sources, []),
+      migrations: Keyword.get(opts, :migrations, []),
+      read_models: Keyword.get(opts, :read_models, []),
+      reactors: Keyword.get(opts, :reactors, []),
+      reducers: Keyword.get(opts, :reducers, []),
+      projections: Keyword.get(opts, :projections, []),
+      graphs: Keyword.get(opts, :graphs, []),
+      global_handlers: Keyword.get(opts, :global_handlers, []),
+      constraints: Keyword.get(opts, :constraints, []),
+      registrant: Keyword.get(opts, :registrant, ""),
+      accepted_registration: Keyword.get(opts, :accepted_registration, []),
+      default_sink_type_id: Keyword.get(opts, :default_sink_type_id, "MongoDB"),
+      default_graph_sink_type_id:
+        Keyword.get(opts, :default_graph_sink_type_id, WellKnownSinkTypes.neo4j()),
+      register_fun: Keyword.get(opts, :register_fun, &default_register/1),
+      policy: RetryPolicy.new(Keyword.get(opts, :registration)),
+      drift_policy: Keyword.get(opts, :drift_policy, :warn),
+      # Test-only seam replacing `Cratis.Chronicle.Discovery.DriftDetector.detect/3`.
+      drift_detect_fun: Keyword.get(opts, :drift_detect_fun, &DriftDetector.detect/3),
+      random: Keyword.get(opts, :random, &:rand.uniform/0),
+      retry_timer: nil,
+      registered_done?: false,
+      status: :pending,
+      attempts: 0,
+      error: nil,
+      next_retry_in: nil,
+      drift_findings: [],
+      waiters: []
+    }
+
+    if state.lifecycle do
+      Lifecycle.subscribe(state.lifecycle)
+    else
+      # Standalone (no lifecycle): register immediately, as before.
+      send(self(), :register)
+    end
+
+    {:ok, state}
+  end
+
+  @impl true
+  def handle_call(:status, _from, state), do: {:reply, status_of(state), state}
+
+  def handle_call(:identity_drift, _from, state), do: {:reply, state.drift_findings, state}
+
+  def handle_call(:await, from, state) do
+    case state.status do
+      :registered -> {:reply, :ok, state}
+      :failed -> {:reply, {:error, {:failed, status_of(state)}}, state}
+      _ -> {:noreply, %{state | waiters: [from | state.waiters]}}
+    end
+  end
+
+  @impl true
+  def handle_info({:chronicle_lifecycle, :connected, _connection_id}, state) do
+    cancel_timer(state.retry_timer)
+    send(self(), :register)
+
+    {:noreply,
+     %{
+       state
+       | retry_timer: nil,
+         registered_done?: false,
+         attempts: 0,
+         error: nil,
+         status: :pending
+     }}
+  end
+
+  def handle_info({:chronicle_lifecycle, :disconnected, _connection_id}, state) do
+    cancel_timer(state.retry_timer)
+
+    {:noreply,
+     %{state | retry_timer: nil, registered_done?: false, status: :pending, next_retry_in: nil}}
+  end
+
+  def handle_info({:chronicle_lifecycle, :registered, _connection_id}, state) do
+    # We are the source of this transition — nothing to do.
+    {:noreply, state}
+  end
+
+  def handle_info(:register, state) do
+    state = %{state | status: :registering, next_retry_in: nil}
+    # Drift findings computed by `check_drift/3` (called from `register_all/2`, running in
+    # this same process) are stashed in the process dictionary rather than threaded through
+    # `register_fun`'s `:ok | {:error, _}` contract, which stays unchanged for test overrides
+    # that bypass real registration (and therefore never compute drift) entirely.
+    Process.delete(@drift_findings_key)
+
+    case state.register_fun.(state) do
+      :ok ->
+        if state.lifecycle, do: Lifecycle.registered(state.lifecycle)
+
+        state =
+          reply_waiters(
+            %{
+              state
+              | registered_done?: true,
+                retry_timer: nil,
+                status: :registered,
+                error: nil,
+                drift_findings: Process.get(@drift_findings_key, state.drift_findings)
+            },
+            :ok
+          )
+
+        {:noreply, state}
+
+      {:error, reason} ->
+        state = %{state | drift_findings: Process.get(@drift_findings_key, state.drift_findings)}
+        failed = state.attempts + 1
+
+        if RetryPolicy.retry?(state.policy, failed, reason) do
+          delay = RetryPolicy.delay(state.policy, failed, state.random)
+
+          Logger.warning(
+            "Chronicle registration failed (attempt #{failed}): #{inspect(reason)}, " <>
+              "retrying in #{delay}ms"
+          )
+
+          timer = Process.send_after(self(), :register, delay)
+
+          {:noreply,
+           %{state | retry_timer: timer, attempts: failed, error: reason, next_retry_in: delay}}
+        else
+          Logger.error(
+            "Chronicle registration failed for good after #{failed} attempt(s): #{inspect(reason)}"
+          )
+
+          state = %{state | attempts: failed, error: reason, status: :failed, retry_timer: nil}
+          {:noreply, reply_waiters(state, {:error, {:failed, status_of(state)}})}
+        end
+    end
+  end
+
+  def handle_info(_msg, state), do: {:noreply, state}
+
+  defp status_of(state) do
+    %{
+      state: state.status,
+      attempts: state.attempts,
+      error: state.error,
+      next_retry_in: state.next_retry_in
+    }
+  end
+
+  defp reply_waiters(state, reply) do
+    Enum.each(state.waiters, &GenServer.reply(&1, reply))
+    %{state | waiters: []}
+  end
+
+  defp default_register(state) do
+    case Connection.channel(state.connection) do
+      {:ok, channel} -> register_all(channel, state)
+      {:error, _} = error -> error
+    end
+  end
+
+  defp register_all(channel, state) do
+    # Collect event types from projection read models
+    read_model_event_types =
+      state.read_models
+      |> Enum.flat_map(fn rm ->
+        (rm.__chronicle_read_model__(:from) |> Enum.map(&elem(&1, 0))) ++
+          (rm.__chronicle_read_model__(:join) |> Enum.map(&elem(&1, 0))) ++
+          (rm.__chronicle_read_model__(:removed_with) |> Enum.map(&elem(&1, 0))) ++
+          (rm.__chronicle_read_model__(:removed_with_join) |> Enum.map(&elem(&1, 0)))
+      end)
+
+    # Also collect event types from reducers
+    reducer_event_types =
+      state.reducers
+      |> Enum.flat_map(fn r -> r.__chronicle_reducer__(:handles) end)
+
+    # Collect event types from declarative projections
+    declarative_projection_event_types =
+      state.projections
+      |> Enum.flat_map(fn proj ->
+        (proj.__chronicle_projection__(:from) |> Enum.map(&elem(&1, 0))) ++
+          (proj.__chronicle_projection__(:join) |> Enum.map(&elem(&1, 0))) ++
+          (proj.__chronicle_projection__(:removed_with) |> Enum.map(&elem(&1, 0))) ++
+          (proj.__chronicle_projection__(:removed_with_join) |> Enum.map(&elem(&1, 0)))
+      end)
+
+    # Collect event types from graph projections
+    graph_event_types = Enum.flat_map(state.graphs, & &1.__chronicle_graph__(:events))
+
+    all_event_types =
+      Enum.uniq(
+        state.event_types ++
+          read_model_event_types ++
+          reducer_event_types ++
+          declarative_projection_event_types ++
+          graph_event_types
+      )
+
+    with :ok <- ensure_event_store(channel, state.event_store),
+         :ok <- ensure_namespace(channel, state.event_store, state.namespace),
+         :ok <- check_drift(channel, state, all_event_types),
+         :ok <-
+           EventTypes.register(channel, state.event_store, all_event_types, state.migrations),
+         :ok <- EventSources.register(channel, state.event_store, state.event_sources),
+         :ok <- register_constraints(channel, state, all_event_types),
+         :ok <- register_read_models(channel, state),
+         :ok <- register_projections(channel, state) do
+      :ok
+    end
+  end
+
+  # Compares the about-to-be-registered artifacts with what the kernel already has before
+  # anything is (re)registered. Stashes findings in the process dictionary (read back in
+  # `handle_info(:register, state)`, which runs in this same process) rather than changing
+  # `register_fun`'s `:ok | {:error, reason}` contract.
+  @doc false
+  def check_drift(_channel, %{drift_policy: :ignore}, _event_type_modules) do
+    Process.put(@drift_findings_key, [])
+    :ok
+  end
+
+  # The check runs once per client start: a completed check (with or without findings) is
+  # remembered, so registration retries do not repeat the kernel calls. An indeterminate
+  # result under `:fail` is not remembered, because it must not stand in for a clean one.
+  def check_drift(channel, state, event_type_modules) do
+    if Process.get(@drift_checked_key) do
+      Process.put(@drift_findings_key, state.drift_findings)
+      apply_drift_policy(state.drift_findings, state.drift_policy)
+    else
+      run_drift_check(channel, state, event_type_modules)
+    end
+  end
+
+  defp run_drift_check(channel, state, event_type_modules) do
+    case detect_drift(channel, state, event_type_modules) do
+      {:ok, findings} ->
+        Process.put(@drift_findings_key, findings)
+        Process.put(@drift_checked_key, true)
+        Enum.each(findings, &log_drift(&1, state))
+        apply_drift_policy(findings, state.drift_policy)
+
+      {:error, reason} ->
+        Process.put(@drift_findings_key, [])
+
+        case state.drift_policy do
+          :fail ->
+            {:error, {:artifact_identity_drift_check_failed, reason}}
+
+          _ ->
+            Process.put(@drift_checked_key, true)
+
+            Logger.warning(
+              "Chronicle artifact identity drift check failed for #{state.event_store}/#{state.namespace}: " <>
+                inspect(reason)
+            )
+
+            :ok
+        end
+    end
+  end
+
+  defp detect_drift(channel, state, event_type_modules) do
+    report =
+      Report.build(%{
+        event_types: event_type_modules,
+        reactors: state.reactors,
+        reducers: state.reducers,
+        projections: state.projections,
+        read_models: state.read_models,
+        # The drift check itself is not where a defaulted id should be warned about again —
+        # client startup already did that when it built its own discovery report.
+        warn_defaulted_ids: false
+      })
+
+    state.drift_detect_fun.(channel, report,
+      event_store: state.event_store,
+      namespace: state.namespace
+    )
+  rescue
+    exception -> {:error, {:exception, exception}}
+  end
+
+  @doc """
+  Decides whether a set of drift findings should block registration under a policy.
+
+  `:fail` blocks when a `:warning`-severity finding exists (an event type or reactor
+  finding); a `:reducer`/`:projection` (`:info`-severity) finding never blocks under any
+  policy. `:ignore` and `:warn` never block — `:ignore` never even reaches here, since
+  `check_drift/3` skips the kernel calls entirely for it. Exposed (not `@doc false`) so it
+  can be exercised directly against fixture findings, under every policy, without a kernel.
+  """
+  @spec apply_drift_policy([Cratis.Chronicle.Discovery.Drift.t()], :ignore | :warn | :fail) ::
+          :ok | {:error, {:artifact_identity_drift, [Cratis.Chronicle.Discovery.Drift.t()]}}
+  def apply_drift_policy(findings, :fail) do
+    if Enum.any?(findings, &(&1.severity == :warning)) do
+      {:error, {:artifact_identity_drift, findings}}
+    else
+      :ok
+    end
+  end
+
+  def apply_drift_policy(_findings, _policy), do: :ok
+
+  defp log_drift(drift, state) do
+    message =
+      "Chronicle artifact identity drift (#{state.event_store}/#{state.namespace}): " <>
+        "[#{drift.severity}] #{drift.kind} #{drift.id} — #{drift.reason}"
+
+    case drift.severity do
+      :info -> Logger.info(message)
+      _ -> Logger.warning(message)
+    end
+  end
+
+  defp ensure_event_store(channel, event_store) do
+    case EventStores.Stub.ensure_event_store(
+           channel,
+           struct(EnsureEventStoreRequest, Name: event_store)
+         ) do
+      {:ok, envelope} ->
+        with {:ok, _} <- WireResult.unwrap(envelope), do: :ok
+
+      {:error, reason} ->
+        {:error, {:ensure_event_store, reason}}
+    end
+  end
+
+  defp ensure_namespace(channel, event_store, namespace) do
+    case Namespaces.Stub.ensure_namespace(
+           channel,
+           struct(EnsureNamespaceRequest, EventStore: event_store, Namespace: namespace)
+         ) do
+      {:ok, envelope} ->
+        with {:ok, _} <- WireResult.unwrap(envelope), do: :ok
+
+      {:error, reason} ->
+        {:error, {:ensure_namespace, reason}}
+    end
+  end
+
+  defp register_constraints(channel, state, event_types) do
+    constraints =
+      Constraints.from_event_types(event_types) ++
+        Constraints.from_constraint_modules(state.constraints)
+
+    case Constraints.register(channel, state.event_store, constraints) do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:register_constraints, reason}}
+    end
+  end
+
+  defp register_read_models(channel, state) do
+    projection_definitions =
+      state.read_models
+      |> Enum.filter(& &1.__chronicle_read_model__(:has_projection?))
+      |> Enum.map(fn rm ->
+        model_id = rm.__chronicle_read_model__(:id)
+
+        struct(ReadModelDefinition,
+          Type: struct(ReadModelType, Identifier: model_id, Generation: 1),
+          ContainerName: model_id,
+          DisplayName: model_id,
+          Sink:
+            struct(SinkDefinition,
+              ConfigurationId: struct(BclGuid),
+              TypeId: sink_type_id(state, rm.__chronicle_read_model__(:passive?))
+            ),
+          Schema: generate_read_model_schema(rm),
+          ObserverType: 2,
+          ObserverIdentifier: model_id,
+          Owner: 2,
+          Source: 1
+        )
+      end)
+
+    reducer_definitions =
+      state.reducers
+      |> Enum.map(fn reducer_module ->
+        model_module = reducer_module.__chronicle_reducer__(:model)
+        model_id = model_module.__chronicle_read_model__(:id)
+        reducer_id = reducer_module.__chronicle_reducer__(:id)
+
+        struct(ReadModelDefinition,
+          Type: struct(ReadModelType, Identifier: model_id, Generation: 1),
+          ContainerName: model_id,
+          DisplayName: model_id,
+          Sink:
+            struct(SinkDefinition,
+              ConfigurationId: struct(BclGuid),
+              TypeId: state.default_sink_type_id
+            ),
+          Schema: generate_read_model_schema(model_module),
+          ObserverType: 1,
+          ObserverIdentifier: reducer_id,
+          Owner: 2,
+          Source: 1
+        )
+      end)
+
+    declarative_projection_definitions =
+      state.projections
+      |> Enum.map(fn proj ->
+        projection_id = proj.__chronicle_projection__(:id)
+        model_module = proj.__chronicle_projection__(:model)
+        model_id = model_module.__chronicle_read_model__(:id)
+
+        struct(ReadModelDefinition,
+          Type: struct(ReadModelType, Identifier: model_id, Generation: 1),
+          ContainerName: model_id,
+          DisplayName: model_id,
+          Sink:
+            struct(SinkDefinition,
+              ConfigurationId: struct(BclGuid),
+              TypeId: sink_type_id(state, proj.__chronicle_projection__(:passive?))
+            ),
+          Schema: generate_read_model_schema(model_module),
+          ObserverType: 2,
+          ObserverIdentifier: projection_id,
+          Owner: 2,
+          Source: 1
+        )
+      end)
+
+    graph_definitions =
+      Enum.map(
+        state.graphs,
+        &DefinitionBuilder.read_model_definition(&1, state.default_graph_sink_type_id)
+      )
+
+    all_definitions =
+      projection_definitions ++
+        reducer_definitions ++ declarative_projection_definitions ++ graph_definitions
+
+    if Enum.empty?(all_definitions) do
+      :ok
+    else
+      request =
+        struct(RegisterManyRequest,
+          EventStore: state.event_store,
+          Owner: 2,
+          ReadModels: all_definitions,
+          Source: 1
+        )
+
+      case ReadModels.Stub.register_many(channel, request) do
+        {:ok, _} -> :ok
+        {:error, reason} -> {:error, {:register_read_models, reason}}
+      end
+    end
+  end
+
+  # Builds the initial model state JSON from struct defaults.
+  # Numeric/boolean defaults (like balance: 0) must be non-null in the JSON so that
+  # Chronicle's PerformAdd/PerformSubtract receive 0.0 instead of null — Convert.ChangeType
+  # throws for null double (a non-nullable CLR value type).
+  defp initial_model_state(module) do
+    if function_exported?(module, :__struct__, 0) do
+      defaults =
+        module.__struct__()
+        |> Map.to_list()
+        |> Enum.reject(fn {k, _} -> k == :__struct__ end)
+        |> Map.new(fn {k, v} -> {Atom.to_string(k), v} end)
+
+      Jason.encode!(defaults)
+    else
+      "{}"
+    end
+  end
+
+  # Read model state is stored with its struct field names (snake_case), so the
+  # schema uses identity key transform. PII-adorned fields carry compliance
+  # metadata into the schema.
+  defp generate_read_model_schema(module) do
+    JsonSchemaGenerator.generate(module, key_transform: :identity)
+  end
+
+  # Passive projections never write to a materialized sink, so they register with the None sink.
+  # This lets the kernel fall through to immediate projection when resolving the instance by key
+  # instead of reading an empty sink and returning null.
+  defp sink_type_id(_state, true), do: WellKnownSinkTypes.none()
+  defp sink_type_id(state, false), do: state.default_sink_type_id
+
+  # Public so the request it sends can be asserted through a fake channel.
+  @doc false
+  def register_projections(_channel, %{read_models: [], projections: [], graphs: []}), do: :ok
+
+  def register_projections(channel, state) do
+    model_bound_entries =
+      state.read_models
+      |> Enum.filter(& &1.__chronicle_read_model__(:has_projection?))
+      |> Enum.map(fn module ->
+        definition =
+          module
+          |> build_projection_definition()
+          |> apply_entering_key_overrides(module.__chronicle_read_model__(:enters_on))
+
+        {module, module, definition, variant_metadata(module, :read_model)}
+      end)
+
+    declarative_entries =
+      Enum.map(state.projections, fn module ->
+        definition =
+          module
+          |> build_declarative_projection_definition()
+          |> apply_entering_key_overrides(module.__chronicle_projection__(:enters_on))
+
+        {module, module.__chronicle_projection__(:model), definition,
+         variant_metadata(module, :projection)}
+      end)
+
+    definitions =
+      Cratis.Chronicle.Projections.VariantReclassifier.apply(
+        model_bound_entries ++ declarative_entries,
+        state.global_handlers
+      ) ++ Enum.map(state.graphs, &DefinitionBuilder.projection_definition/1)
+
+    if Enum.empty?(definitions) do
+      :ok
+    else
+      registrant = Map.get(state, :registrant, "")
+
+      # `FullSet` stays false: the kernel retires what a full set leaves out, and this batch does
+      # not claim to be everything the application ever declared.
+      request =
+        struct(RegisterRequest,
+          EventStore: state.event_store,
+          Owner: 1,
+          Projections: definitions,
+          Registrant: registrant,
+          FullSet: false
+        )
+
+      with {:ok, _} <- Projections.Stub.register(channel, request),
+           :ok <-
+             AcceptedRegistration.wait(
+               channel,
+               state.event_store,
+               registrant,
+               Map.get(state, :accepted_registration, [])
+             ) do
+        Logger.info("Registered #{length(definitions)} projection(s) with Chronicle")
+        :ok
+      else
+        {:error, reason} ->
+          {:error, {:register_projections, reason}}
+      end
+    end
+  end
+
+  # Public so the definition a read model produces can be asserted directly, which is where the
+  # mapping bugs live - the same reason side_effect_operation/2 is reachable from a spec.
+  @doc false
+  def build_projection_definition(read_model_module) do
+    identifier = read_model_module.__chronicle_read_model__(:id)
+    model_name = identifier
+
+    {auto_map, no_auto_map_properties} = read_model_module.__chronicle_read_model__(:no_auto_map)
+
+    auto_map_fields = fn properties, event_module, kind ->
+      with_multi_word_auto_map(
+        properties,
+        event_module,
+        read_model_module,
+        auto_map,
+        no_auto_map_properties,
+        kind
+      )
+    end
+
+    from_entries =
+      read_model_module.__chronicle_read_model__(:from)
+      |> Enum.map(fn {event_module, opts} ->
+        properties = opts |> build_properties() |> auto_map_fields.(event_module, :from)
+
+        key =
+          opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression(read_model_module)
+
+        parent_key = Keyword.get(opts, :parent_key, "")
+
+        struct(KeyValuePair_EventType_FromDefinition,
+          Key: proto_event_type(event_module),
+          Value:
+            struct(FromDefinition,
+              Key: key,
+              Properties: properties,
+              ParentKey: parent_key
+            )
+        )
+      end)
+
+    join_entries =
+      read_model_module.__chronicle_read_model__(:join)
+      |> Enum.map(fn {event_module, opts} ->
+        properties = opts |> build_properties() |> auto_map_fields.(event_module, :join)
+
+        key =
+          opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression(read_model_module)
+
+        # On names the read model property to join on, which keeps its snake_case name.
+        on = opts |> Keyword.fetch!(:on) |> to_string()
+
+        struct(KeyValuePair_EventType_JoinDefinition,
+          Key: proto_event_type(event_module),
+          Value:
+            struct(JoinDefinition,
+              On: on,
+              Key: key,
+              Properties: properties
+            )
+        )
+      end)
+
+    removed_with_entries =
+      read_model_module.__chronicle_read_model__(:removed_with)
+      |> Enum.map(fn {event_module, opts} ->
+        key =
+          opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression(read_model_module)
+
+        parent_key = Keyword.get(opts, :parent_key, "")
+
+        struct(KeyValuePair_EventType_RemovedWithDefinition,
+          Key: proto_event_type(event_module),
+          Value: struct(RemovedWithDefinition, Key: key, ParentKey: parent_key)
+        )
+      end)
+
+    removed_with_join_entries =
+      read_model_module.__chronicle_read_model__(:removed_with_join)
+      |> Enum.map(fn {event_module, opts} ->
+        key =
+          opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression(read_model_module)
+
+        struct(KeyValuePair_EventType_RemovedWithJoinDefinition,
+          Key: proto_event_type(event_module),
+          Value: struct(RemovedWithJoinDefinition, Key: key)
+        )
+      end)
+
+    from_every =
+      case read_model_module.__chronicle_read_model__(:from_every) do
+        [] ->
+          nil
+
+        declarations ->
+          # Every from_every/1 call contributes mappings. Merging them all is what lets a model
+          # declare context capture and property mapping separately instead of silently losing
+          # everything but the first call.
+          struct(FromEveryDefinition,
+            Properties:
+              declarations
+              |> Enum.map(&build_properties/1)
+              |> Enum.reduce(%{}, &Map.merge(&2, &1)),
+            IncludeChildren: Enum.any?(declarations, &Keyword.get(&1, :include_children, false))
+          )
+      end
+
+    struct(ProjectionDefinition,
+      Identifier: identifier,
+      ReadModel: model_name,
+      EventSequenceId: read_model_module.__chronicle_read_model__(:event_sequence),
+      IsActive: not read_model_module.__chronicle_read_model__(:passive?),
+      IsRewindable: read_model_module.__chronicle_read_model__(:rewindable?),
+      From: from_entries,
+      Join: join_entries,
+      RemovedWith: removed_with_entries,
+      RemovedWithJoin: removed_with_join_entries,
+      Children:
+        Cratis.Chronicle.Projections.Children.build_map(
+          read_model_module.__chronicle_read_model__(:children),
+          read_model_module
+        ),
+      All: from_every,
+      AutoMap: auto_map_value(auto_map),
+      NoAutoMapProperties: Enum.map(no_auto_map_properties, &to_string/1),
+      InitialModelState: initial_model_state(read_model_module)
+    )
+  end
+
+  # The kernel distinguishes "never declared" (Inherit) from an explicit Enabled/Disabled, so a
+  # projection that says nothing keeps behaving exactly as it did before this was declarable.
+  defp auto_map_value(:inherit), do: :Inherit
+  defp auto_map_value(:enabled), do: :Enabled
+  defp auto_map_value(:disabled), do: :Disabled
+
+  # Public for the same reason build_projection_definition/1 is.
+  @doc false
+  def build_declarative_projection_definition(projection_module) do
+    projection_id = projection_module.__chronicle_projection__(:id)
+    model_module = projection_module.__chronicle_projection__(:model)
+    model_id = model_module.__chronicle_read_model__(:id)
+
+    {auto_map, no_auto_map_properties} = projection_module.__chronicle_projection__(:no_auto_map)
+
+    auto_map_fields = fn properties, event_module, kind ->
+      with_multi_word_auto_map(
+        properties,
+        event_module,
+        model_module,
+        auto_map,
+        no_auto_map_properties,
+        kind
+      )
+    end
+
+    from_entries =
+      projection_module.__chronicle_projection__(:from)
+      |> Enum.map(fn {event_module, opts} ->
+        properties = opts |> build_properties() |> auto_map_fields.(event_module, :from)
+        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression(model_module)
+        parent_key = Keyword.get(opts, :parent_key, "")
+
+        struct(KeyValuePair_EventType_FromDefinition,
+          Key: proto_event_type(event_module),
+          Value:
+            struct(FromDefinition,
+              Key: key,
+              Properties: properties,
+              ParentKey: parent_key
+            )
+        )
+      end)
+
+    join_entries =
+      projection_module.__chronicle_projection__(:join)
+      |> Enum.map(fn {event_module, opts} ->
+        properties = opts |> build_properties() |> auto_map_fields.(event_module, :join)
+        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression(model_module)
+        # On names the read model property to join on, which keeps its snake_case name.
+        on = opts |> Keyword.fetch!(:on) |> to_string()
+
+        struct(KeyValuePair_EventType_JoinDefinition,
+          Key: proto_event_type(event_module),
+          Value:
+            struct(JoinDefinition,
+              On: on,
+              Key: key,
+              Properties: properties
+            )
+        )
+      end)
+
+    removed_with_entries =
+      projection_module.__chronicle_projection__(:removed_with)
+      |> Enum.map(fn {event_module, opts} ->
+        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression(model_module)
+        parent_key = Keyword.get(opts, :parent_key, "")
+
+        struct(KeyValuePair_EventType_RemovedWithDefinition,
+          Key: proto_event_type(event_module),
+          Value: struct(RemovedWithDefinition, Key: key, ParentKey: parent_key)
+        )
+      end)
+
+    removed_with_join_entries =
+      projection_module.__chronicle_projection__(:removed_with_join)
+      |> Enum.map(fn {event_module, opts} ->
+        key = opts |> Keyword.get(:key, :event_source_id) |> resolve_key_expression(model_module)
+
+        struct(KeyValuePair_EventType_RemovedWithJoinDefinition,
+          Key: proto_event_type(event_module),
+          Value: struct(RemovedWithJoinDefinition, Key: key)
+        )
+      end)
+
+    from_every =
+      case projection_module.__chronicle_projection__(:from_every) do
+        [] ->
+          nil
+
+        declarations ->
+          struct(FromEveryDefinition,
+            Properties:
+              declarations
+              |> Enum.map(&build_properties/1)
+              |> Enum.reduce(%{}, &Map.merge(&2, &1)),
+            IncludeChildren: Enum.any?(declarations, &Keyword.get(&1, :include_children, false))
+          )
+      end
+
+    struct(ProjectionDefinition,
+      Identifier: projection_id,
+      ReadModel: model_id,
+      EventSequenceId: projection_module.__chronicle_projection__(:event_sequence),
+      IsActive: not projection_module.__chronicle_projection__(:passive?),
+      IsRewindable: projection_module.__chronicle_projection__(:rewindable?),
+      From: from_entries,
+      Join: join_entries,
+      RemovedWith: removed_with_entries,
+      RemovedWithJoin: removed_with_join_entries,
+      Children:
+        Cratis.Chronicle.Projections.Children.build_map(
+          projection_module.__chronicle_projection__(:children),
+          model_module
+        ),
+      All: from_every,
+      AutoMap: auto_map_value(auto_map),
+      NoAutoMapProperties: Enum.map(no_auto_map_properties, &to_string/1),
+      InitialModelState: initial_model_state(model_module)
+    )
+  end
+
+  # Resolves what a module declared about being a variant, in the shape
+  # Cratis.Chronicle.Projections.VariantReclassifier expects. Returns nil for an ordinary projection.
+  # Public so this exact resolution can be asserted against directly in a spec.
+  @doc false
+  def variant_metadata(module, kind) do
+    {identity, key, enters_on} =
+      case kind do
+        :read_model ->
+          {module.__chronicle_read_model__(:variant_identity),
+           module.__chronicle_read_model__(:variant_key),
+           module.__chronicle_read_model__(:enters_on)}
+
+        :projection ->
+          {module.__chronicle_projection__(:variant_identity),
+           module.__chronicle_projection__(:variant_key),
+           module.__chronicle_projection__(:enters_on)}
+      end
+
+    if identity do
+      %{
+        identity: identity,
+        key: key,
+        entering_event_types:
+          Enum.map(enters_on, fn {event_module, _opts} -> proto_event_type(event_module) end)
+      }
+    end
+  end
+
+  # An enters_on/2 :key option overrides the correlation key of that entering event's own From
+  # entry, exactly like an ordinary from/2 :key option would. Public for the same reason
+  # build_projection_definition/1 is.
+  @doc false
+  def apply_entering_key_overrides(definition, enters_on_declarations) do
+    Enum.reduce(enters_on_declarations, definition, fn {event_module, opts}, acc ->
+      case Keyword.get(opts, :key) do
+        nil ->
+          acc
+
+        key ->
+          event_type = proto_event_type(event_module)
+          key_expression = resolve_key_expression(key, Map.get(definition, :ReadModel))
+
+          updated_from =
+            Enum.map(Map.get(acc, :From), fn entry ->
+              if Map.get(entry, :Key) == event_type do
+                %{entry | Value: %{Map.get(entry, :Value) | Key: key_expression}}
+              else
+                entry
+              end
+            end)
+
+          %{acc | From: updated_from}
+      end
+    end)
+  end
+
+  # Converts set/add/subtract/count/increment/decrement opts into a Chronicle properties map.
+  # The keys are read model field names (strings), the values are
+  # Chronicle property expressions.
+  #
+  # For increment/decrement with dictionaries keyed by event context:
+  #   increment: [event_counts: {:event_context, :type}]
+  # produces:
+  #   {"event_counts.$eventContext.type", "$increment"}
+  # A set/set_once/add/subtract value of {:entry, key_source, expression} targets one entry of a
+  # dictionary, and remove: [prices: key_source] removes one; see Cratis.Chronicle.Projections.DictionaryKeys.
+  # Public so Cratis.Chronicle.Projections.VariantReclassifier can build a global handler's mapping
+  # entries using exactly the same property-expression rules as an ordinary from/join/from_every.
+  @doc false
+  def build_properties(opts) do
+    set_props = value_properties(opts, :set, &resolve_expression/1)
+    set_once_props = value_properties(opts, :set_once, &"$setOnce(#{resolve_expression(&1)})")
+    add_props = value_properties(opts, :add, &"$add(#{resolve_expression(&1)})")
+    subtract_props = value_properties(opts, :subtract, &"$subtract(#{resolve_expression(&1)})")
+
+    count_fields =
+      case Keyword.get(opts, :count) do
+        nil -> []
+        field when is_atom(field) -> [{to_string(field), "$count"}]
+        fields when is_list(fields) -> Enum.map(fields, &operation_property(&1, "$count"))
+      end
+
+    increment_fields =
+      opts |> Keyword.get(:increment, []) |> Enum.map(&operation_property(&1, "$increment"))
+
+    decrement_fields =
+      opts |> Keyword.get(:decrement, []) |> Enum.map(&operation_property(&1, "$decrement"))
+
+    remove_fields =
+      opts
+      |> Keyword.get(:remove, [])
+      |> Enum.map(fn {field, key_source} ->
+        unless DictionaryKeys.key_source?(key_source) do
+          raise ArgumentError,
+                "remove: #{inspect(field)} needs the key of the entry to remove; " <>
+                  DictionaryKeys.invalid_key_source_message(key_source)
+        end
+
+        {DictionaryKeys.entry_path(field, key_source), "$remove"}
+      end)
+
+    clear_fields =
+      opts
+      |> Keyword.get(:clear, [])
+      |> List.wrap()
+      |> Enum.map(fn field -> {to_string(field), "$null"} end)
+
+    (set_props ++
+       set_once_props ++
+       clear_fields ++
+       remove_fields ++
+       add_props ++
+       subtract_props ++
+       count_fields ++
+       increment_fields ++
+       decrement_fields)
+    |> Map.new()
+  end
+
+  defp value_properties(opts, operation, to_expression) do
+    opts
+    |> Keyword.get(operation, [])
+    |> Enum.map(fn
+      {field, {:entry, key_source, expr}} ->
+        {DictionaryKeys.entry_path(field, key_source), to_expression.(expr)}
+
+      {field, expr} ->
+        {to_string(field), to_expression.(expr)}
+    end)
+  end
+
+  # A count/increment/decrement on a plain field, or on the dictionary entry its key source names.
+  defp operation_property({field, key_source}, expression) do
+    if DictionaryKeys.key_source?(key_source) do
+      {DictionaryKeys.entry_path(field, key_source), expression}
+    else
+      {to_string(field), expression}
+    end
+  end
+
+  defp operation_property(field, expression), do: {to_string(field), expression}
+
+  # Atoms name event fields. Events travel as camelCase JSON (see
+  # Cratis.Chronicle.EventSequences.EventLog), so a multi-word field such as :owner_name has to be
+  # sent as "ownerName" for the kernel to find it. Booleans are atoms too, but they are
+  # constants, not field names. Strings are explicit Chronicle expressions and pass through.
+  defp resolve_expression(:event_source_id), do: "$eventSourceId"
+  # The kernel has no `$occurred` expression (it rejects the definition, so registration never
+  # completes); the occurred time is an event context property.
+  defp resolve_expression(:occurred), do: "$eventContext(Occurred)"
+  defp resolve_expression("$occurred"), do: "$eventContext(Occurred)"
+  # Bare `:caused_by` stays an event field (`causedBy`) like any other atom; the identity that
+  # caused the event is only reachable through the explicit `{:caused_by, property}` form.
+  defp resolve_expression({:caused_by, :subject}), do: "$causedBy(subject)"
+  defp resolve_expression({:caused_by, :name}), do: "$causedBy(name)"
+  defp resolve_expression({:caused_by, :user_name}), do: "$causedBy(userName)"
+
+  defp resolve_expression({:caused_by, property}) do
+    raise ArgumentError,
+          "{:caused_by, #{inspect(property)}} is not supported; use :subject, :name or :user_name"
+  end
+
+  defp resolve_expression(bool) when is_boolean(bool), do: "$value(#{bool})"
+  defp resolve_expression(atom) when is_atom(atom), do: atom |> Atom.to_string() |> camelize()
+  defp resolve_expression(int) when is_integer(int), do: "$value(#{int})"
+  defp resolve_expression(float) when is_float(float), do: "$value(#{float})"
+  defp resolve_expression(str) when is_binary(str), do: str
+
+  # The kernel's AutoMap matches event and read model properties by name. Read models are stored
+  # with their snake_case field names while events travel as camelCase, so AutoMap only ever matches
+  # single-word names. For multi-word fields the read model shares with the event, add the mapping
+  # AutoMap would have made, following the kernel's own rules (ProjectionFactory in Chronicle):
+  # nothing for an aggregate-only from (every mapping is $count/$increment/$decrement/$add/$subtract),
+  # never over an explicit mapping or a no_auto_map field, and for joins never from an event field an
+  # explicit mapping already reads.
+  @aggregate_expressions ["$count", "$increment", "$decrement", "$add", "$subtract"]
+
+  @doc false
+  def with_multi_word_auto_map(
+        properties,
+        event_module,
+        model_module,
+        auto_map,
+        excluded,
+        kind \\ :from
+      ) do
+    if auto_map == :disabled or (kind == :from and aggregate_only?(properties)) do
+      properties
+    else
+      excluded = MapSet.new(excluded, &to_string/1)
+
+      consumed_event_fields =
+        if kind == :join, do: MapSet.new(Map.values(properties)), else: MapSet.new()
+
+      (struct_fields(model_module) -- [:__struct__])
+      |> Enum.filter(&(&1 in struct_fields(event_module)))
+      |> Enum.map(&Atom.to_string/1)
+      |> Enum.filter(&String.contains?(&1, "_"))
+      |> Enum.reject(fn field ->
+        Map.has_key?(properties, field) or MapSet.member?(excluded, field) or
+          MapSet.member?(consumed_event_fields, camelize(field))
+      end)
+      |> Enum.reduce(properties, fn field, acc -> Map.put(acc, field, camelize(field)) end)
+    end
+  end
+
+  defp aggregate_only?(properties) do
+    map_size(properties) > 0 and
+      Enum.all?(Map.values(properties), fn expression ->
+        is_binary(expression) and
+          Enum.any?(@aggregate_expressions, &String.starts_with?(expression, &1))
+      end)
+  end
+
+  defp struct_fields(module) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :__struct__, 0) do
+      module.__struct__() |> Map.keys()
+    else
+      []
+    end
+  end
+
+  @doc false
+  def camelize(name) when is_binary(name) do
+    case String.split(name, "_") do
+      [single] -> single
+      [head | tail] -> head <> Enum.map_join(tail, &String.capitalize/1)
+    end
+  end
+
+  @doc false
+  def resolve_key_expression(expr, read_model) do
+    resolve_key_expression(expr)
+  rescue
+    error in ArgumentError ->
+      raise ArgumentError, "Invalid key for read model #{inspect(read_model)}: #{error.message}"
+  end
+
+  @doc false
+  def resolve_key_expression({:composite, [_ | _] = parts}) when is_list(parts) do
+    "$composite(#{Enum.map_join(parts, ",", &composite_key_part/1)})"
+  end
+
+  def resolve_key_expression({:composite, parts}) do
+    raise ArgumentError,
+          "composite keys require a non-empty list of {name, part} pairs; got #{inspect(parts)}"
+  end
+
+  def resolve_key_expression({:event_context, property}) when is_binary(property) do
+    # EventContextPropertyExpressionResolver in the kernel accepts [A-Za-z.()]*.
+    unless Regex.match?(~r/\A[A-Za-z.()]*\z/, property) do
+      raise ArgumentError,
+            "event-context key path #{inspect(property)} must contain only letters, dots and parentheses"
+    end
+
+    "$eventContext(#{property})"
+  end
+
+  def resolve_key_expression({:event_context, property}) do
+    raise ArgumentError,
+          "event-context key paths must be strings such as \"Occurred.Week\"; got #{inspect(property)}"
+  end
+
+  def resolve_key_expression(expr), do: resolve_expression(expr)
+
+  defp composite_key_part({_, {:composite, _}} = part) do
+    raise ArgumentError, "nested composite keys are not supported; got key part #{inspect(part)}"
+  end
+
+  defp composite_key_part({name, expr} = part) when is_binary(name) or is_atom(name) do
+    "#{name}=#{resolve_key_expression(expr)}"
+  rescue
+    error in ArgumentError ->
+      raise ArgumentError, "Invalid composite key part #{inspect(part)}: #{error.message}"
+
+    FunctionClauseError ->
+      raise ArgumentError, "Invalid composite key part #{inspect(part)}: unsupported expression"
+  end
+
+  defp composite_key_part(part) do
+    raise ArgumentError,
+          "composite key parts must be {name, part} pairs with string or atom names; got #{inspect(part)}"
+  end
+
+  # Public so Cratis.Chronicle.Projections.VariantReclassifier can build the same EventType identifiers
+  # used to key From/Join/RemovedWith entries, so its lookups compare equal.
+  @doc false
+  def proto_event_type(event_module) do
+    struct(ProtoEventType,
+      Id: event_module.__chronicle_event_type__(:id),
+      Generation: event_module.__chronicle_event_type__(:generation)
+    )
+  end
+
+  defp cancel_timer(nil), do: :ok
+  defp cancel_timer(timer), do: Process.cancel_timer(timer)
+end

@@ -3,7 +3,7 @@ title: Chronicle Elixir client
 description: The cratis_chronicle Hex package, its requirements and known limitations, and where to find Elixir setup and API details.
 ---
 
-`cratis_chronicle` is the Elixir client for Chronicle. You declare events, read models, reactors, reducers and seeders as modules with `use` macros, start `Chronicle.Client` in your supervision tree, and append and query with plain functions that return `:ok`, `{:ok, value}` or `{:error, reason}`.
+`cratis_chronicle` is the Elixir client for Chronicle. You declare events, read models, reactors, reducers and seeders as modules with `use` macros, start `Cratis.Chronicle.Client` in your supervision tree, and append and query with plain functions that return `:ok`, `{:ok, value}` or `{:error, reason}`.
 
 Shared Chronicle concepts and workflows live in the main Chronicle docs and show an Elixir tab where the code differs by client. This section covers what is specific to Elixir: Mix setup, supervision, connections, process-scoped context, and Elixir-only APIs.
 
@@ -47,7 +47,7 @@ See [Limits and gaps](limits-and-gaps.md) for the kernel limits, the consistency
 - [Get started](get-started.md): install the client, connect to a development kernel, append an event and read a read model
 - [Connections](connections/index.md): connection strings, credentials, TLS, and how the client recovers from dropped connections
 - [Context management](context.md): process-scoped correlation ids, identities, and causation chains
-- [Concepts](concepts.md): strongly typed values and PII classification with `Chronicle.Concept`
+- [Concepts](concepts.md): strongly typed values and PII classification with `Cratis.Chronicle.Concept`
 - [Graph projections](graph-projections.md): projecting events onto nodes and edges of a property graph
 - [Seeding](seeding.md): seeders and when seed data is appended
 - [Sinks](sinks.md): choosing where read models are stored, and running several clients

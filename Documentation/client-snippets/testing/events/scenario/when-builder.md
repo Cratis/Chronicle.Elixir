@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.TestingScenarioWhenAuthorRegistered do
-  use Chronicle.Events.EventType, id: "testing-scenario-when-author-registered"
+  use Cratis.Chronicle.Events.EventType, id: "testing-scenario-when-author-registered"
 
   unique(:name, name: "TestingScenarioUniqueAuthorName")
 
@@ -8,11 +8,11 @@ defmodule MyApp.Events.TestingScenarioWhenAuthorRegistered do
 end
 
 defmodule MyApp.TestingScenarioWhenTest do
-  use Chronicle.Testing.Case, event_types: [MyApp.Events.TestingScenarioWhenAuthorRegistered]
+  use Cratis.Chronicle.Testing.Case, event_types: [MyApp.Events.TestingScenarioWhenAuthorRegistered]
 
-  import Chronicle.Testing.Assertions
+  import Cratis.Chronicle.Testing.Assertions
 
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.TestingScenarioWhenAuthorRegistered
 
   test "registering an existing name under a new event source is rejected", %{chronicle: client} do

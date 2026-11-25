@@ -1,24 +1,24 @@
 ```elixir title="Projection with children"
 defmodule MyApp.Events.GroupCreatedForChildren do
-  use Chronicle.Events.EventType, id: "group-created-for-children"
+  use Cratis.Chronicle.Events.EventType, id: "group-created-for-children"
 
   defstruct [:name, :description]
 end
 
 defmodule MyApp.Events.UserAddedToGroupForChildren do
-  use Chronicle.Events.EventType, id: "user-added-to-group-for-children"
+  use Cratis.Chronicle.Events.EventType, id: "user-added-to-group-for-children"
 
   defstruct [:user_id, :role]
 end
 
 defmodule MyApp.Events.UserRoleChangedForChildren do
-  use Chronicle.Events.EventType, id: "user-role-changed-for-children"
+  use Cratis.Chronicle.Events.EventType, id: "user-role-changed-for-children"
 
   defstruct [:user_id, :role]
 end
 
 defmodule MyApp.Events.UserRemovedFromGroupForChildren do
-  use Chronicle.Events.EventType, id: "user-removed-from-group-for-children"
+  use Cratis.Chronicle.Events.EventType, id: "user-removed-from-group-for-children"
 
   defstruct [:user_id]
 end
@@ -28,14 +28,14 @@ defmodule MyApp.ReadModels.GroupMemberForChildren do
 end
 
 defmodule MyApp.ReadModels.GroupForChildren do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [members: {:list, MyApp.ReadModels.GroupMemberForChildren}]
 
   defstruct name: nil, description: nil, members: []
 end
 
 defmodule MyApp.Projections.GroupProjectionForChildren do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.GroupForChildren
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.GroupForChildren
 
   alias MyApp.Events.{
     GroupCreatedForChildren,

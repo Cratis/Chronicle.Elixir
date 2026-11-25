@@ -1,24 +1,24 @@
 ```elixir
 defmodule MyApp.Events.CapturesIndexCustomerChanged do
-  use Chronicle.Events.EventType, id: "CustomerChanged"
+  use Cratis.Chronicle.Events.EventType, id: "CustomerChanged"
 
   defstruct [:first_name, :last_name]
 end
 
 defmodule MyApp.Events.CapturesIndexBillingAddressChanged do
-  use Chronicle.Events.EventType, id: "BillingAddressChanged"
+  use Cratis.Chronicle.Events.EventType, id: "BillingAddressChanged"
 
   defstruct [:street]
 end
 
 defmodule MyApp.Events.CapturesIndexItemAdded do
-  use Chronicle.Events.EventType, id: "ItemAdded"
+  use Cratis.Chronicle.Events.EventType, id: "ItemAdded"
 
   defstruct [:line_number]
 end
 
 defmodule MyApp.Captures.CapturesIndexCustomerCapture do
-  use Chronicle.Captures.Capture, name: "CustomerCapture"
+  use Cratis.Chronicle.Captures.Capture, name: "CustomerCapture"
 
   alias MyApp.Events.{
     CapturesIndexBillingAddressChanged,

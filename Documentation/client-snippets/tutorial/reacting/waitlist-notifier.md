@@ -5,7 +5,7 @@ defmodule MyApp.NotificationService do
 end
 
 defmodule MyApp.Reactors.WaitlistNotifier do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.BookReturned
   alias MyApp.NotificationService

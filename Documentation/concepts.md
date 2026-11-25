@@ -1,6 +1,6 @@
 ---
 title: Concepts
-description: Give Elixir domain values their own types with Chronicle.Concept, and classify them as PII once for every event and read model.
+description: Give Elixir domain values their own types with Cratis.Chronicle.Concept, and classify them as PII once for every event and read model.
 ---
 
 A `String.t()` is a `String.t()` is a `String.t()`. Nothing stops an employee id
@@ -9,21 +9,21 @@ sitting in an event field with no signal at all that it needs to be
 encrypted. Both compile. Both look fine in code review. The bug — or the
 compliance gap — surfaces later, in production.
 
-`Chronicle.Concept` gives a domain value a type of its own: a small wrapper
+`Cratis.Chronicle.Concept` gives a domain value a type of its own: a small wrapper
 struct that declares what the value *is*, and, when it matters, that it is
 personally identifiable information Chronicle should protect.
 
 ## Declaring one
 
-Use `Chronicle.Concept` in a module and declare the primitive type it wraps:
+Use `Cratis.Chronicle.Concept` in a module and declare the primitive type it wraps:
 
 ```elixir
 defmodule MyApp.PersonName do
-  use Chronicle.Concept, type: :string
+  use Cratis.Chronicle.Concept, type: :string
 end
 
 defmodule MyApp.Age do
-  use Chronicle.Concept, type: :integer
+  use Cratis.Chronicle.Concept, type: :integer
 end
 ```
 
@@ -42,13 +42,13 @@ Use it wherever a raw value used to sit, as the **default value** of a
 
 ```elixir
 defmodule MyApp.Events.EmployeeRegistered do
-  use Chronicle.Events.EventType, id: "employee-registered"
+  use Cratis.Chronicle.Events.EventType, id: "employee-registered"
 
   defstruct name: %MyApp.PersonName{}, department: ""
 end
 ```
 
-The default matters, not just as a starting value: `Chronicle.Schemas.JsonSchemaGenerator`
+The default matters, not just as a starting value: `Cratis.Chronicle.Schemas.JsonSchemaGenerator`
 reads struct field defaults to build the JSON schema Chronicle registers, so
 a field's default is also how the generator learns the field's type. A field
 that should be recognized as a `MyApp.PersonName` needs `%MyApp.PersonName{}`
@@ -74,12 +74,12 @@ and its `ConceptTypeAdapterFactory`, and C#'s `ConceptAs<T>`.
 The most useful thing a concept does is carry its compliance classification
 with it. Declare `pii/0,1` once, on the concept, and every event or read
 model field that uses it is encrypted automatically — no need to remember
-`Chronicle.Compliance.pii/1,2` on every event that happens to carry the
+`Cratis.Chronicle.Compliance.pii/1,2` on every event that happens to carry the
 value:
 
 ```elixir
 defmodule MyApp.PersonName do
-  use Chronicle.Concept, type: :string
+  use Cratis.Chronicle.Concept, type: :string
   pii("Legal name of the data subject")
 end
 ```
@@ -89,14 +89,14 @@ PII — the legal basis or retention period, for example. It is stored in the
 generated schema for compliance tooling to read; it plays no part in
 encryption.
 
-`Chronicle.Schemas.JsonSchemaGenerator` resolves PII from two places, and
+`Cratis.Chronicle.Schemas.JsonSchemaGenerator` resolves PII from two places, and
 applies both consistently across event type registration and read model
 registration:
 
 * **Property-level** — `pii(:field, details)` declared on the event type or
   read model module itself, exactly as before.
 * **Type-level** — a field whose default value is an instance of a
-  `Chronicle.Concept` module that declared `pii/0,1` on itself.
+  `Cratis.Chronicle.Concept` module that declared `pii/0,1` on itself.
 
 The generator also **descends into nested structs**, so a concept does not
 have to sit directly on an event or read model field — it is still found
@@ -113,7 +113,7 @@ compliance metadata) becomes the schema for every item:
 
 ```elixir
 defmodule MyApp.Events.EmployeeRegistered do
-  use Chronicle.Events.EventType, id: "employee-registered-with-aliases"
+  use Cratis.Chronicle.Events.EventType, id: "employee-registered-with-aliases"
 
   defstruct name: %MyApp.PersonName{}, aliases: [%MyApp.PersonName{}]
 end
@@ -133,7 +133,7 @@ A concept can also stand in for a Chronicle event source identifier:
 
 ```elixir
 defmodule MyApp.EmployeeId do
-  use Chronicle.Concept, type: :uuid, event_source_id: true
+  use Cratis.Chronicle.Concept, type: :uuid, event_source_id: true
 end
 ```
 
@@ -145,7 +145,7 @@ mirroring the C# client's `PIINotSupportedOnEventSourceId`:
 
 ```elixir
 defmodule MyApp.EmployeeId do
-  use Chronicle.Concept, type: :uuid, event_source_id: true
+  use Cratis.Chronicle.Concept, type: :uuid, event_source_id: true
   # Raises ArgumentError at compile time.
   pii()
 end

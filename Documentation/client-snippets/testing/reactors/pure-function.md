@@ -1,21 +1,21 @@
 ```elixir
 defmodule MyApp.Events.TestingPureVibeCancelled do
-  use Chronicle.Events.EventType, id: "testing-pure-function-vibe-cancelled"
+  use Cratis.Chronicle.Events.EventType, id: "testing-pure-function-vibe-cancelled"
 
   defstruct [:host]
 end
 
 defmodule MyApp.Events.TestingPureCreateNotification do
-  use Chronicle.Events.EventType, id: "testing-pure-function-create-notification"
+  use Cratis.Chronicle.Events.EventType, id: "testing-pure-function-create-notification"
 
   defstruct [:host]
 end
 
 # The reactor returns the notification event as a side effect, so its logic is a
-# pure function of (event, context) — no call to Chronicle.EventSequences.EventLog
+# pure function of (event, context) — no call to Cratis.Chronicle.EventSequences.EventLog
 # and no client needed to exercise it.
 defmodule MyApp.Reactors.TestingPureCancellationReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.{TestingPureCreateNotification, TestingPureVibeCancelled}
 
@@ -29,7 +29,7 @@ end
 defmodule MyApp.TestingPureFunctionTest do
   use ExUnit.Case, async: true
 
-  alias Chronicle.Events.EventContext
+  alias Cratis.Chronicle.Events.EventContext
   alias MyApp.Events.{TestingPureCreateNotification, TestingPureVibeCancelled}
   alias MyApp.Reactors.TestingPureCancellationReactor
 

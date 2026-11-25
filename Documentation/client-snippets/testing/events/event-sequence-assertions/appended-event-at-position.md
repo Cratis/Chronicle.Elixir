@@ -1,21 +1,21 @@
 ```elixir
 defmodule MyApp.Events.TestingSeqAssertPositionAuthorRegistered do
-  use Chronicle.Events.EventType, id: "testing-seq-assert-position-author-registered"
+  use Cratis.Chronicle.Events.EventType, id: "testing-seq-assert-position-author-registered"
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.TestingSeqAssertPositionBookAdded do
-  use Chronicle.Events.EventType, id: "testing-seq-assert-position-book-added"
+  use Cratis.Chronicle.Events.EventType, id: "testing-seq-assert-position-book-added"
 
   defstruct [:title]
 end
 
 defmodule MyApp.TestingSeqAssertAppendedEventAtPositionTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [MyApp.Events.TestingSeqAssertPositionAuthorRegistered, MyApp.Events.TestingSeqAssertPositionBookAdded]
 
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.{TestingSeqAssertPositionAuthorRegistered, TestingSeqAssertPositionBookAdded}
 
   test "each event sits at the sequence number it was appended at", %{chronicle: client} do
@@ -24,7 +24,7 @@ defmodule MyApp.TestingSeqAssertAppendedEventAtPositionTest do
     :ok = EventLog.append(author_id, %TestingSeqAssertPositionAuthorRegistered{name: "Jane Smith"}, client: client)
     :ok = EventLog.append(author_id, %TestingSeqAssertPositionBookAdded{title: "Clean Code"}, client: client)
 
-    appended = Chronicle.Testing.appended_events(client, author_id)
+    appended = Cratis.Chronicle.Testing.appended_events(client, author_id)
 
     assert [
              %{event: %TestingSeqAssertPositionAuthorRegistered{}, context: %{sequence_number: 0}},

@@ -1,14 +1,14 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.GraphFixtures.Snapshot do
+defmodule Cratis.Chronicle.GraphFixtures.Snapshot do
   @moduledoc false
 
   # Renders what a graph registers - the read model it is stored as and the projection that
   # fills it - as plain, JSON-comparable data with the wire names of the contract, so the
   # definition can be compared with the one the .NET client builds for the same graph.
 
-  alias Chronicle.Graphs.DefinitionBuilder
+  alias Cratis.Chronicle.Graphs.DefinitionBuilder
 
   def of(graph, sink_type_id \\ "Neo4j") do
     read_model = DefinitionBuilder.read_model_definition(graph, sink_type_id)

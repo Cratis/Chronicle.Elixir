@@ -10,7 +10,7 @@ An interactive, employee-focused console application built on the Chronicle Elix
 - Reducer-backed `EmployeeState` and `Customer` read models
 - Reacting to events in `HrNotificationReactor`, which prints console notifications
 - Model-bound constraints for unique employee hires and case-insensitive unique email addresses
-- Transactional multi-employee updates through `Chronicle.Transactions.UnitOfWork`
+- Transactional multi-employee updates through `Cratis.Chronicle.Transactions.UnitOfWork`
 - Process-scoped identity and causation, with a switchable acting user
 - A customer compliance walkthrough with PII-marked fields, redaction, and GDPR erasure
 - Registering an external service and renaming an identity

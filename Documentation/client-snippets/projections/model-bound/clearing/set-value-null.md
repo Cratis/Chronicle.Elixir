@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.MbClearingSetValueNullNoted do
-  use Chronicle.Events.EventType, id: "mb-clearing-set-value-null-noted"
+  use Cratis.Chronicle.Events.EventType, id: "mb-clearing-set-value-null-noted"
 
   defstruct [:note]
 end
 
 defmodule MyApp.Events.MbClearingSetValueNullCleared do
-  use Chronicle.Events.EventType, id: "mb-clearing-set-value-null-cleared"
+  use Cratis.Chronicle.Events.EventType, id: "mb-clearing-set-value-null-cleared"
 
   defstruct []
 end
 
 defmodule MyApp.ReadModels.MbClearingSetValueNullProject do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct project_id: nil, note: nil
 

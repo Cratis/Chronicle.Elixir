@@ -1,9 +1,9 @@
 ---
 title: Behavior patterns
-description: Query the behavior patterns Chronicle mined from event history to learn what a scope usually does, using the Elixir Chronicle.Patterns API.
+description: Query the behavior patterns Chronicle mined from event history to learn what a scope usually does, using the Elixir Cratis.Chronicle.Patterns API.
 ---
 
-`Chronicle.Patterns` provides an idiomatic Elixir API over the behavior patterns Chronicle mines from the event history of an event store — recurring combinations of facets (`Day`, `TimeBucket`, `CommandType`, `AggregateType`, and so on) that survived its support and confidence thresholds.
+`Cratis.Chronicle.Patterns` provides an idiomatic Elixir API over the behavior patterns Chronicle mines from the event history of an event store — recurring combinations of facets (`Day`, `TimeBucket`, `CommandType`, `AggregateType`, and so on) that survived its support and confidence thresholds.
 
 An empty result from any of these functions is an answer, not a failure: it says the scope has no established behavior for the asked context. Nothing is invented to fill the gap, so a caller can treat "no patterns" as "do not claim to know".
 
@@ -12,30 +12,30 @@ An empty result from any of these functions is an answer, not a failure: it says
 The question an application actually has is usually "what does this person usually do right now" — not an arbitrary facet combination. `get_patterns_at/3` is that question:
 
 ```elixir
-{:ok, patterns} = Chronicle.Patterns.get_patterns_at("user-42")
+{:ok, patterns} = Cratis.Chronicle.Patterns.get_patterns_at("user-42")
 ```
 
 `Day` and `TimeBucket` are derived from the moment using its own offset, not UTC, with the same rule the kernel used when it mined the patterns — a scope's established morning behavior is asked about in their own morning, wherever they are. The moment defaults to now; pass one explicitly to ask about a different time:
 
 ```elixir
-{:ok, patterns} = Chronicle.Patterns.get_patterns_at("user-42", tomorrow_morning)
+{:ok, patterns} = Cratis.Chronicle.Patterns.get_patterns_at("user-42", tomorrow_morning)
 ```
 
 Narrow the question with more of the situation using `:also_constraining` — asking about a moment and asking about a kind of work are the same call rather than two competing ones:
 
 ```elixir
 {:ok, patterns} =
-  Chronicle.Patterns.get_patterns_at(
+  Cratis.Chronicle.Patterns.get_patterns_at(
     "user-42",
     nil,
-    also_constraining: %{Chronicle.Patterns.FacetName.aggregate_type() => "Invoice"}
+    also_constraining: %{Cratis.Chronicle.Patterns.FacetName.aggregate_type() => "Invoice"}
   )
 ```
 
-A result names the action it answers for through `Chronicle.Patterns.FacetName.command_type()`:
+A result names the action it answers for through `Cratis.Chronicle.Patterns.FacetName.command_type()`:
 
 ```elixir
-action = pattern.facets[Chronicle.Patterns.FacetName.command_type()]
+action = pattern.facets[Cratis.Chronicle.Patterns.FacetName.command_type()]
 ```
 
 ## The low-level facet-set query
@@ -44,12 +44,12 @@ action = pattern.facets[Chronicle.Patterns.FacetName.command_type()]
 
 ```elixir
 context = %{
-  Chronicle.Patterns.FacetName.day() => "Monday",
-  Chronicle.Patterns.FacetName.time_bucket() => "Morning"
+  Cratis.Chronicle.Patterns.FacetName.day() => "Monday",
+  Cratis.Chronicle.Patterns.FacetName.time_bucket() => "Morning"
 }
 
-{:ok, patterns} = Chronicle.Patterns.get_patterns("user-42", context)
-{:ok, actions} = Chronicle.Patterns.get_usual_actions("user-42", context)
+{:ok, patterns} = Cratis.Chronicle.Patterns.get_patterns("user-42", context)
+{:ok, actions} = Cratis.Chronicle.Patterns.get_usual_actions("user-42", context)
 ```
 
 `get_patterns/3` returns patterns that describe a situation; `get_usual_actions/3` returns the ones that say what is done in it, at most one answer per action.
@@ -57,13 +57,13 @@ context = %{
 ## Inspecting what has been mined
 
 ```elixir
-{:ok, patterns} = Chronicle.Patterns.get_patterns_for_scope("user-42")
-{:ok, scopes} = Chronicle.Patterns.get_scopes()
+{:ok, patterns} = Cratis.Chronicle.Patterns.get_patterns_for_scope("user-42")
+{:ok, scopes} = Cratis.Chronicle.Patterns.get_scopes()
 ```
 
 ## The time bucket rule
 
-`Chronicle.Patterns.time_bucket/1` exposes the same part-of-day rule the kernel mined with, so an application never writes its own copy of it — getting it wrong means asking about a slot the mining never used, which looks exactly like "nothing is established here":
+`Cratis.Chronicle.Patterns.time_bucket/1` exposes the same part-of-day rule the kernel mined with, so an application never writes its own copy of it — getting it wrong means asking about a slot the mining never used, which looks exactly like "nothing is established here":
 
 | Hours | Bucket |
 | --- | --- |
@@ -75,14 +75,14 @@ context = %{
 | 22:00–05:00 | `:night` |
 
 ```elixir
-Chronicle.Patterns.time_bucket(DateTime.utc_now())
+Cratis.Chronicle.Patterns.time_bucket(DateTime.utc_now())
 ```
 
 ## Options
 
 Every function accepts:
 
-- `:client` — the client name (default: `Chronicle.Client`)
+- `:client` — the client name (default: `Cratis.Chronicle.Client`)
 - `:namespace` — overrides the client's configured namespace
 - `:minimum_confidence` — the lowest confidence (`0.0`–`1.0`) an answer may hold; defaults to the server's configured threshold
 - `:max_results` — the largest number of answers to return; defaults to the server's default

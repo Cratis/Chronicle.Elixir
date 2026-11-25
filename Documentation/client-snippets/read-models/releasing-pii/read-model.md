@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.ReleasingPiiSupportTicketOpened do
-  use Chronicle.Events.EventType, id: "releasing-pii-support-ticket-opened"
+  use Cratis.Chronicle.Events.EventType, id: "releasing-pii-support-ticket-opened"
 
   defstruct [:customer_id, :requester_name]
 end
 
 defmodule MyApp.ReadModels.ReleasingPiiSupportTicket do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct [:id, :customer_id, :requester_name]
 
@@ -15,7 +15,7 @@ defmodule MyApp.ReadModels.ReleasingPiiSupportTicket do
 end
 
 defmodule MyApp.Reducers.ReleasingPiiSupportTicketReducer do
-  use Chronicle.Reducers.Reducer, model: MyApp.ReadModels.ReleasingPiiSupportTicket
+  use Cratis.Chronicle.Reducers.Reducer, model: MyApp.ReadModels.ReleasingPiiSupportTicket
 
   alias MyApp.Events.ReleasingPiiSupportTicketOpened
 
