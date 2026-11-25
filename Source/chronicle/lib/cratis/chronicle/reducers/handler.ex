@@ -78,6 +78,7 @@ defmodule Cratis.Chronicle.Reducers.Handler do
 
     state = %{
       module: module,
+      client: client,
       connection: Keyword.fetch!(opts, :connection),
       lifecycle: Keyword.get(opts, :lifecycle),
       event_store: Keyword.fetch!(opts, :event_store),
