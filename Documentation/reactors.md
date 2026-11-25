@@ -29,7 +29,7 @@ handler:
 
 ```elixir
 defmodule MyApp.Reactors.OrderNotifier do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.{OrderPlaced, OrderConfirmationQueued}
 
@@ -44,7 +44,7 @@ end
 
 Return a list of events to append them all atomically to that same event source. To target
 a **different** event source, wrap the event in a
-`Chronicle.EventSequences.EventForEventSourceId`; a list of these (optionally mixed with
+`Cratis.Chronicle.EventSequences.EventForEventSourceId`; a list of these (optionally mixed with
 bare event structs, which are normalized to the triggering event source) is appended
 atomically across all their event source ids in one call.
 
@@ -59,10 +59,10 @@ and `[Replay]`.
 
 ```elixir
 # Never replayed: registered with the kernel as not replayable.
-use Chronicle.Reactors.Reactor, once_only: true
+use Cratis.Chronicle.Reactors.Reactor, once_only: true
 
 # Replayable, but these events are skipped while replaying.
-use Chronicle.Reactors.Reactor, once_only: [MyApp.Events.OrderShipped]
+use Cratis.Chronicle.Reactors.Reactor, once_only: [MyApp.Events.OrderShipped]
 ```
 
 While a replay is running `context.replaying?` is `true`. Define the optional `handle_replay/2`
@@ -88,7 +88,7 @@ deployed. `once_only` does not prevent that, because it only excludes replay. Se
 event sequence and observes only what is appended afterwards:
 
 ```elixir
-use Chronicle.Reactors.Reactor, start_at_tail: true
+use Cratis.Chronicle.Reactors.Reactor, start_at_tail: true
 ```
 
 The option only affects the first registration: a reactor that already has a position keeps it, so
@@ -99,18 +99,18 @@ and the reactor catches up from the beginning.
 
 ## Pinning the id
 
-`use Chronicle.Reactors.Reactor` defaults the reactor's id to its full module name. Renaming
+`use Cratis.Chronicle.Reactors.Reactor` defaults the reactor's id to its full module name. Renaming
 or moving the module then changes that id, and Chronicle treats it as a *different* reactor —
 its observation position resets, replaying events the previous name had already handled.
 Pin the id explicitly so the module can be renamed or moved freely:
 
 ```elixir
-use Chronicle.Reactors.Reactor, id: "order-notifier"
+use Cratis.Chronicle.Reactors.Reactor, id: "order-notifier"
 ```
 
 A reactor relying on the module-name default gets a one-time warning (per module, for the life
 of the BEAM node) from [discovery](./discovery.md), naming the module and showing this fix. Pass
-`warn_defaulted_ids: false` to `Chronicle.Client` to suppress it. See
+`warn_defaulted_ids: false` to `Cratis.Chronicle.Client` to suppress it. See
 [Discovery and artifact identity drift](./discovery.md).
 
 ## Delivery identity
@@ -141,7 +141,7 @@ optional. Mirrors C#'s `ICanBeNotifiedWhenReplay` / `ICanBeNotifiedWhenPartition
 
 ```elixir
 defmodule MyApp.Reactors.ReplayAwareNotifier do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   require Logger
 
@@ -175,7 +175,7 @@ Set `generation_delivery: :pinned` when the handler is written against an **olde
 must see events exactly as that generation was appended, instead of upgraded to the current one:
 
 ```elixir
-use Chronicle.Reactors.Reactor, generation_delivery: :pinned
+use Cratis.Chronicle.Reactors.Reactor, generation_delivery: :pinned
 ```
 
 `context.appended_generation` then tells you which generation was actually appended (`0` means
@@ -184,14 +184,14 @@ unknown — an older kernel, or an event appended outside a registered event sou
 A client-wide default applies to every reactor that doesn't set its own `:generation_delivery`:
 
 ```elixir
-{Chronicle.Client,
+{Cratis.Chronicle.Client,
   ...
   event_generation_delivery: :pinned}
 ```
 
 A reactor's own option always wins over the client default. With `:pinned`, a reactor handling two
 generations of the same event type id has no single generation to pin to and raises
-`Chronicle.Observers.MultipleGenerationsOfEventTypeInObserver` on start.
+`Cratis.Chronicle.Observers.MultipleGenerationsOfEventTypeInObserver` on start.
 
 ## Handling events in batches
 
@@ -202,14 +202,14 @@ source.
 
 A **batch function** is called once per page instead, with every event of the types it observes.
 Declare it with one `@observes` attribute per event type, just before the function, and
-pattern-match on the `{event, context}` pairs of the `Chronicle.Observers.EventBatch` it
+pattern-match on the `{event, context}` pairs of the `Cratis.Chronicle.Observers.EventBatch` it
 receives:
 
 ```elixir
 defmodule MyApp.Reactors.Users do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
-  alias Chronicle.Observers.EventBatch
+  alias Cratis.Chronicle.Observers.EventBatch
 
   @observes MyApp.Events.UserRegistered
   @observes MyApp.Events.UserRenamed
@@ -236,14 +236,14 @@ defmodule MyApp.Reactors.Users do
 end
 ```
 
-The second argument is a `Chronicle.Observers.BatchContext`: the observer, event store,
+The second argument is a `Cratis.Chronicle.Observers.BatchContext`: the observer, event store,
 namespace, the partitions and event count of the page, its first and last sequence numbers, the
 deadline, and `origin` - `:live`, `:catch_up`, `:replay` or `:retry`.
 
 Each event type reaches exactly one function. The reactor refuses to start when an event type is
 observed by two batch functions, or observed by a batch function and also declared with
 `@handles`, when `@observes` precedes `handle/2` or `handle_replay/2`, or when a batch function
-does not take `(batch, context)`. Each refusal raises an exception from `Chronicle.Observers`.
+does not take `(batch, context)`. Each refusal raises an exception from `Cratis.Chronicle.Observers`.
 
 Order is kept per function: each function sees its events in sequence order, and so in order
 within each event source. Two functions of one reactor are not ordered relative to each other, so
@@ -258,20 +258,20 @@ A batch function returns:
 - `{:error, reason}`, or it raises - every event source in the batch fails at its first event in
   the batch.
 
-Returning events is not supported in a batch function: append through `Chronicle.EventSequences.EventLog`.
+Returning events is not supported in a batch function: append through `Cratis.Chronicle.EventSequences.EventLog`.
 When the functions of a reactor report different outcomes for one event source, it settles at the
 earliest event reported, and everything from there is delivered again, so keep side effects
 idempotent and use the [delivery identity](#delivery-identity) to recognize a redelivery.
 
 A Chronicle server before 19.122 sends one event source at a time. Batch functions still work,
 but cannot defer: a deferral fails the event source with
-`Chronicle.Observers.DeferralNotSupportedByKernel`, and failed-partition recovery delivers it
+`Cratis.Chronicle.Observers.DeferralNotSupportedByKernel`, and failed-partition recovery delivers it
 again.
 
 Bound the pages with the `:batch_size` option:
 
 ```elixir
-use Chronicle.Reactors.Reactor,
+use Cratis.Chronicle.Reactors.Reactor,
   batch_size: [max_events: 1_000, max_bytes: 4_194_304, max_delay_milliseconds: 50]
 ```
 
@@ -289,12 +289,12 @@ Each batch Chronicle sends also says how long Chronicle waits for its result. If
 
 ## Middleware
 
-`Chronicle.Middleware` wraps the handling of an event in a reactor or reducer, for tracing,
+`Cratis.Chronicle.Middleware` wraps the handling of an event in a reactor or reducer, for tracing,
 metrics, logging or impersonating the identity that caused the event:
 
 ```elixir
 defmodule MyApp.Middleware.Timing do
-  @behaviour Chronicle.Middleware
+  @behaviour Cratis.Chronicle.Middleware
 
   @impl true
   def call(event, context, next) do
@@ -305,7 +305,7 @@ defmodule MyApp.Middleware.Timing do
 end
 
 config :cratis_chronicle, middleware: [MyApp.Middleware.Timing]            # every reactor and reducer
-use Chronicle.Reactors.Reactor, middleware: [MyApp.Middleware.Impersonate]  # one module
+use Cratis.Chronicle.Reactors.Reactor, middleware: [MyApp.Middleware.Impersonate]  # one module
 ```
 
 Global middleware is the outer layer, then the module's own, each in the order listed.

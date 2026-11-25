@@ -1,30 +1,30 @@
 ```elixir
 defmodule MyApp.Events.DecRwjUserRegistered do
-  use Chronicle.Events.EventType, id: "dec-rwj-user-registered"
+  use Cratis.Chronicle.Events.EventType, id: "dec-rwj-user-registered"
 
   defstruct [:username, :email]
 end
 
 defmodule MyApp.Events.DecRwjUserJoinedGroup do
-  use Chronicle.Events.EventType, id: "dec-rwj-user-joined-group"
+  use Cratis.Chronicle.Events.EventType, id: "dec-rwj-user-joined-group"
 
   defstruct [:user_id, :group_id, :role]
 end
 
 defmodule MyApp.Events.DecRwjUserLeftGroup do
-  use Chronicle.Events.EventType, id: "dec-rwj-user-left-group"
+  use Cratis.Chronicle.Events.EventType, id: "dec-rwj-user-left-group"
 
   defstruct [:user_id, :group_id]
 end
 
 defmodule MyApp.Events.DecRwjGroupCreated do
-  use Chronicle.Events.EventType, id: "dec-rwj-group-created"
+  use Cratis.Chronicle.Events.EventType, id: "dec-rwj-group-created"
 
   defstruct [:group_name, :group_type]
 end
 
 defmodule MyApp.Events.DecRwjGroupDisbanded do
-  use Chronicle.Events.EventType, id: "dec-rwj-group-disbanded"
+  use Cratis.Chronicle.Events.EventType, id: "dec-rwj-group-disbanded"
 
   defstruct []
 end
@@ -34,14 +34,14 @@ defmodule MyApp.ReadModels.DecRwjUserGroupMembership do
 end
 
 defmodule MyApp.ReadModels.DecRwjUserProfile do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [memberships: {:list, MyApp.ReadModels.DecRwjUserGroupMembership}]
 
   defstruct user_id: nil, username: nil, email: nil, registered_at: nil, memberships: []
 end
 
 defmodule MyApp.Projections.DecRwjGroupMembershipProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.DecRwjUserProfile
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.DecRwjUserProfile
 
   alias MyApp.Events.{
     DecRwjGroupCreated,

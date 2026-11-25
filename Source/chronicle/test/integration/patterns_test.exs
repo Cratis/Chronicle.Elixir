@@ -5,18 +5,18 @@
 # CHRONICLE_INTEGRATION_CONNECTION_STRING at a development kernel, for example
 # chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000
 # and run `mix test --include integration`.
-defmodule Chronicle.Integration.PatternsTest do
+defmodule Cratis.Chronicle.Integration.PatternsTest do
   use ExUnit.Case, async: false
 
   @moduletag :integration
 
-  alias Chronicle.Patterns
+  alias Cratis.Chronicle.Patterns
 
   setup_all do
     prefix = System.get_env("CHRONICLE_INTEGRATION_EVENT_STORE_PREFIX", "patterns-elixir")
 
     {:ok, _} =
-      Chronicle.Client.start_link(
+      Cratis.Chronicle.Client.start_link(
         name: :patterns_it_client,
         connection_string: System.fetch_env!("CHRONICLE_INTEGRATION_CONNECTION_STRING"),
         event_store:
@@ -24,8 +24,8 @@ defmodule Chronicle.Integration.PatternsTest do
         discover: false
       )
 
-    lifecycle = Chronicle.Connections.Lifecycle.name_for(:patterns_it_client)
-    :ok = Chronicle.Connections.Lifecycle.wait_until(lifecycle, :registered, 60_000)
+    lifecycle = Cratis.Chronicle.Connections.Lifecycle.name_for(:patterns_it_client)
+    :ok = Cratis.Chronicle.Connections.Lifecycle.wait_until(lifecycle, :registered, 60_000)
     :ok
   end
 

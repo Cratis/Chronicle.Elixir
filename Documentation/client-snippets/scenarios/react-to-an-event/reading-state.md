@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.ReadModels.ScenariosReactBook do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct title: ""
 end
 
 defmodule MyApp.Reactors.ScenariosReactWaitlistNotifierWithTitle do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.ScenariosReactBookReturned
   alias MyApp.ReadModels.ScenariosReactBook
@@ -17,7 +17,7 @@ defmodule MyApp.Reactors.ScenariosReactWaitlistNotifierWithTitle do
   @impl true
   def handle(%ScenariosReactBookReturned{}, %{event_source_id: book_id}) do
     # Strongly consistent — rebuilt from the event log, includes this event
-    {:ok, book} = Chronicle.read_model(ScenariosReactBook, book_id)
+    {:ok, book} = Cratis.Chronicle.read_model(ScenariosReactBook, book_id)
     ScenariosReactNotificationService.notify_next_in_line(book_id, book.title)
     :ok
   end

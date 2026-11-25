@@ -1,21 +1,21 @@
 ```elixir
 defmodule ReactorSideEffectsConcurrencyBookReserved do
-  use Chronicle.Events.EventType, id: "reactor-side-effects-concurrency-book-reserved"
+  use Cratis.Chronicle.Events.EventType, id: "reactor-side-effects-concurrency-book-reserved"
 
   defstruct [:isbn]
 end
 
 defmodule ReactorSideEffectsConcurrencyReservationConfirmed do
-  use Chronicle.Events.EventType, id: "reactor-side-effects-concurrency-reservation-confirmed"
+  use Cratis.Chronicle.Events.EventType, id: "reactor-side-effects-concurrency-reservation-confirmed"
 
   defstruct [:isbn]
 end
 
 defmodule ReactorSideEffectsConcurrencyReservationReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
-  alias Chronicle.EventSequences.EventForEventSourceId
-  alias Chronicle.Events.ConcurrencyScope
+  alias Cratis.Chronicle.EventSequences.EventForEventSourceId
+  alias Cratis.Chronicle.Events.ConcurrencyScope
   alias ReactorSideEffectsConcurrencyBookReserved
   alias ReactorSideEffectsConcurrencyReservationConfirmed
 

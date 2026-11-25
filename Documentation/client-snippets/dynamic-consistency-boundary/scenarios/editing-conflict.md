@@ -1,13 +1,13 @@
 ```elixir
 defmodule MyApp.Events.EditingConflictProjectRenamed do
-  use Chronicle.Events.EventType, id: "editing-conflict-project-renamed"
+  use Cratis.Chronicle.Events.EventType, id: "editing-conflict-project-renamed"
 
   defstruct [:name]
 end
 
 defmodule MyApp.EditingConflictRenameProject do
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.Events.ConcurrencyScope
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.Events.ConcurrencyScope
   alias MyApp.Events.EditingConflictProjectRenamed
 
   # Capture this BEFORE you load the form data, then return it with the form. Load the data from the

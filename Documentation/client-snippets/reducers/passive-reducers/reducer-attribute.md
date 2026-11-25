@@ -1,6 +1,6 @@
 ```elixir
 defmodule PassiveReducersDataRecorded do
-  use Chronicle.Events.EventType, id: "passive-reducers-data-recorded"
+  use Cratis.Chronicle.Events.EventType, id: "passive-reducers-data-recorded"
 
   defstruct [:value]
 end
@@ -10,7 +10,7 @@ defmodule PassiveReducersAnalytics do
 end
 
 defmodule PassiveReducersTemporaryAnalyticsReducer do
-  use Chronicle.Reducers.Reducer, model: PassiveReducersAnalytics, active: false
+  use Cratis.Chronicle.Reducers.Reducer, model: PassiveReducersAnalytics, active: false
 
   alias PassiveReducersDataRecorded
 

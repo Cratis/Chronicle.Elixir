@@ -4,7 +4,7 @@ defmodule MyApp.TlsClientOptions do
 
   def start_link do
     children = [
-      {Chronicle.Client,
+      {Cratis.Chronicle.Client,
        connection_string:
          "chronicle://localhost:35000?certificatePath=/path/to/certificate.pfx&certificatePassword=your-password"}
     ]

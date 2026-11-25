@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.ConstraintsUniqueUserRegistered do
-  use Chronicle.Events.EventType, id: "constraints-unique-user-registered"
+  use Cratis.Chronicle.Events.EventType, id: "constraints-unique-user-registered"
 
   unique :email, name: "UniqueEmail"
 
@@ -8,7 +8,7 @@ defmodule MyApp.Events.ConstraintsUniqueUserRegistered do
 end
 
 defmodule MyApp.Events.ConstraintsUniqueUserEmailChanged do
-  use Chronicle.Events.EventType, id: "constraints-unique-user-email-changed"
+  use Cratis.Chronicle.Events.EventType, id: "constraints-unique-user-email-changed"
 
   unique :new_email, name: "UniqueEmail"
 
@@ -16,7 +16,7 @@ defmodule MyApp.Events.ConstraintsUniqueUserEmailChanged do
 end
 
 defmodule MyApp.Events.ConstraintsUniqueUserRemoved do
-  use Chronicle.Events.EventType, id: "constraints-unique-user-removed"
+  use Cratis.Chronicle.Events.EventType, id: "constraints-unique-user-removed"
 
   remove_constraint "UniqueEmail"
 

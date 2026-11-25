@@ -3,7 +3,7 @@ title: Webhooks
 description: Register Chronicle webhooks from Elixir as discoverable modules or at runtime, and inspect which webhooks are registered with the kernel.
 ---
 
-`Chronicle.WebHooks` provides an idiomatic Elixir API for registering and inspecting Chronicle webhooks.
+`Cratis.Chronicle.WebHooks` provides an idiomatic Elixir API for registering and inspecting Chronicle webhooks.
 
 Webhooks let Chronicle push observed events to external HTTP endpoints.
 
@@ -19,12 +19,12 @@ If you don't select any event types, the webhook uses the event types the client
 
 ```elixir
 defmodule MyApp.WebHooks.AccountEvents do
-  use Chronicle.WebHooks.Webhook,
+  use Cratis.Chronicle.WebHooks.Webhook,
     id: "account-events",
     target_url: "https://example.com/chronicle/webhooks",
     event_sequence_id: "event-log"
 
-  alias Chronicle.WebHooks.DefinitionBuilder
+  alias Cratis.Chronicle.WebHooks.DefinitionBuilder
 
   @impl true
   def define(builder) do
@@ -37,10 +37,10 @@ defmodule MyApp.WebHooks.AccountEvents do
 end
 ```
 
-When `Chronicle.Client` starts with `otp_app: :my_app`, discoverable webhooks are found automatically and registered on startup.
+When `Cratis.Chronicle.Client` starts with `otp_app: :my_app`, discoverable webhooks are found automatically and registered on startup.
 
 ```elixir
-{Chronicle.Client,
+{Cratis.Chronicle.Client,
   connection_string: "chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000",
   event_store: "banking",
   otp_app: :my_app}
@@ -49,7 +49,7 @@ When `Chronicle.Client` starts with `otp_app: :my_app`, discoverable webhooks ar
 You can also register explicit modules:
 
 ```elixir
-{Chronicle.Client,
+{Cratis.Chronicle.Client,
   connection_string: "chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000",
   event_store: "banking",
   webhooks: [MyApp.WebHooks.AccountEvents]}
@@ -61,21 +61,21 @@ Register a webhook without defining a module:
 
 ```elixir
 :ok =
-  Chronicle.WebHooks.register(
+  Cratis.Chronicle.WebHooks.register(
     "account-events",
     "https://example.com/chronicle/webhooks",
     fn builder ->
       builder
-      |> Chronicle.WebHooks.DefinitionBuilder.with_event_type(MyApp.Events.AccountOpened)
-      |> Chronicle.WebHooks.DefinitionBuilder.with_basic_auth("chronicle", System.fetch_env!("WEBHOOK_PASSWORD"))
-      |> Chronicle.WebHooks.DefinitionBuilder.with_header("x-source", "my-app")
+      |> Cratis.Chronicle.WebHooks.DefinitionBuilder.with_event_type(MyApp.Events.AccountOpened)
+      |> Cratis.Chronicle.WebHooks.DefinitionBuilder.with_basic_auth("chronicle", System.fetch_env!("WEBHOOK_PASSWORD"))
+      |> Cratis.Chronicle.WebHooks.DefinitionBuilder.with_header("x-source", "my-app")
     end
   )
 ```
 
 ## Builder API
 
-`Chronicle.WebHooks.DefinitionBuilder` is immutable and pipeline-friendly.
+`Cratis.Chronicle.WebHooks.DefinitionBuilder` is immutable and pipeline-friendly.
 
 The scope argument of `with_oauth/5` is optional. Omit it and no scope is requested from the authority. It applies to the outbound OAuth client-credentials call only, not to the client's own connection to the kernel.
 
@@ -102,14 +102,14 @@ builder
 Inspect metadata and choose removal separately; listing is not an instruction to remove a webhook.
 Confirm the id, target store and authority before removal, and review metadata before sharing it.
 
-Chronicle doesn't return credentials when you read webhooks back, so `:authorization` is always `nil` on definitions from `Chronicle.WebHooks.all/1`.
+Chronicle doesn't return credentials when you read webhooks back, so `:authorization` is always `nil` on definitions from `Cratis.Chronicle.WebHooks.all/1`.
 
 ```elixir
-{:ok, webhooks} = Chronicle.WebHooks.all()
-:ok = Chronicle.WebHooks.remove("account-events")
+{:ok, webhooks} = Cratis.Chronicle.WebHooks.all()
+:ok = Cratis.Chronicle.WebHooks.remove("account-events")
 ```
 
-Registered webhooks are returned as `%Chronicle.WebHooks.Definition{}` with:
+Registered webhooks are returned as `%Cratis.Chronicle.WebHooks.Definition{}` with:
 
 - `:id`
 - `:event_sequence_id`
@@ -118,7 +118,7 @@ Registered webhooks are returned as `%Chronicle.WebHooks.Definition{}` with:
 - `:replayable?`
 - `:active?`
 
-The nested `%Chronicle.WebHooks.Target{}` contains:
+The nested `%Cratis.Chronicle.WebHooks.Target{}` contains:
 
 - `:url`
 - `:headers`
@@ -134,8 +134,8 @@ When you build a definition locally, authorization is one of:
 ## Manual discovery
 
 ```elixir
-webhooks = Chronicle.WebHooks.discover()
-:ok = Chronicle.WebHooks.register_discovered()
+webhooks = Cratis.Chronicle.WebHooks.discover()
+:ok = Cratis.Chronicle.WebHooks.register_discovered()
 ```
 
 ## Top-level convenience helpers
@@ -143,7 +143,7 @@ webhooks = Chronicle.WebHooks.discover()
 `Chronicle` also delegates to the webhook API:
 
 ```elixir
-{:ok, webhooks} = Chronicle.get_webhooks()
-:ok = Chronicle.register_discovered_webhooks()
-:ok = Chronicle.remove_webhook("account-events")
+{:ok, webhooks} = Cratis.Chronicle.get_webhooks()
+:ok = Cratis.Chronicle.register_discovered_webhooks()
+:ok = Cratis.Chronicle.remove_webhook("account-events")
 ```

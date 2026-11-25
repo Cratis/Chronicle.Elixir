@@ -9,7 +9,7 @@ defmodule ConsoleSample.Projections.EmployeeListProjection do
   mapping because the event field is `new_title`.
   """
 
-  use Chronicle.Projections.Projection, model: ConsoleSample.ReadModels.EmployeeList
+  use Cratis.Chronicle.Projections.Projection, model: ConsoleSample.ReadModels.EmployeeList
 
   alias ConsoleSample.Events.{EmployeeHired, EmployeePromoted}
 

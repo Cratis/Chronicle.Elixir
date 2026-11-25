@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.ObservingAppendsSomeEvent do
-  use Chronicle.Events.EventType, id: "observing-appends-some-event"
+  use Cratis.Chronicle.Events.EventType, id: "observing-appends-some-event"
 
   defstruct [:data]
 end
 
 defmodule MyApp.ObservingAppendsCompletionWaiter do
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.ObservingAppendsSomeEvent
 
   def append_and_wait(event_source_id) do

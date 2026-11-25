@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.UcUserRemoved do
-  use Chronicle.Events.EventType, id: "uc-user-removed"
+  use Cratis.Chronicle.Events.EventType, id: "uc-user-removed"
 
   defstruct [:user_id]
 

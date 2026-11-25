@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.ScopedClosingCustomerArchiver do
-  alias Chronicle.EventSequences.Streams
+  alias Cratis.Chronicle.EventSequences.Streams
 
   def archive_customer(customer_id) do
     # Every stream of this event source is closed, including its default stream.

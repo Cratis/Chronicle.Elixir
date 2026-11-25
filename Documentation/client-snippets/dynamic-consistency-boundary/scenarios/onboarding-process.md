@@ -1,19 +1,19 @@
 ```elixir
 defmodule MyApp.Events.OnboardingStarted do
-  use Chronicle.Events.EventType, id: "onboarding-started"
+  use Cratis.Chronicle.Events.EventType, id: "onboarding-started"
 
   defstruct [:email]
 end
 
 defmodule MyApp.Events.OnboardingIdentityChecked do
-  use Chronicle.Events.EventType, id: "onboarding-identity-checked"
+  use Cratis.Chronicle.Events.EventType, id: "onboarding-identity-checked"
 
   defstruct [:method]
 end
 
 # Appending this event closes the customer's Onboarding stream in the same step.
 defmodule MyApp.Events.OnboardingCompleted do
-  use Chronicle.Events.EventType, id: "onboarding-completed"
+  use Cratis.Chronicle.Events.EventType, id: "onboarding-completed"
 
   defstruct []
 
@@ -23,7 +23,7 @@ end
 # One event source per customer, one stream for the onboarding process. Every writer of the
 # stream is guarded against every other, whatever the event type.
 defmodule MyApp.OnboardingCustomerEventSource do
-  use Chronicle.EventSources.EventSource,
+  use Cratis.Chronicle.EventSources.EventSource,
     name: "Customer",
     concurrency: [:event_source_id]
 
@@ -33,8 +33,8 @@ defmodule MyApp.OnboardingCustomerEventSource do
 end
 
 defmodule MyApp.OnboardingProcess do
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.Events.ConstraintViolation
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.Events.ConstraintViolation
   alias MyApp.Events.{OnboardingCompleted, OnboardingIdentityChecked, OnboardingStarted}
   alias MyApp.OnboardingCustomerEventSource
 

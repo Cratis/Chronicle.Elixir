@@ -2,7 +2,7 @@
 alias MyApp.ReadModels.Order
 
 {:ok, orders} =
-  Chronicle.ReadModels.get_instances(
+  Cratis.Chronicle.ReadModels.get_instances(
     Order,
     event_count: 1_000
   )

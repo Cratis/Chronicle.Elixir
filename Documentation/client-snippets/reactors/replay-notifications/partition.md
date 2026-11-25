@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.PartitionNotifiedOrderPlaced do
-  use Chronicle.Events.EventType, id: "partition-notified-order-placed"
+  use Cratis.Chronicle.Events.EventType, id: "partition-notified-order-placed"
 
   defstruct [:order_id]
 end
 
 defmodule MyApp.Reactors.PartitionNotifiedOrderReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.PartitionNotifiedOrderPlaced
 

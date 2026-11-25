@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.ScopedClosingReportApproved do
-  use Chronicle.Events.EventType, id: "scoped-closing-report-approved"
+  use Cratis.Chronicle.Events.EventType, id: "scoped-closing-report-approved"
 
   defstruct [:approver]
 end
 
 defmodule MyApp.ScopedClosingApprover do
-  alias Chronicle.EventSequences.{EventLog, Streams}
+  alias Cratis.Chronicle.EventSequences.{EventLog, Streams}
   alias MyApp.Events.ScopedClosingReportApproved
 
   def approve_and_close(report_id) do

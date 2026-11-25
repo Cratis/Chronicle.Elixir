@@ -20,11 +20,11 @@ Then [read events](#reading-typed-events) or use the concurrency and stream APIs
 
 `append/3` and `append_many/3` return `:ok` or `{:error, reason}`. When you need the sequence
 number that was assigned, or the *structured* reason an append was refused, use the `_with_result`
-variants. They return a `Chronicle.EventSequences.AppendResult`; mirrors the .NET `AppendResult`
+variants. They return a `Cratis.Chronicle.EventSequences.AppendResult`; mirrors the .NET `AppendResult`
 and `AppendManyResult`.
 
 ```elixir
-case Chronicle.append_with_result("user-1", %MyApp.Events.UserRegistered{email: "a@b.c"}) do
+case Cratis.Chronicle.append_with_result("user-1", %MyApp.Events.UserRegistered{email: "a@b.c"}) do
   {:ok, %{sequence_number: sequence_number}} ->
     {:registered, sequence_number}
 
@@ -46,7 +46,7 @@ with `:event_source_id`, `:expected_sequence_number` and `:actual_sequence_numbe
 Transport failures stay plain `{:error, reason}` terms.
 
 To wait until the observers have processed what you appended, call
-`Chronicle.EventSequences.AppendResult.wait_for_completion/2` on a successful result.
+`Cratis.Chronicle.EventSequences.AppendResult.wait_for_completion/2` on a successful result.
 
 ## Appending and waiting for observer completion
 
@@ -59,7 +59,7 @@ An error can follow a stored append if the wait fails. Read the three outcomes b
 running this example; don't retry an append blindly on an error.
 
 ```elixir
-case Chronicle.EventSequences.EventLog.append_and_wait_for_completion(
+case Cratis.Chronicle.EventSequences.EventLog.append_and_wait_for_completion(
        event_source_id,
        %MyApp.Events.OrderPlaced{customer_id: customer_id, total: total}
      ) do
@@ -68,7 +68,7 @@ case Chronicle.EventSequences.EventLog.append_and_wait_for_completion(
 
   {:ok, %{success: false, failed_partitions: _failed_partitions}} ->
     # One or more observers failed on the event — inspect failed_partitions
-    # (a list of `Chronicle.FailedPartitions.FailedPartition`).
+    # (a list of `Cratis.Chronicle.FailedPartitions.FailedPartition`).
     :error
 
   {:error, reason} ->
@@ -101,7 +101,7 @@ TypeScript clients' `GetFromSequenceNumber()`.
 
 ```elixir
 {:ok, events} =
-  Chronicle.EventSequences.EventLog.get_from_sequence_number(sequence_number,
+  Cratis.Chronicle.EventSequences.EventLog.get_from_sequence_number(sequence_number,
     event_source_id: event_source_id,
     event_types: [MyApp.Events.OrderPlaced]
   )
@@ -114,12 +114,12 @@ Each carries its metadata in `Context` and the event's JSON in its content field
 ## Reading typed events
 
 `get_for_event_source/3` and `get_from_sequence_number/2` return the raw wire events. Pass
-`decode: true` to get `Chronicle.Events.AppendedEvent` structs instead, whose `:event` is the event
+`decode: true` to get `Cratis.Chronicle.Events.AppendedEvent` structs instead, whose `:event` is the event
 struct you appended:
 
 ```elixir
 {:ok, events} =
-  Chronicle.EventSequences.EventLog.get_for_event_source("acc-1", decode: true)
+  Cratis.Chronicle.EventSequences.EventLog.get_for_event_source("acc-1", decode: true)
 
 for %{event: %MyApp.Events.FundsDeposited{amount: amount}, context: context} <- events do
   IO.puts("#{amount} deposited by #{context.caused_by.name} at sequence #{context.sequence_number}")
@@ -128,7 +128,7 @@ end
 
 An event of a type this client does not know has `event: nil` and the decoded payload in `:raw`;
 a redacted event has `redacted?: true` and a `:redaction` with the reason. Nested structs,
-lists of structs and maps decode as described in `Chronicle.Serialization`.
+lists of structs and maps decode as described in `Cratis.Chronicle.Serialization`.
 
 ## Sequence numbers
 
@@ -139,8 +139,8 @@ is at sequence `0`" (returns `1`), which `get_tail_sequence_number/2` alone cann
 Mirrors the C# and TypeScript clients' `GetNextSequenceNumber()`.
 
 ```elixir
-{:ok, tail} = Chronicle.EventSequences.EventLog.get_tail_sequence_number(event_source_id)
-{:ok, next} = Chronicle.EventSequences.EventLog.get_next_sequence_number(event_source_id)
+{:ok, tail} = Cratis.Chronicle.EventSequences.EventLog.get_tail_sequence_number(event_source_id)
+{:ok, next} = Cratis.Chronicle.EventSequences.EventLog.get_next_sequence_number(event_source_id)
 ```
 
 Leaving `:event_source_type` and `:event_stream_type` out looks across every source and stream type. Version 3.5.0 narrowed an omitted value to `"Default"` and returned `{:ok, 0}` however many events were stored; upgrade to 3.5.1 or later.
@@ -151,14 +151,14 @@ event type. Mirrors the C# client's `GetTailSequenceNumberForObserver()`.
 
 ```elixir
 {:ok, tail} =
-  Chronicle.EventSequences.EventLog.get_tail_sequence_number_for_observer(
+  Cratis.Chronicle.EventSequences.EventLog.get_tail_sequence_number_for_observer(
     MyApp.Reactors.OrderNotifier
   )
 ```
 
 ## Event context
 
-Reactors, reducers and `decode: true` reads all give you a `Chronicle.Events.EventContext`:
+Reactors, reducers and `decode: true` reads all give you a `Cratis.Chronicle.Events.EventContext`:
 the event type and source, sequence number, `occurred`, event store and namespace,
 `correlation_id`, the identity that caused the event (`caused_by`, with `on_behalf_of`), the
 `causation` chain, `tags`, `hash`, `subject` and `compensation_for` (the compensated sequence number, or `nil`) and `appended_generation` (the generation that was
@@ -168,17 +168,17 @@ and causation on the way in.
 
 ## Creation-only guards
 
-`Chronicle.Events.ConcurrencyScope.expecting_no_matching_event/1` refuses an append when a
+`Cratis.Chronicle.Events.ConcurrencyScope.expecting_no_matching_event/1` refuses an append when a
 matching event already exists - the guard for "this can only happen once":
 
 ```elixir
 scope =
-  Chronicle.Events.ConcurrencyScope.expecting_no_matching_event(
+  Cratis.Chronicle.Events.ConcurrencyScope.expecting_no_matching_event(
     event_source_id: true,
     event_types: [MyApp.Events.UserRegistered]
   )
 
-Chronicle.append("user-1", %MyApp.Events.UserRegistered{}, concurrency_scope: scope)
+Cratis.Chronicle.append("user-1", %MyApp.Events.UserRegistered{}, concurrency_scope: scope)
 ```
 
 It sends the kernel's explicit no-matching-event condition. Leaving the expected sequence number
@@ -187,7 +187,7 @@ an existing scope, so it composes with the other pipe-able builders below.
 
 ## Concurrency
 
-`Chronicle.Events.ConcurrencyScope` offers pipe-able builder helpers in addition to `new/2` and
+`Cratis.Chronicle.Events.ConcurrencyScope` offers pipe-able builder helpers in addition to `new/2` and
 `for_event_source/2`: `with_sequence_number/2`, `with_event_source/1`, `with_event_stream_type/2`,
 `with_event_stream_id/2`, `with_event_source_type/2`, `with_event_type/2`, `with_event_types/2`,
 and `expecting_no_matching_event/1` (on a struct as well as on keyword options):
@@ -207,17 +207,17 @@ narrows - and returns a scope expecting it, in one call:
 
 ```elixir
 {:ok, scope} = ConcurrencyScope.at_tail("account-1", event_stream_type: "Transactions")
-Chronicle.append("account-1", %MyApp.Events.FundsDeposited{amount: 10}, concurrency_scope: scope)
+Cratis.Chronicle.append("account-1", %MyApp.Events.FundsDeposited{amount: 10}, concurrency_scope: scope)
 ```
 
 ### Default concurrency strategy
 
 By default a client sends no concurrency constraint for an append that declares none and that
 no event source definition derives one for. Opt a client into deriving one automatically with
-the `:concurrency` option on `Chronicle.Client`:
+the `:concurrency` option on `Cratis.Chronicle.Client`:
 
 ```elixir
-{Chronicle.Client,
+{Cratis.Chronicle.Client,
   connection_string: "chronicle://localhost:35000",
   event_store: "my-store",
   concurrency: [default: :optimistic, check_first_append: false]}
@@ -252,7 +252,7 @@ non-default stream instead of silently ignoring these dimensions:
 
 ```elixir
 {:ok, events} =
-  Chronicle.EventSequences.EventLog.get_for_event_source(event_source_id,
+  Cratis.Chronicle.EventSequences.EventLog.get_for_event_source(event_source_id,
     event_stream_type: "audit-trail",
     event_stream_id: "2024"
   )
@@ -264,7 +264,7 @@ non-default stream instead of silently ignoring these dimensions:
 appended to it. The default stream can never be completed.
 
 ```elixir
-case Chronicle.EventSequences.EventLog.complete_stream("audit-trail", "2024") do
+case Cratis.Chronicle.EventSequences.EventLog.complete_stream("audit-trail", "2024") do
   {:ok, _tail_sequence_number} -> :ok
   {:error, :default_stream_cannot_be_completed} -> :error
   {:error, :already_completed} -> :ok
@@ -276,11 +276,11 @@ The last clause covers transport errors such as `{:error, :not_connected}`.
 
 ## Streams, metadata and verification
 
-`Chronicle.EventSequences.Streams` closes, reopens and inspects stream scopes, reads event
+`Cratis.Chronicle.EventSequences.Streams` closes, reopens and inspects stream scopes, reads event
 metadata and verifies stored content:
 
 ```elixir
-alias Chronicle.EventSequences.Streams
+alias Cratis.Chronicle.EventSequences.Streams
 
 {:ok, sequence_number} = Streams.complete_scope(event_source_id: "acc-1", event_stream_type: "Period", event_stream_id: "2024")
 {:ok, true} = Streams.scope_completed?(event_source_id: "acc-1", event_stream_type: "Period", event_stream_id: "2024")
@@ -301,15 +301,15 @@ numbers, de-duplicating them before the request is sent; above that it returns
 `{:error, {:too_many_event_locators, 500}}` without sending one.
 
 Metadata also carries `:initiator_type` (`:unknown | :user | :agent | :system`) and
-`:resolved_caused_by` - a `Chronicle.EventSequences.ResolvedIdentity` carrying the same
+`:resolved_caused_by` - a `Cratis.Chronicle.EventSequences.ResolvedIdentity` carrying the same
 subject/name/user name as `:caused_by`, plus `:resolution` (how the kernel resolved the
 identity at read time: `:resolved`, `:name_unavailable`, `:missing`, `:not_set` or `:system`)
-and its own `:on_behalf_of` chain. `:caused_by` (a plain `Chronicle.Identity`) also carries
+and its own `:on_behalf_of` chain. `:caused_by` (a plain `Cratis.Chronicle.Identity`) also carries
 `:on_behalf_of` now.
 
 ## Prepared events
 
-`EventLog.prepare/2` serializes an event once and returns a `Chronicle.EventSequences.PreparedEvent`
+`EventLog.prepare/2` serializes an event once and returns a `Cratis.Chronicle.EventSequences.PreparedEvent`
 bound to the client, namespace and event sequence that prepared it. Reuse it with
 `EventLog.append_prepared/3` and `Streams.verify_content/3` without re-serializing the event -
 useful when you need to verify stored content against exactly what you intended to send, or when
@@ -330,7 +330,7 @@ appending the same event struct twice.
 
 Every append path (`append/3`, `append_many/3`, the `_with_result` variants,
 `append_many_for_event_sources/2`, `EventLog.prepare/2`) and `Streams.verify_content/3` check that
-an event struct `use`s `Chronicle.Events.EventType` before building a request, returning
+an event struct `use`s `Cratis.Chronicle.Events.EventType` before building a request, returning
 `{:error, {:unknown_event_type, module}}` instead of raising deep inside request building:
 
 ```elixir
@@ -339,7 +339,7 @@ defmodule MyApp.NotAnEvent do
 end
 
 {:error, {:unknown_event_type, MyApp.NotAnEvent}} =
-  Chronicle.append("acc-1", %MyApp.NotAnEvent{value: 1})
+  Cratis.Chronicle.append("acc-1", %MyApp.NotAnEvent{value: 1})
 ```
 
 ## Payload size
@@ -359,14 +359,14 @@ returns `{:ok, job_id}` with the id of the job that was started; an empty type l
 events of every type.
 
 ```elixir
-{:ok, job_id} = Chronicle.EventSequences.EventLog.copy(source_id, target_id)
+{:ok, job_id} = Cratis.Chronicle.EventSequences.EventLog.copy(source_id, target_id)
 ```
 
 Narrow the copy to specific event types by passing a list of event type modules:
 
 ```elixir
 {:ok, job_id} =
-  Chronicle.EventSequences.EventLog.copy(source_id, target_id, [MyApp.Events.AddressChanged])
+  Cratis.Chronicle.EventSequences.EventLog.copy(source_id, target_id, [MyApp.Events.AddressChanged])
 ```
 
 It accepts `:client`, `:namespace` and `:event_sequence_id`. It is not available in the
@@ -381,15 +381,15 @@ untouched.
 
 ```elixir
 {:ok, %{sequence_number: sequence_number}} =
-  Chronicle.EventSequences.EventLog.compensate(
+  Cratis.Chronicle.EventSequences.EventLog.compensate(
     registered_sequence_number,
     %MyApp.Events.CustomerRegisteredInError{reason: "duplicate"}
   )
 ```
 
 The event type declares what it compensates with `compensation_for:` (see
-[Events](events.md)); the kernel validates the pairing. It returns an
-`Chronicle.EventSequences.AppendResult` like `append_with_result/3`: `{:ok, result}` on success,
+[Events](events.md)); the kernel validates the pairing. It returns a
+`Cratis.Chronicle.EventSequences.AppendResult` like `append_with_result/3`: `{:ok, result}` on success,
 `{:error, result}` for a kernel rejection and `{:error, reason}` for transport or client errors.
 It accepts `:client`, `:namespace`, `:event_sequence_id`, `:timeout`, `:occurred`, `:tags`,
 `:correlation_id`, `:identity` and `:causation`. A compensation is always sent immediately, never
@@ -409,7 +409,7 @@ stored event itself. Neither can be undone. Mirrors the C# and TypeScript client
 Redact a single event by its sequence number, with a reason:
 
 ```elixir
-:ok = Chronicle.EventSequences.EventLog.redact(sequence_number, "Customer requested erasure")
+:ok = Cratis.Chronicle.EventSequences.EventLog.redact(sequence_number, "Customer requested erasure")
 ```
 
 Redact every event for an event source in one call — for example, to erase all data for a
@@ -417,7 +417,7 @@ specific user:
 
 ```elixir
 :ok =
-  Chronicle.EventSequences.EventLog.redact_for_event_source(
+  Cratis.Chronicle.EventSequences.EventLog.redact_for_event_source(
     event_source_id,
     "Account closed under GDPR"
   )
@@ -428,7 +428,7 @@ the third argument:
 
 ```elixir
 :ok =
-  Chronicle.EventSequences.EventLog.redact_for_event_source(
+  Cratis.Chronicle.EventSequences.EventLog.redact_for_event_source(
     event_source_id,
     "Email address was captured in error",
     [MyApp.Events.EmailChanged]

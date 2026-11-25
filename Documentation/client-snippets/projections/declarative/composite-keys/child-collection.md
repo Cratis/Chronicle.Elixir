@@ -1,12 +1,12 @@
 ```elixir title="Composite key in a child collection"
 defmodule MyApp.Events.CompositeOrderCreatedForItems do
-  use Chronicle.Events.EventType, id: "composite-order-created-for-items"
+  use Cratis.Chronicle.Events.EventType, id: "composite-order-created-for-items"
 
   defstruct [:customer_id, :order_number]
 end
 
 defmodule MyApp.Events.CompositeItemAddedToOrder do
-  use Chronicle.Events.EventType, id: "composite-item-added-to-order"
+  use Cratis.Chronicle.Events.EventType, id: "composite-item-added-to-order"
 
   defstruct [:customer_id, :order_number, :product_id, :variant, quantity: 0]
 end
@@ -20,14 +20,14 @@ defmodule MyApp.ReadModels.CompositeOrderItem do
 end
 
 defmodule MyApp.ReadModels.CompositeOrderWithItems do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [order_items: {:list, MyApp.ReadModels.CompositeOrderItem}]
 
   defstruct id: nil, order_items: []
 end
 
 defmodule MyApp.Projections.CompositeOrderItemsProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.CompositeOrderWithItems
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.CompositeOrderWithItems
 
   alias MyApp.Events.{CompositeItemAddedToOrder, CompositeOrderCreatedForItems}
 

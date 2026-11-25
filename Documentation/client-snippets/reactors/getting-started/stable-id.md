@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Reactors.NamedOrderNotificationsReactor do
-  use Chronicle.Reactors.Reactor, id: "order-notifications"
+  use Cratis.Chronicle.Reactors.Reactor, id: "order-notifications"
 
   alias MyApp.Events.ReactorOrderPlaced
 

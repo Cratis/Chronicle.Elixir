@@ -1,6 +1,6 @@
 ```elixir
 defmodule EventProcessingBasicSyncPatternMetricRecorded do
-  use Chronicle.Events.EventType, id: "event-processing-basic-sync-pattern-metric-recorded"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-basic-sync-pattern-metric-recorded"
 
   defstruct [:value]
 end
@@ -10,7 +10,7 @@ defmodule EventProcessingBasicSyncPatternStats do
 end
 
 defmodule EventProcessingBasicSyncPatternReducer do
-  use Chronicle.Reducers.Reducer, model: EventProcessingBasicSyncPatternStats
+  use Cratis.Chronicle.Reducers.Reducer, model: EventProcessingBasicSyncPatternStats
 
   alias EventProcessingBasicSyncPatternMetricRecorded
 

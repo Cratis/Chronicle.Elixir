@@ -1,15 +1,15 @@
 ```elixir
 defmodule MyApp.Events.LegacyInvoiceIssued do
-  use Chronicle.Events.EventType, id: "legacy-invoice-issued"
+  use Cratis.Chronicle.Events.EventType, id: "legacy-invoice-issued"
 
   defstruct number: ""
 end
 
 defmodule MyApp.InvoiceMigration do
-  alias Chronicle.EventSequences.EventForEventSourceId
+  alias Cratis.Chronicle.EventSequences.EventForEventSourceId
 
   def resume(import_id, source) do
-    with {:ok, session} <- Chronicle.Imports.reattach(import_id) do
+    with {:ok, session} <- Cratis.Chronicle.Imports.reattach(import_id) do
       # The kernel already holds the first events_acknowledged events; continue with the rest.
       remaining =
         source
@@ -21,8 +21,8 @@ defmodule MyApp.InvoiceMigration do
           }
         end)
 
-      with {:ok, session} <- Chronicle.Imports.add(session, remaining) do
-        Chronicle.Imports.complete(session)
+      with {:ok, session} <- Cratis.Chronicle.Imports.add(session, remaining) do
+        Cratis.Chronicle.Imports.complete(session)
       end
     end
   end

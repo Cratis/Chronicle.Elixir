@@ -1,30 +1,30 @@
 ```elixir
 defmodule MyApp.Events.ConstantKeyOrderPlacedForMetrics do
-  use Chronicle.Events.EventType, id: "constant-key-order-placed-for-metrics-v1"
+  use Cratis.Chronicle.Events.EventType, id: "constant-key-order-placed-for-metrics-v1"
 
   defstruct []
 end
 
 defmodule MyApp.Events.ConstantKeyUserLoggedIn do
-  use Chronicle.Events.EventType, id: "constant-key-user-logged-in-v1"
+  use Cratis.Chronicle.Events.EventType, id: "constant-key-user-logged-in-v1"
 
   defstruct []
 end
 
 defmodule MyApp.Events.ConstantKeyUserLoggedOut do
-  use Chronicle.Events.EventType, id: "constant-key-user-logged-out-v1"
+  use Cratis.Chronicle.Events.EventType, id: "constant-key-user-logged-out-v1"
 
   defstruct []
 end
 
 defmodule MyApp.Events.ConstantKeyErrorOccurred do
-  use Chronicle.Events.EventType, id: "constant-key-error-occurred-v1"
+  use Cratis.Chronicle.Events.EventType, id: "constant-key-error-occurred-v1"
 
   defstruct []
 end
 
 defmodule MyApp.ReadModels.SystemMetrics do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{
     ConstantKeyOrderPlacedForMetrics,

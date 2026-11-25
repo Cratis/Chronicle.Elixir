@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.EvtSeedingDevUserRegistered do
-  use Chronicle.Events.EventType, id: "evt-seeding-dev-user-registered"
+  use Cratis.Chronicle.Events.EventType, id: "evt-seeding-dev-user-registered"
 
   defstruct [:email, :display_name]
 end
 
 defmodule MyApp.Seeders.EvtSeedingDevelopmentSeeding do
-  use Chronicle.Seeding.Seeder
+  use Cratis.Chronicle.Seeding.Seeder
 
   alias MyApp.Events.EvtSeedingDevUserRegistered
 
   @impl true
   def seed(builder) do
-    Chronicle.Seeding.for(builder, EvtSeedingDevUserRegistered, "dev-user-1", [
+    Cratis.Chronicle.Seeding.for(builder, EvtSeedingDevUserRegistered, "dev-user-1", [
       %EvtSeedingDevUserRegistered{email: "dev@example.com", display_name: "Dev User"}
     ])
   end
@@ -33,7 +33,7 @@ defmodule MyApp.EvtSeedingApplication do
   @impl true
   def start(_type, _args) do
     children = [
-      {Chronicle.Client,
+      {Cratis.Chronicle.Client,
        connection_string: "chronicle://localhost:35000",
        event_store: "my-store",
        seeders: @dev_seeders}

@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.ConstantKeyUserRegistered do
-  use Chronicle.Events.EventType, id: "constant-key-user-registered-v1"
+  use Cratis.Chronicle.Events.EventType, id: "constant-key-user-registered-v1"
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.ConstantKeyOrderPlacedGlobal do
-  use Chronicle.Events.EventType, id: "constant-key-order-placed-global-v1"
+  use Cratis.Chronicle.Events.EventType, id: "constant-key-order-placed-global-v1"
 
   defstruct []
 end
 
 defmodule MyApp.ReadModels.UserDashboard do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{ConstantKeyUserRegistered, ConstantKeyOrderPlacedGlobal}
 

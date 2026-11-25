@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Reducers.AccountReducer do
-  use Chronicle.Reducers.Reducer, model: MyApp.ReadModels.AccountInfo, active: false
+  use Cratis.Chronicle.Reducers.Reducer, model: MyApp.ReadModels.AccountInfo, active: false
 
   alias MyApp.Events.OrderPlaced
 

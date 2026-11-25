@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.SubscriptionsStartupShipmentDispatched do
-  use Chronicle.Events.EventType, id: "subscriptions-startup-shipment-dispatched"
+  use Cratis.Chronicle.Events.EventType, id: "subscriptions-startup-shipment-dispatched"
 
   defstruct [:order_id]
 end
 
 defmodule MyApp.Events.SubscriptionsStartupStockAdjusted do
-  use Chronicle.Events.EventType, id: "subscriptions-startup-stock-adjusted"
+  use Cratis.Chronicle.Events.EventType, id: "subscriptions-startup-stock-adjusted"
 
   defstruct [:item_id, :delta]
 end
@@ -14,13 +14,13 @@ end
 defmodule MyApp.SubscriptionsStartupApplication do
   use Application
 
-  alias Chronicle.EventStoreSubscriptions.DefinitionBuilder
+  alias Cratis.Chronicle.EventStoreSubscriptions.DefinitionBuilder
   alias MyApp.Events.{SubscriptionsStartupShipmentDispatched, SubscriptionsStartupStockAdjusted}
 
   @impl true
   def start(_type, _args) do
     children = [
-      {Chronicle.Client,
+      {Cratis.Chronicle.Client,
        connection_string: "chronicle://localhost:35000",
        event_store: "quickstart"}
     ]
@@ -30,7 +30,7 @@ defmodule MyApp.SubscriptionsStartupApplication do
     # Safe to call on every application startup — Chronicle treats a repeated
     # subscription id as idempotent and creates no duplicate.
     :ok =
-      Chronicle.subscribe_to_event_store(
+      Cratis.Chronicle.subscribe_to_event_store(
         "orders-from-fulfillment",
         "fulfillment-service",
         fn builder ->
@@ -40,7 +40,7 @@ defmodule MyApp.SubscriptionsStartupApplication do
       )
 
     :ok =
-      Chronicle.subscribe_to_event_store(
+      Cratis.Chronicle.subscribe_to_event_store(
         "inventory-from-warehouse",
         "warehouse-service",
         fn builder ->

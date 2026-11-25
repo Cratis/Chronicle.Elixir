@@ -12,7 +12,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MIX_ROOT = REPO_ROOT / "Source" / "chronicle"
 SNIPPET_ROOT = REPO_ROOT / "Documentation" / "client-snippets"
-GENERATED_TEST = MIX_ROOT / "test" / "chronicle" / "docs_snippets_compilation_test.exs"
+GENERATED_TEST = MIX_ROOT / "test" / "cratis" / "chronicle" / "docs_snippets_compilation_test.exs"
 FENCE_RE = re.compile(r"```([^\s`]+)[^\n]*\n(.*?)\n```", re.DOTALL)
 UNSUPPORTED_SNIPPET_MARKER = "does not support this workflow yet"
 
@@ -145,21 +145,21 @@ BODY_SNIPPETS = {
 COMMON_MODULES = [
     """
     defmodule MyApp.ReadModels.AccountInfo do
-      use Chronicle.ReadModels.ReadModel
+      use Cratis.Chronicle.ReadModels.ReadModel
 
       defstruct name: nil, balance: 0
     end
     """,
     """
     defmodule MyApp.ReadModels.Account do
-      use Chronicle.ReadModels.ReadModel
+      use Cratis.Chronicle.ReadModels.ReadModel
 
       defstruct id: nil, name: nil, balance: 0, created_date: nil
     end
     """,
     """
     defmodule MyApp.ReadModels.Order do
-      use Chronicle.ReadModels.ReadModel
+      use Cratis.Chronicle.ReadModels.ReadModel
 
       defstruct id: nil, status: :new, total_amount: 0
     end
@@ -247,7 +247,7 @@ def main() -> int:
 
     try:
         subprocess.run(
-            ["mix", "test", "test/chronicle/docs_snippets_compilation_test.exs", "--warnings-as-errors"],
+            ["mix", "test", "test/cratis/chronicle/docs_snippets_compilation_test.exs", "--warnings-as-errors"],
             cwd=MIX_ROOT,
             check=True,
         )

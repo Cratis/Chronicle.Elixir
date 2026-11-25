@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.EcCqsBookCreated do
-  use Chronicle.Events.EventType, id: "ec-cqs-book-created"
+  use Cratis.Chronicle.Events.EventType, id: "ec-cqs-book-created"
 
   defstruct [:title]
 end
 
 defmodule MyApp.ReadModels.EcCqsBook do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: "", title: ""
 end
@@ -16,7 +16,7 @@ defmodule MyApp.EcCqsBookCommandHandler do
   alias MyApp.Events.EcCqsBookCreated
 
   def create(book_id, title) do
-    Chronicle.append(book_id, %EcCqsBookCreated{title: title})
+    Cratis.Chronicle.append(book_id, %EcCqsBookCreated{title: title})
   end
 end
 
@@ -25,7 +25,7 @@ defmodule MyApp.EcCqsBookQueryHandler do
   alias MyApp.ReadModels.EcCqsBook
 
   def get_book(book_id) do
-    Chronicle.read_model(EcCqsBook, book_id)
+    Cratis.Chronicle.read_model(EcCqsBook, book_id)
   end
 end
 ```

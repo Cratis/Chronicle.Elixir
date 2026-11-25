@@ -1,7 +1,7 @@
 ```elixir
 alias MyApp.ReadModels.Order
 
-{:ok, snapshots} = Chronicle.ReadModels.get_snapshots_by_id(Order, order_id)
+{:ok, snapshots} = Cratis.Chronicle.ReadModels.get_snapshots_by_id(Order, order_id)
 
 Enum.each(snapshots, fn snapshot ->
   IO.puts("Snapshot at #{snapshot.occurred}")

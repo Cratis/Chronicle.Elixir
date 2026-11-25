@@ -1,26 +1,26 @@
 ```elixir
 defmodule ReactorSideEffectsFanOutBookReserved do
-  use Chronicle.Events.EventType, id: "reactor-side-effects-fan-out-book-reserved"
+  use Cratis.Chronicle.Events.EventType, id: "reactor-side-effects-fan-out-book-reserved"
 
   defstruct [:member_id, :isbn]
 end
 
 defmodule ReactorSideEffectsFanOutMemberActivityRecorded do
-  use Chronicle.Events.EventType, id: "reactor-side-effects-fan-out-member-activity-recorded"
+  use Cratis.Chronicle.Events.EventType, id: "reactor-side-effects-fan-out-member-activity-recorded"
 
   defstruct [:isbn]
 end
 
 defmodule ReactorSideEffectsFanOutStockDecreased do
-  use Chronicle.Events.EventType, id: "reactor-side-effects-fan-out-stock-decreased"
+  use Cratis.Chronicle.Events.EventType, id: "reactor-side-effects-fan-out-stock-decreased"
 
   defstruct [:isbn, :quantity]
 end
 
 defmodule ReactorSideEffectsFanOutReservationReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
-  alias Chronicle.EventSequences.EventForEventSourceId
+  alias Cratis.Chronicle.EventSequences.EventForEventSourceId
   alias ReactorSideEffectsFanOutBookReserved
   alias ReactorSideEffectsFanOutMemberActivityRecorded
   alias ReactorSideEffectsFanOutStockDecreased

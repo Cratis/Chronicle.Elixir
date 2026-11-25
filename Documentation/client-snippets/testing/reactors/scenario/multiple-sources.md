@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.TestingReactorScenarioTenantActivated do
-  use Chronicle.Events.EventType, id: "testing-reactor-scenario-tenant-activated"
+  use Cratis.Chronicle.Events.EventType, id: "testing-reactor-scenario-tenant-activated"
 
   defstruct [:tenant_id]
 end
@@ -10,7 +10,7 @@ defmodule MyApp.TestingReactorScenarioSyncService do
 end
 
 defmodule MyApp.Reactors.TestingReactorScenarioTenantSyncReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.TestingReactorScenarioTenantActivated
 
@@ -33,7 +33,7 @@ defmodule MyApp.TestingReactorScenarioRecordingSyncService do
 end
 
 defmodule MyApp.TestingReactorScenarioMultipleSourcesTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [MyApp.Events.TestingReactorScenarioTenantActivated],
     reactors: [MyApp.Reactors.TestingReactorScenarioTenantSyncReactor]
 
@@ -49,20 +49,20 @@ defmodule MyApp.TestingReactorScenarioMultipleSourcesTest do
   test "events from different event sources are all handled", %{chronicle: client} do
     # Events from two different tenants
     :ok =
-      Chronicle.EventSequences.EventLog.append(
+      Cratis.Chronicle.EventSequences.EventLog.append(
         "tenant-A",
         %TestingReactorScenarioTenantActivated{tenant_id: "tenant-A"},
         client: client
       )
 
     :ok =
-      Chronicle.EventSequences.EventLog.append(
+      Cratis.Chronicle.EventSequences.EventLog.append(
         "tenant-B",
         %TestingReactorScenarioTenantActivated{tenant_id: "tenant-B"},
         client: client
       )
 
-    :ok = Chronicle.Testing.wait_for_observers(client)
+    :ok = Cratis.Chronicle.Testing.wait_for_observers(client)
 
     # Both activations should have been handled
     assert SyncService.calls() == ["tenant-A", "tenant-B"]

@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Compliance.PiiWithConcepts.LegalName do
-  use Chronicle.Concept, type: :string
+  use Cratis.Chronicle.Concept, type: :string
 
   pii(
     "Collected under GDPR Art. 6(1)(b) — necessary for contract performance. " <>

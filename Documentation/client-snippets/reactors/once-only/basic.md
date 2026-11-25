@@ -1,6 +1,6 @@
 ```elixir
 defmodule OnceOnlyOrderPlaced do
-  use Chronicle.Events.EventType, id: "once-only-order-placed"
+  use Cratis.Chronicle.Events.EventType, id: "once-only-order-placed"
 
   defstruct [:order_id]
 end
@@ -8,7 +8,7 @@ end
 defmodule OnceOnlyOrderReactor do
   # The handler for OnceOnlyOrderPlaced runs when the event is first processed
   # and is skipped during replay.
-  use Chronicle.Reactors.Reactor, once_only: [OnceOnlyOrderPlaced]
+  use Cratis.Chronicle.Reactors.Reactor, once_only: [OnceOnlyOrderPlaced]
 
   @handles OnceOnlyOrderPlaced
 

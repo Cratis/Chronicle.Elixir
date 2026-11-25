@@ -1,7 +1,7 @@
 ```elixir
 defmodule MyApp.SubscribeEndpoint do
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.ReadModels.{DecisionConflict, DecisionReads}
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.ReadModels.{DecisionConflict, DecisionReads}
   alias MyApp.Events.{CourseSubscriptionSeatTaken, CourseSubscriptionStudentJoinedCourse}
   alias MyApp.ReadModels.{CourseSeats, StudentCourses}
 
@@ -9,7 +9,7 @@ defmodule MyApp.SubscribeEndpoint do
   def handle(course_id, student_id) do
     # decide/2 commits as soon as the function returns, while the response can still change.
     result =
-      Chronicle.decide(fn _unit_of_work ->
+      Cratis.Chronicle.decide(fn _unit_of_work ->
         # get/2 enrolls each read in the unit of work.
         {:ok, course} = DecisionReads.get(CourseSeats, course_id)
         {:ok, student} = DecisionReads.get(StudentCourses, student_id)

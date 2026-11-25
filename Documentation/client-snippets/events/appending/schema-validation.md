@@ -1,5 +1,5 @@
 ```elixir
-case Chronicle.append(event_source_id, %MyApp.Events.OrderPlaced{
+case Cratis.Chronicle.append(event_source_id, %MyApp.Events.OrderPlaced{
        customer_id: customer_id,
        total: total
      }) do

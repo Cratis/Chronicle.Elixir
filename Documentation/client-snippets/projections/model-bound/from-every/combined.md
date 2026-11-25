@@ -1,24 +1,24 @@
 ```elixir title="Combine specific mappings with every-event metadata"
 defmodule MyApp.Events.UserRegisteredForEvery do
-  use Chronicle.Events.EventType, id: "user-registered-for-every-v1"
+  use Cratis.Chronicle.Events.EventType, id: "user-registered-for-every-v1"
 
   defstruct [:name, :email]
 end
 
 defmodule MyApp.Events.UserNameChangedForEvery do
-  use Chronicle.Events.EventType, id: "user-name-changed-for-every-v1"
+  use Cratis.Chronicle.Events.EventType, id: "user-name-changed-for-every-v1"
 
   defstruct [:new_name]
 end
 
 defmodule MyApp.Events.UserEmailChangedForEvery do
-  use Chronicle.Events.EventType, id: "user-email-changed-for-every-v1"
+  use Cratis.Chronicle.Events.EventType, id: "user-email-changed-for-every-v1"
 
   defstruct [:new_email]
 end
 
 defmodule MyApp.ReadModels.UserProfileFromEvery do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{UserEmailChangedForEvery, UserNameChangedForEvery, UserRegisteredForEvery}
 

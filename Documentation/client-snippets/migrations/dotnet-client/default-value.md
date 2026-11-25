@@ -1,22 +1,22 @@
 ```elixir
 defmodule MyApp.Events.MigrationsDotnetClientDefaultValueTaskCreatedV1 do
-  use Chronicle.Events.EventType, id: "dotnet-client-task-created", generation: 1
+  use Cratis.Chronicle.Events.EventType, id: "dotnet-client-task-created", generation: 1
 
   defstruct [:title]
 end
 
 defmodule MyApp.Events.MigrationsDotnetClientDefaultValueTaskCreated do
-  use Chronicle.Events.EventType, id: "dotnet-client-task-created", generation: 2
+  use Cratis.Chronicle.Events.EventType, id: "dotnet-client-task-created", generation: 2
 
   defstruct [:title, :status, :retry_count, :enabled]
 end
 
 defmodule MyApp.Migrations.MigrationsDotnetClientDefaultValueTaskCreatedMigration do
-  use Chronicle.Events.Migration,
+  use Cratis.Chronicle.Events.Migration,
     from: {MyApp.Events.MigrationsDotnetClientDefaultValueTaskCreatedV1, generation: 1},
     to: {MyApp.Events.MigrationsDotnetClientDefaultValueTaskCreated, generation: 2}
 
-  alias Chronicle.Events.MigrationBuilder
+  alias Cratis.Chronicle.Events.MigrationBuilder
 
   @impl true
   def upcast(builder) do

@@ -8,7 +8,7 @@ defmodule MyApp.NotificationWasNotRecorded do
 end
 
 defmodule MyApp.Reactors.WaitlistNotifierExplicitAppend do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.BookReturned
   alias MyApp.Events.WaitlistNotificationSent
@@ -21,7 +21,7 @@ defmodule MyApp.Reactors.WaitlistNotifierExplicitAppend do
   def handle(%BookReturned{}, %{event_source_id: book_id}) do
     NotificationService.notify_next_in_line(book_id)
 
-    case Chronicle.append(book_id, %WaitlistNotificationSent{}) do
+    case Cratis.Chronicle.append(book_id, %WaitlistNotificationSent{}) do
       :ok -> :ok
       {:error, _reason} -> raise NotificationWasNotRecorded, book_id
     end

@@ -4,15 +4,15 @@
 # Round trip against a real kernel for webhook registration. Opt in like the other
 # integration tests: point CHRONICLE_INTEGRATION_CONNECTION_STRING at a development kernel and run
 # `mix test --include integration`.
-defmodule Chronicle.Integration.WebhooksTest do
+defmodule Cratis.Chronicle.Integration.WebhooksTest do
   use ExUnit.Case, async: false
 
   @moduletag :integration
 
-  alias Chronicle.WebHooks.DefinitionBuilder
+  alias Cratis.Chronicle.WebHooks.DefinitionBuilder
 
   defmodule NoteAdded do
-    use Chronicle.Events.EventType, id: "wh-note-added"
+    use Cratis.Chronicle.Events.EventType, id: "wh-note-added"
     defstruct text: ""
   end
 
@@ -20,7 +20,7 @@ defmodule Chronicle.Integration.WebhooksTest do
     prefix = System.get_env("CHRONICLE_INTEGRATION_EVENT_STORE_PREFIX", "webhooks-elixir")
 
     {:ok, _} =
-      Chronicle.Client.start_link(
+      Cratis.Chronicle.Client.start_link(
         name: :webhooks_it_client,
         connection_string: System.fetch_env!("CHRONICLE_INTEGRATION_CONNECTION_STRING"),
         event_store:
@@ -29,7 +29,7 @@ defmodule Chronicle.Integration.WebhooksTest do
         event_types: [NoteAdded]
       )
 
-    :ok = Chronicle.Client.await_registration(:webhooks_it_client, 60_000)
+    :ok = Cratis.Chronicle.Client.await_registration(:webhooks_it_client, 60_000)
     :ok
   end
 
@@ -37,7 +37,7 @@ defmodule Chronicle.Integration.WebhooksTest do
 
   test "a webhook registered as not replayable reads back as not replayable" do
     assert :ok =
-             Chronicle.register_webhook(
+             Cratis.Chronicle.register_webhook(
                "not-replayable-webhook",
                "https://example.com/chronicle/webhooks",
                fn builder ->
@@ -50,7 +50,7 @@ defmodule Chronicle.Integration.WebhooksTest do
 
     webhook =
       wait_for(fn ->
-        {:ok, webhooks} = Chronicle.get_webhooks(@opts)
+        {:ok, webhooks} = Cratis.Chronicle.get_webhooks(@opts)
         Enum.find(webhooks, &(&1.id == "not-replayable-webhook"))
       end)
 

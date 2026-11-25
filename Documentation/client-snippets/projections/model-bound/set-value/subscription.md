@@ -1,24 +1,24 @@
 ```elixir
 defmodule MyApp.Events.SetValueSubscriptionStarted do
-  use Chronicle.Events.EventType, id: "set-value-subscription-started-v1"
+  use Cratis.Chronicle.Events.EventType, id: "set-value-subscription-started-v1"
 
   defstruct []
 end
 
 defmodule MyApp.Events.SetValueSubscriptionPaused do
-  use Chronicle.Events.EventType, id: "set-value-subscription-paused-v1"
+  use Cratis.Chronicle.Events.EventType, id: "set-value-subscription-paused-v1"
 
   defstruct []
 end
 
 defmodule MyApp.Events.SetValueSubscriptionCanceled do
-  use Chronicle.Events.EventType, id: "set-value-subscription-canceled-v1"
+  use Cratis.Chronicle.Events.EventType, id: "set-value-subscription-canceled-v1"
 
   defstruct []
 end
 
 defmodule MyApp.ReadModels.SetValueSubscription do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{
     SetValueSubscriptionStarted,

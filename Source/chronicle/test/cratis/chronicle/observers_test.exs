@@ -1,0 +1,247 @@
+# Copyright (c) Cratis. All rights reserved.
+# Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
+defmodule Cratis.Chronicle.ObserversTest do
+  use ExUnit.Case, async: true
+
+  alias Cratis.Chronicle.Observers
+  alias Cratis.Chronicle.Observers.{FastForwardResult, ObserverInformation, RemovalResult}
+
+  describe "decode_fast_forward_result/1" do
+    test "decodes the outcome and where the observer moved from and to" do
+      wire = %{
+        Outcome: :FastForwarded,
+        PreviousNextEventSequenceNumber: 5,
+        NextEventSequenceNumber: 101
+      }
+
+      assert %FastForwardResult{
+               outcome: :fast_forwarded,
+               previous_next_event_sequence_number: 5,
+               next_event_sequence_number: 101
+             } = Observers.decode_fast_forward_result(wire)
+    end
+
+    test "decodes an observer already at the tail" do
+      assert %FastForwardResult{outcome: :already_at_tail} =
+               Observers.decode_fast_forward_result(%{Outcome: :AlreadyAtTail})
+    end
+
+    test "decodes a replaying observer" do
+      assert %FastForwardResult{outcome: :replaying} =
+               Observers.decode_fast_forward_result(%{Outcome: :ObserverReplaying})
+    end
+
+    test "decodes an accepted fast forward" do
+      assert %FastForwardResult{outcome: :accepted} =
+               Observers.decode_fast_forward_result(%{Outcome: :FAST_FORWARD_OUTCOME_Accepted})
+
+      assert %FastForwardResult{outcome: :accepted} =
+               Observers.decode_fast_forward_result(%{Outcome: 4})
+    end
+
+    test "decodes an outcome number this client does not know as not available" do
+      assert %FastForwardResult{outcome: :not_available} =
+               Observers.decode_fast_forward_result(%{Outcome: 99})
+    end
+
+    test "decodes an unrecognized outcome as not available" do
+      assert %FastForwardResult{outcome: :not_available} =
+               Observers.decode_fast_forward_result(%{Outcome: :bogus})
+    end
+  end
+
+  describe "decode_retry_outcome/1" do
+    test "decodes an accepted retry by name and by number" do
+      assert :accepted = Observers.decode_retry_outcome(:PARTITION_RECOVERY_OUTCOME_Accepted)
+      assert :accepted = Observers.decode_retry_outcome(4)
+    end
+
+    test "keeps decoding the outcomes it knew" do
+      assert :started = Observers.decode_retry_outcome(:Started)
+      assert :partition_quarantined = Observers.decode_retry_outcome(:PartitionQuarantined)
+    end
+
+    test "does not crash on an outcome it does not know" do
+      assert :unknown = Observers.decode_retry_outcome(99)
+    end
+  end
+
+  describe "decode_clear_outcome/1" do
+    test "decodes an accepted clear by name and by number" do
+      assert :accepted =
+               Observers.decode_clear_outcome(:CLEAR_PARTITION_QUARANTINE_OUTCOME_Accepted)
+
+      assert :accepted = Observers.decode_clear_outcome(3)
+    end
+
+    test "keeps decoding the outcomes it knew" do
+      assert :cleared = Observers.decode_clear_outcome(:Cleared)
+      assert :not_quarantined = Observers.decode_clear_outcome(:NotQuarantined)
+    end
+
+    test "does not crash on an outcome it does not know" do
+      assert :unknown = Observers.decode_clear_outcome(99)
+    end
+  end
+
+  describe "decode_observer_information/1" do
+    test "decodes every field on a wire observer" do
+      wire = %{
+        Id: "employee-alerts",
+        EventSequenceId: "event-log",
+        Type: :Reactor,
+        RunningState: :Active,
+        LastHandledEventSequenceNumber: 6,
+        NextEventSequenceNumber: 7,
+        HandledEventCount: 6
+      }
+
+      assert %ObserverInformation{
+               id: "employee-alerts",
+               event_sequence_id: "event-log",
+               type: :reactor,
+               running_state: :active,
+               last_handled_event_sequence_number: 6,
+               next_event_sequence_number: 7,
+               handled_event_count: 6
+             } = Observers.decode_observer_information(wire)
+    end
+
+    # OBSERVER_RUNNING_STATE_Disconnected is how the wire enum actually names it - protoc
+    # prefixes the literal to dodge a collision elsewhere in the file - so a clause matching
+    # the plain atom would never fire and every disconnected observer would silently decode
+    # as :unknown instead.
+    test "decodes a disconnected observer as disconnected, not unknown" do
+      wire = %{
+        Id: "employee-alerts",
+        EventSequenceId: "event-log",
+        Type: :Reactor,
+        RunningState: :OBSERVER_RUNNING_STATE_Disconnected
+      }
+
+      assert %ObserverInformation{running_state: :disconnected} =
+               Observers.decode_observer_information(wire)
+    end
+
+    test "decodes an unrecognized running state as unknown" do
+      wire = %{
+        Id: "employee-alerts",
+        EventSequenceId: "event-log",
+        Type: :Reactor,
+        RunningState: :bogus
+      }
+
+      assert %ObserverInformation{running_state: :unknown} =
+               Observers.decode_observer_information(wire)
+    end
+
+    for {wire_type, client_type} <- [
+          {:Reactor, :reactor},
+          {:Projection, :projection},
+          {:Reducer, :reducer},
+          {:External, :external}
+        ] do
+      test "decodes observer type #{wire_type} as #{client_type}" do
+        wire = %{
+          Id: "an-observer",
+          EventSequenceId: "event-log",
+          Type: unquote(wire_type),
+          RunningState: :Active
+        }
+
+        assert %ObserverInformation{type: unquote(client_type)} =
+                 Observers.decode_observer_information(wire)
+      end
+    end
+
+    for {wire_owner, client_owner} <- [
+          {:None, :none},
+          {:Client, :client},
+          {:Kernel, :kernel}
+        ] do
+      test "decodes observer owner #{wire_owner} as #{client_owner}" do
+        wire = %{
+          Id: "an-observer",
+          EventSequenceId: "event-log",
+          Type: :Reactor,
+          Owner: unquote(wire_owner),
+          RunningState: :Active
+        }
+
+        assert %ObserverInformation{owner: unquote(client_owner)} =
+                 Observers.decode_observer_information(wire)
+      end
+    end
+
+    test "decodes an unrecognized owner as unknown" do
+      wire = %{
+        Id: "an-observer",
+        EventSequenceId: "event-log",
+        Type: :Reactor,
+        Owner: :bogus,
+        RunningState: :Active
+      }
+
+      assert %ObserverInformation{owner: :unknown} = Observers.decode_observer_information(wire)
+    end
+
+    test "decodes the handled event types" do
+      wire = %{
+        Id: "an-observer",
+        EventSequenceId: "event-log",
+        Type: :Reactor,
+        RunningState: :Active,
+        EventTypes: [%{Id: "account-opened", Generation: 1, Tombstone: false}]
+      }
+
+      assert %ObserverInformation{event_types: [%{Id: "account-opened", Generation: 1}]} =
+               Observers.decode_observer_information(wire)
+    end
+
+    test "defaults owner and event_types when absent from the wire message" do
+      wire = %{
+        Id: "an-observer",
+        EventSequenceId: "event-log",
+        Type: :Reactor,
+        RunningState: :Active
+      }
+
+      assert %ObserverInformation{owner: :unknown, event_types: []} =
+               Observers.decode_observer_information(wire)
+    end
+  end
+
+  describe "decode_removal_result/1" do
+    test "decodes a removed observer as removed" do
+      wire = %{Outcome: :Removed, BlockingNamespace: ""}
+
+      assert %RemovalResult{outcome: :removed, blocking_namespace: ""} =
+               Observers.decode_removal_result(wire)
+
+      assert RemovalResult.removed?(Observers.decode_removal_result(wire))
+    end
+
+    test "decodes a refusal and the namespace that blocked it" do
+      wire = %{Outcome: :ObserverActive, BlockingNamespace: "production"}
+      result = Observers.decode_removal_result(wire)
+
+      assert %RemovalResult{outcome: :observer_active, blocking_namespace: "production"} = result
+      refute RemovalResult.removed?(result)
+    end
+
+    for {wire_outcome, client_outcome} <- [
+          {:Removed, :removed},
+          {:ObserverNotFound, :observer_not_found},
+          {:ObserverActive, :observer_active},
+          {:ObserverSubscribed, :observer_subscribed}
+        ] do
+      test "decodes outcome #{wire_outcome} as #{client_outcome}" do
+        wire = %{Outcome: unquote(wire_outcome), BlockingNamespace: ""}
+
+        assert %RemovalResult{outcome: unquote(client_outcome)} =
+                 Observers.decode_removal_result(wire)
+      end
+    end
+  end
+end

@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.DecVariantFullIssueCreated do
-  use Chronicle.Events.EventType, id: "dec-variant-full-issue-created-v1"
+  use Cratis.Chronicle.Events.EventType, id: "dec-variant-full-issue-created-v1"
 
   defstruct [:title]
 end
 
 defmodule MyApp.Events.DecVariantFullPullRequestCreated do
-  use Chronicle.Events.EventType, id: "dec-variant-full-pull-request-created-v1"
+  use Cratis.Chronicle.Events.EventType, id: "dec-variant-full-pull-request-created-v1"
 
   defstruct [:pull_request_url]
 end
 
 defmodule MyApp.Events.DecVariantFullBuildCompleted do
-  use Chronicle.Events.EventType, id: "dec-variant-full-build-completed-v1"
+  use Cratis.Chronicle.Events.EventType, id: "dec-variant-full-build-completed-v1"
 
   defstruct [:build_status]
 end
@@ -23,20 +23,20 @@ defmodule MyApp.ReadModels.DecVariantFullWorkItem do
 end
 
 defmodule MyApp.ReadModels.DecVariantFullBacklogItem do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct [:id, :title]
 end
 
 defmodule MyApp.ReadModels.DecVariantFullPullRequestItem do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct [:id, :pull_request_url, :build_status]
 end
 
 # The variant an entity is in before a pull request exists for it.
 defmodule MyApp.Projections.DecVariantFullBacklogItemProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.DecVariantFullBacklogItem
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.DecVariantFullBacklogItem
 
   alias MyApp.Events.DecVariantFullIssueCreated
   alias MyApp.ReadModels.DecVariantFullWorkItem
@@ -52,7 +52,7 @@ end
 # DecVariantFullBuildCompleted - an event that is NOT this variant's entering event, so it is
 # reclassified into an update-only join and can never create the row on its own.
 defmodule MyApp.Projections.DecVariantFullPullRequestItemProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.DecVariantFullPullRequestItem
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.DecVariantFullPullRequestItem
 
   alias MyApp.Events.{DecVariantFullPullRequestCreated, DecVariantFullBuildCompleted}
   alias MyApp.ReadModels.DecVariantFullWorkItem

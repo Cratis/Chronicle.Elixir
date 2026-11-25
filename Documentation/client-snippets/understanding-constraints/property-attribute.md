@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.UcUserRegistered do
-  use Chronicle.Events.EventType, id: "uc-user-registered"
+  use Cratis.Chronicle.Events.EventType, id: "uc-user-registered"
 
   defstruct [:email, :display_name]
 

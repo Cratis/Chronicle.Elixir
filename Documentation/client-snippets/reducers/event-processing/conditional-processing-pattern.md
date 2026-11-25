@@ -1,18 +1,18 @@
 ```elixir
 defmodule EventProcessingAccountOpened do
-  use Chronicle.Events.EventType, id: "event-processing-account-opened"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-account-opened"
 
   defstruct [:account_id]
 end
 
 defmodule EventProcessingDepositMade do
-  use Chronicle.Events.EventType, id: "event-processing-deposit-made"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-deposit-made"
 
   defstruct [:amount]
 end
 
 defmodule EventProcessingAccountClosed do
-  use Chronicle.Events.EventType, id: "event-processing-account-closed"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-account-closed"
 
   defstruct []
 end
@@ -22,7 +22,7 @@ defmodule EventProcessingAccount do
 end
 
 defmodule EventProcessingAccountReducer do
-  use Chronicle.Reducers.Reducer, model: EventProcessingAccount
+  use Cratis.Chronicle.Reducers.Reducer, model: EventProcessingAccount
 
   alias EventProcessingAccountOpened
   alias EventProcessingDepositMade

@@ -1,6 +1,6 @@
 ```elixir
 defmodule PassiveReducersExperimentalMetricRecorded do
-  use Chronicle.Events.EventType, id: "passive-reducers-experimental-metric-recorded"
+  use Cratis.Chronicle.Events.EventType, id: "passive-reducers-experimental-metric-recorded"
 
   defstruct [:value]
 end
@@ -12,7 +12,7 @@ end
 defmodule PassiveReducersExperimentalMetricsReducer do
   # Mix.env/0 is evaluated at compile time, so a release build always sees
   # `active: true` — only local :dev builds register without activating.
-  use Chronicle.Reducers.Reducer,
+  use Cratis.Chronicle.Reducers.Reducer,
     model: PassiveReducersExperimentalMetrics,
     active: Mix.env() != :dev
 

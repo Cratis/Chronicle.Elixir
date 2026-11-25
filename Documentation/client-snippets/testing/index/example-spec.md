@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.TestingIndexAuthorRegistered do
-  use Chronicle.Events.EventType, id: "testing-index-author-registered"
+  use Cratis.Chronicle.Events.EventType, id: "testing-index-author-registered"
 
   defstruct [:name]
 end
 
 defmodule MyApp.ReadModels.TestingIndexAuthor do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.TestingIndexAuthorRegistered
 
@@ -25,7 +25,7 @@ defmodule MyApp.TestingIndexExampleSpecTest do
     author_id = "author-#{System.unique_integer([:positive])}"
 
     {:ok, author} =
-      Chronicle.Testing.Projections.apply_event(
+      Cratis.Chronicle.Testing.Projections.apply_event(
         TestingIndexAuthor,
         nil,
         %TestingIndexAuthorRegistered{name: "Jane Austen"},

@@ -1,12 +1,12 @@
 ```elixir title="Convention-based set mapping"
 defmodule MyApp.Events.UserRegisteredForProfile do
-  use Chronicle.Events.EventType, id: "user-registered-for-profile"
+  use Cratis.Chronicle.Events.EventType, id: "user-registered-for-profile"
 
   defstruct [:name, :email]
 end
 
 defmodule MyApp.ReadModels.UserProfile do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.UserRegisteredForProfile
 

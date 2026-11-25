@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Compliance.Pii.DateOfBirth do
-  use Chronicle.Concept, type: :string
+  use Cratis.Chronicle.Concept, type: :string
   pii()
 end
 
@@ -11,7 +11,7 @@ end
 
 # Chronicle still finds it: dateOfBirth.dateOfBirth is encrypted, verifiedBy is not.
 defmodule MyApp.Compliance.Pii.ExpressVerification do
-  use Chronicle.Events.EventType, id: "pii-express-verification"
+  use Cratis.Chronicle.Events.EventType, id: "pii-express-verification"
   defstruct name: "", date_of_birth: %MyApp.Compliance.Pii.VerifiedDateOfBirth{}
 end
 ```

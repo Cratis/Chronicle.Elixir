@@ -1,18 +1,18 @@
 ```elixir title="Dictionary operations keyed per event"
 defmodule MyApp.Events.DecDictionaryItemSold do
-  use Chronicle.Events.EventType, id: "dec-dictionary-item-sold"
+  use Cratis.Chronicle.Events.EventType, id: "dec-dictionary-item-sold"
 
   defstruct category: "", quantity: 0
 end
 
 defmodule MyApp.Events.DecDictionaryItemReturned do
-  use Chronicle.Events.EventType, id: "dec-dictionary-item-returned"
+  use Cratis.Chronicle.Events.EventType, id: "dec-dictionary-item-returned"
 
   defstruct category: "", quantity: 0
 end
 
 defmodule MyApp.ReadModels.DecDictionarySales do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct units_by_category: %{},
             sales_by_category: %{},
@@ -21,7 +21,7 @@ defmodule MyApp.ReadModels.DecDictionarySales do
 end
 
 defmodule MyApp.Projections.DecDictionarySalesProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.DecDictionarySales
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.DecDictionarySales
 
   alias MyApp.Events.{DecDictionaryItemReturned, DecDictionaryItemSold}
 

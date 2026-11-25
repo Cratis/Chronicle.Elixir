@@ -2,7 +2,7 @@
 defmodule MyApp.MaterializedPaginationProductDashboard do
   use GenServer
 
-  alias Chronicle.ReadModels
+  alias Cratis.Chronicle.ReadModels
   alias MyApp.ReadModels.MaterializedPaginationOrder
 
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts)

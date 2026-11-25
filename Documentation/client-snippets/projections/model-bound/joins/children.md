@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.MbJoinsChildrenMemberAdded do
-  use Chronicle.Events.EventType, id: "mb-joins-children-member-added"
+  use Cratis.Chronicle.Events.EventType, id: "mb-joins-children-member-added"
 
   defstruct [:member_id]
 end
 
 defmodule MyApp.Events.MbJoinsChildrenMemberProfileUpdated do
-  use Chronicle.Events.EventType, id: "mb-joins-children-member-profile-updated"
+  use Cratis.Chronicle.Events.EventType, id: "mb-joins-children-member-profile-updated"
 
   defstruct [:member_id, :display_name]
 end
@@ -16,7 +16,7 @@ defmodule MyApp.ReadModels.MbJoinsChildrenMember do
 end
 
 defmodule MyApp.ReadModels.MbJoinsChildrenTeam do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [members: {:list, MyApp.ReadModels.MbJoinsChildrenMember}]
 
   defstruct team_id: nil, members: []

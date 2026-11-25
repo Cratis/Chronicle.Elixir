@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.ReducersIndexDepositMade do
-  use Chronicle.Events.EventType, id: "reducers-index-deposit-made"
+  use Cratis.Chronicle.Events.EventType, id: "reducers-index-deposit-made"
 
   defstruct [:amount]
 end
 
 defmodule MyApp.Events.ReducersIndexWithdrawalMade do
-  use Chronicle.Events.EventType, id: "reducers-index-withdrawal-made"
+  use Cratis.Chronicle.Events.EventType, id: "reducers-index-withdrawal-made"
 
   defstruct [:amount]
 end
@@ -16,7 +16,7 @@ defmodule MyApp.ReadModels.ReducersIndexAccountBalance do
 end
 
 defmodule MyApp.Reducers.ReducersIndexAccountBalanceReducer do
-  use Chronicle.Reducers.Reducer, model: MyApp.ReadModels.ReducersIndexAccountBalance
+  use Cratis.Chronicle.Reducers.Reducer, model: MyApp.ReadModels.ReducersIndexAccountBalance
 
   alias MyApp.Events.{ReducersIndexDepositMade, ReducersIndexWithdrawalMade}
   alias MyApp.ReadModels.ReducersIndexAccountBalance

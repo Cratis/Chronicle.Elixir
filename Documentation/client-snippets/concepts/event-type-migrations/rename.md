@@ -1,22 +1,22 @@
 ```elixir
 defmodule MyApp.Events.MigrationsRenamePaymentProcessedV1 do
-  use Chronicle.Events.EventType, id: "payment-processed", generation: 1
+  use Cratis.Chronicle.Events.EventType, id: "payment-processed", generation: 1
 
   defstruct [:old_amount]
 end
 
 defmodule MyApp.Events.MigrationsRenamePaymentProcessed do
-  use Chronicle.Events.EventType, id: "payment-processed", generation: 2
+  use Cratis.Chronicle.Events.EventType, id: "payment-processed", generation: 2
 
   defstruct [:amount]
 end
 
 defmodule MyApp.Migrations.MigrationsRenamePaymentProcessedMigration do
-  use Chronicle.Events.Migration,
+  use Cratis.Chronicle.Events.Migration,
     from: {MyApp.Events.MigrationsRenamePaymentProcessedV1, generation: 1},
     to: {MyApp.Events.MigrationsRenamePaymentProcessed, generation: 2}
 
-  alias Chronicle.Events.MigrationBuilder
+  alias Cratis.Chronicle.Events.MigrationBuilder
 
   @impl true
   def upcast(builder) do

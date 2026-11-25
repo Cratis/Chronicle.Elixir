@@ -3,7 +3,7 @@ title: Failed partitions
 description: Find the event sources where a reactor or reducer failed, then read each failed attempt and its error details from Elixir to diagnose the problem.
 ---
 
-`Chronicle.FailedPartitions` provides an idiomatic Elixir API for inspecting Chronicle's
+`Cratis.Chronicle.FailedPartitions` provides an idiomatic Elixir API for inspecting Chronicle's
 failed partitions.
 
 A partition (an event source, within an observer's subscription) is marked failed when an
@@ -23,11 +23,11 @@ Review messages and stack traces before sharing diagnostics.
 
 ## Starting point
 
-Start `Chronicle.Client` first:
+Start `Cratis.Chronicle.Client` first:
 
 ```elixir
 children = [
-  {Chronicle.Client,
+  {Cratis.Chronicle.Client,
     connection_string: "chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000",
     event_store: "banking",
     otp_app: :my_app}
@@ -40,7 +40,7 @@ Get every failed partition for any observer (reactor, reducer, and so on) on the
 event store:
 
 ```elixir
-{:ok, failed_partitions} = Chronicle.FailedPartitions.get_all()
+{:ok, failed_partitions} = Cratis.Chronicle.FailedPartitions.get_all()
 ```
 
 ## Getting failed partitions for a specific observer
@@ -48,19 +48,19 @@ event store:
 Narrow the lookup to a single observer by its id:
 
 ```elixir
-{:ok, failed_partitions} = Chronicle.FailedPartitions.get_for("MyApp.Reactors.OrderNotifier")
+{:ok, failed_partitions} = Cratis.Chronicle.FailedPartitions.get_for("MyApp.Reactors.OrderNotifier")
 ```
 
 ## The `FailedPartition` and `Attempt` structs
 
-Each failed partition is returned as `%Chronicle.FailedPartitions.FailedPartition{}` with:
+Each failed partition is returned as `%Cratis.Chronicle.FailedPartitions.FailedPartition{}` with:
 
 - `:id`
 - `:observer_id`
 - `:partition` — the event source id that failed
 - `:attempts` — the list of failed attempts, oldest first
 
-Each attempt is a `%Chronicle.FailedPartitions.Attempt{}` with:
+Each attempt is a `%Cratis.Chronicle.FailedPartitions.Attempt{}` with:
 
 - `:occurred`
 - `:sequence_number`
@@ -80,7 +80,7 @@ end)
 ## Using a named client
 
 ```elixir
-{:ok, failed_partitions} = Chronicle.FailedPartitions.get_all(client: :bank_chronicle)
+{:ok, failed_partitions} = Cratis.Chronicle.FailedPartitions.get_all(client: :bank_chronicle)
 ```
 
 See [Observers](observers.md) for the observer's own state — including removing one whose

@@ -3,7 +3,7 @@ title: Discovery and artifact identity drift
 description: See which event types, reactors, reducers and projections Chronicle.Elixir discovered at startup, and catch artifact identities that drifted from the kernel.
 ---
 
-`Chronicle.Client` discovers your event types, reactors, reducers, projections, read models,
+`Cratis.Chronicle.Client` discovers your event types, reactors, reducers, projections, read models,
 constraints, webhooks, event store subscriptions, seeders, migrations, global handlers and
 captures at startup — whether through `otp_app:` auto-discovery, loaded-module discovery, or
 explicit module lists. This page covers two things that build on that discovery: a report of
@@ -11,12 +11,12 @@ what was found, and a check for likely artifact identity drift before registrati
 
 ## The discovery report
 
-`Chronicle.Client` builds a `%Chronicle.Discovery.Report{}` during `init/1`, logs a one-line
+`Cratis.Chronicle.Client` builds a `%Cratis.Chronicle.Discovery.Report{}` during `init/1`, logs a one-line
 summary at `:info` and the full report at `:debug`, and exposes it afterwards:
 
 ```elixir
-report = Chronicle.Client.discovery_report()
-Chronicle.Discovery.Report.format(report)
+report = Cratis.Chronicle.Client.discovery_report()
+Cratis.Chronicle.Discovery.Report.format(report)
 ```
 
 ```text
@@ -36,13 +36,13 @@ Chronicle discovery report:
   captures (0)
 ```
 
-`Chronicle.Artifacts.report/1` builds the same report directly from an OTP application, without
-starting a client — `Chronicle.Artifacts.discover/1` keeps returning its plain map unchanged, so
+`Cratis.Chronicle.Artifacts.report/1` builds the same report directly from an OTP application, without
+starting a client — `Cratis.Chronicle.Artifacts.discover/1` keeps returning its plain map unchanged, so
 existing callers are unaffected:
 
 ```elixir
-report = Chronicle.Artifacts.report(:my_app)
-Chronicle.Discovery.Report.count_of(report, :reactor)
+report = Cratis.Chronicle.Artifacts.report(:my_app)
+Cratis.Chronicle.Discovery.Report.count_of(report, :reactor)
 ```
 
 `mix chronicle.discover --otp-app my_app` prints the same report from the command line — see
@@ -61,14 +61,14 @@ start, so it doesn't repeat every time the report is rebuilt):
 ```text
 [warning] MyApp.Reactors.NotificationReactor has no explicit :id and defaults to its module
 name. Renaming or moving this module will silently reset its observation position. Pin the id
-with `use Chronicle.Reactors.Reactor, id: "...", ...`.
+with `use Cratis.Chronicle.Reactors.Reactor, id: "...", ...`.
 ```
 
-Pass `warn_defaulted_ids: false` to `Chronicle.Client` to suppress it.
+Pass `warn_defaulted_ids: false` to `Cratis.Chronicle.Client` to suppress it.
 
 ## Artifact identity drift
 
-Before registering, `Chronicle.Client` can compare what it is about to register with what the
+Before registering, `Cratis.Chronicle.Client` can compare what it is about to register with what the
 kernel already has, and flag three kinds of drift:
 
 - **`:schema_changed_without_generation`** — an event type generation's schema no longer matches
@@ -87,7 +87,7 @@ kernel already has, and flag three kinds of drift:
 Control this with the `:drift_policy` client option:
 
 ```elixir
-{Chronicle.Client,
+{Cratis.Chronicle.Client,
   connection_string: "chronicle://localhost:35000",
   event_store: "my-store",
   otp_app: :my_app,
@@ -118,8 +118,8 @@ your own reason — useful when you want the clearer, earlier message.
 Read the most recent findings at any time:
 
 ```elixir
-Chronicle.Client.identity_drift()
-# => [%Chronicle.Discovery.Drift{kind: :reactor, id: "notification-reactor",
+Cratis.Chronicle.Client.identity_drift()
+# => [%Cratis.Chronicle.Discovery.Drift{kind: :reactor, id: "notification-reactor",
 #      reason: :observer_missing_from_code, severity: :info}]
 ```
 
@@ -136,7 +136,7 @@ mix chronicle.discover --otp-app my_app \
 
 - `--otp-app` — **(required)** the OTP application to discover artifacts from.
 - `--connection-string` — compare the report with a kernel's event types and observers (event
-  store `"default"`, namespace `"Default"` — the same defaults `Chronicle.Client` uses).
+  store `"default"`, namespace `"Default"` — the same defaults `Cratis.Chronicle.Client` uses).
 - `--fail-on-drift` — exit `1` when a `:warning`-severity finding exists; has no effect without
   `--connection-string`.
 

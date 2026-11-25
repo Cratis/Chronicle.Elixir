@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.ReadModels.GetStartedBook do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: "", title: "", isbn: "", on_loan: false, borrowed_by: ""
 

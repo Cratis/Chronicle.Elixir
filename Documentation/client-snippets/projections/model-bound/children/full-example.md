@@ -1,24 +1,24 @@
 ```elixir
 defmodule MyApp.Events.MbChildrenOrderCreated do
-  use Chronicle.Events.EventType, id: "mb-children-order-created"
+  use Cratis.Chronicle.Events.EventType, id: "mb-children-order-created"
 
   defstruct [:customer_name]
 end
 
 defmodule MyApp.Events.MbChildrenLineItemAddedFullExample do
-  use Chronicle.Events.EventType, id: "mb-children-line-item-added-full-example"
+  use Cratis.Chronicle.Events.EventType, id: "mb-children-line-item-added-full-example"
 
   defstruct [:order_line_id, :product_name, :quantity]
 end
 
 defmodule MyApp.Events.MbChildrenQuantityAdjusted do
-  use Chronicle.Events.EventType, id: "mb-children-quantity-adjusted"
+  use Cratis.Chronicle.Events.EventType, id: "mb-children-quantity-adjusted"
 
   defstruct [:order_line_id, :quantity]
 end
 
 defmodule MyApp.Events.MbChildrenLineItemRemovedFullExample do
-  use Chronicle.Events.EventType, id: "mb-children-line-item-removed-full-example"
+  use Cratis.Chronicle.Events.EventType, id: "mb-children-line-item-removed-full-example"
 
   defstruct [:order_line_id]
 end
@@ -28,7 +28,7 @@ defmodule MyApp.ReadModels.MbChildrenOrderLine do
 end
 
 defmodule MyApp.ReadModels.MbChildrenFullOrder do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [lines: {:list, MyApp.ReadModels.MbChildrenOrderLine}]
 
   defstruct order_id: nil, customer_name: nil, lines: []

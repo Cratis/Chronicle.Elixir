@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Reactors.GetStartedBookReturnedNotifier do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.GetStartedBookReturned
 

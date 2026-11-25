@@ -1,6 +1,6 @@
 ```elixir title="The projection - builds queryable state"
 defmodule MyApp.ReadModels.TestProjection do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.TestEvent
 

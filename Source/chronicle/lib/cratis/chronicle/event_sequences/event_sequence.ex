@@ -1,0 +1,379 @@
+# Copyright (c) Cratis. All rights reserved.
+# Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
+defmodule Cratis.Chronicle.EventSequences.EventSequence do
+  @moduledoc """
+  Represents a Chronicle event sequence.
+
+  Use this module when you want to work with a non-default event sequence and keep
+  the event sequence identifier close to the append/query operations.
+  """
+
+  alias Cratis.Chronicle.EventSequences.TransactionalEventSequence
+
+  @enforce_keys [:id]
+  defstruct [:id, opts: []]
+
+  @type t :: %__MODULE__{id: String.t(), opts: keyword()}
+
+  @doc """
+  Creates an event sequence wrapper for the given event sequence id.
+  """
+  @spec new(String.t(), keyword()) :: t()
+  def new(id, opts \\ []) when is_binary(id), do: %__MODULE__{id: id, opts: opts}
+
+  @doc """
+  Appends a single event to the event sequence.
+  """
+  @spec append(t(), String.t(), struct(), keyword()) :: :ok | {:error, term()}
+  def append(%__MODULE__{} = event_sequence, event_source_id, event, opts \\ []) do
+    Cratis.Chronicle.EventSequences.EventLog.append(
+      event_source_id,
+      event,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Appends a compensating event for the event at the given sequence number. See
+  `Cratis.Chronicle.EventSequences.EventLog.compensate/3`.
+  """
+  @spec compensate(t(), non_neg_integer(), struct(), keyword()) ::
+          {:ok, Cratis.Chronicle.EventSequences.AppendResult.t()} | {:error, term()}
+  def compensate(%__MODULE__{} = event_sequence, compensation_for, event, opts \\ []) do
+    Cratis.Chronicle.EventSequences.EventLog.compensate(
+      compensation_for,
+      event,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Appends multiple events to the event sequence.
+  """
+  @spec append_many(t(), String.t(), [struct()], keyword()) :: :ok | {:error, term()}
+  def append_many(%__MODULE__{} = event_sequence, event_source_id, events, opts \\ []) do
+    Cratis.Chronicle.EventSequences.EventLog.append_many(
+      event_source_id,
+      events,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Appends a single event and returns the detailed `Cratis.Chronicle.EventSequences.AppendResult`.
+  """
+  @spec append_with_result(t(), String.t(), struct(), keyword()) ::
+          {:ok, Cratis.Chronicle.EventSequences.AppendResult.t()} | {:error, term()}
+  def append_with_result(%__MODULE__{} = event_sequence, event_source_id, event, opts \\ []) do
+    Cratis.Chronicle.EventSequences.EventLog.append_with_result(
+      event_source_id,
+      event,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Appends events atomically and returns the detailed `Cratis.Chronicle.EventSequences.AppendResult`.
+  """
+  @spec append_many_with_result(t(), String.t(), [struct()], keyword()) ::
+          {:ok, Cratis.Chronicle.EventSequences.AppendResult.t()} | {:error, term()}
+  def append_many_with_result(%__MODULE__{} = event_sequence, event_source_id, events, opts \\ []) do
+    Cratis.Chronicle.EventSequences.EventLog.append_many_with_result(
+      event_source_id,
+      events,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Gets events for the given event source from the event sequence.
+  """
+  @spec get_for_event_source(t(), String.t(), keyword()) :: {:ok, list()} | {:error, term()}
+  def get_for_event_source(%__MODULE__{} = event_sequence, event_source_id, opts \\ []) do
+    Cratis.Chronicle.EventSequences.EventLog.get_for_event_source(
+      event_source_id,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Gets the tail sequence number for the event sequence.
+  """
+  @spec get_tail_sequence_number(t(), String.t() | nil, keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def get_tail_sequence_number(%__MODULE__{} = event_sequence, event_source_id \\ nil, opts \\ []) do
+    Cratis.Chronicle.EventSequences.EventLog.get_tail_sequence_number(
+      event_source_id,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Gets the sequence number that will be assigned to the next appended event.
+  """
+  @spec get_next_sequence_number(t(), String.t() | nil, keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def get_next_sequence_number(%__MODULE__{} = event_sequence, event_source_id \\ nil, opts \\ []) do
+    Cratis.Chronicle.EventSequences.EventLog.get_next_sequence_number(
+      event_source_id,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Gets the tail sequence number scoped to only the event types the given
+  reactor or reducer module subscribes to.
+  """
+  @spec get_tail_sequence_number_for_observer(t(), module(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def get_tail_sequence_number_for_observer(
+        %__MODULE__{} = event_sequence,
+        observer_module,
+        opts \\ []
+      ) do
+    Cratis.Chronicle.EventSequences.EventLog.get_tail_sequence_number_for_observer(
+      observer_module,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Gets events from (and including) the given sequence number onward.
+  """
+  @spec get_from_sequence_number(t(), non_neg_integer(), keyword()) ::
+          {:ok, list()} | {:error, term()}
+  def get_from_sequence_number(%__MODULE__{} = event_sequence, sequence_number, opts \\ []) do
+    Cratis.Chronicle.EventSequences.EventLog.get_from_sequence_number(
+      sequence_number,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Completes a named, non-default stream so that no further events can be
+  appended to it.
+  """
+  @spec complete_stream(t(), String.t(), String.t(), keyword()) ::
+          {:ok, non_neg_integer()}
+          | {:error, :default_stream_cannot_be_completed | :already_completed | term()}
+  def complete_stream(
+        %__MODULE__{} = event_sequence,
+        event_stream_type,
+        event_stream_id,
+        opts \\ []
+      ) do
+    Cratis.Chronicle.EventSequences.EventLog.complete_stream(
+      event_stream_type,
+      event_stream_id,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Redacts a single event at a specific sequence number.
+  """
+  @spec redact(t(), non_neg_integer(), String.t(), keyword()) :: :ok | {:error, term()}
+  def redact(%__MODULE__{} = event_sequence, sequence_number, reason, opts \\ []) do
+    Cratis.Chronicle.EventSequences.EventLog.redact(
+      sequence_number,
+      reason,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Redacts all events for a given event source, optionally filtered to
+  specific event types.
+  """
+  @spec redact_for_event_source(t(), String.t(), String.t(), [module()], keyword()) ::
+          :ok | {:error, term()}
+  def redact_for_event_source(
+        %__MODULE__{} = event_sequence,
+        event_source_id,
+        reason,
+        event_types \\ [],
+        opts \\ []
+      ) do
+    Cratis.Chronicle.EventSequences.EventLog.redact_for_event_source(
+      event_source_id,
+      reason,
+      event_types,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Copies the events of one event source onto another, optionally filtered to
+  specific event types. Returns `{:ok, job_id}` for the durable job that was started.
+  """
+  @spec copy(t(), String.t(), String.t(), [module()], keyword()) ::
+          {:ok, String.t()} | {:error, term()}
+  def copy(%__MODULE__{} = event_sequence, source_id, target_id, event_types \\ [], opts \\ []) do
+    Cratis.Chronicle.EventSequences.EventLog.copy(
+      source_id,
+      target_id,
+      event_types,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Checks whether the event sequence has events for the given event source id.
+  """
+  @spec has_events_for?(t(), String.t(), keyword()) :: {:ok, boolean()} | {:error, term()}
+  def has_events_for?(%__MODULE__{} = event_sequence, event_source_id, opts \\ []) do
+    Cratis.Chronicle.EventSequences.EventLog.has_events_for?(
+      event_source_id,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Appends a single event, then waits for every observer affected by the append
+  to either reach the appended sequence number or fail.
+  """
+  @spec append_and_wait_for_completion(t(), String.t(), struct(), keyword()) ::
+          {:ok, %{success: boolean(), failed_partitions: list()}} | {:error, term()}
+  def append_and_wait_for_completion(
+        %__MODULE__{} = event_sequence,
+        event_source_id,
+        event,
+        opts \\ []
+      ) do
+    Cratis.Chronicle.EventSequences.EventLog.append_and_wait_for_completion(
+      event_source_id,
+      event,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Appends a list of `Cratis.Chronicle.EventSequences.EventForEventSourceId` entries as a
+  single atomic append-many, each carrying its own target event source id.
+  """
+  @spec append_many_for_event_sources(
+          t(),
+          [Cratis.Chronicle.EventSequences.EventForEventSourceId.t()],
+          keyword()
+        ) ::
+          :ok | {:error, term()}
+  def append_many_for_event_sources(%__MODULE__{} = event_sequence, events, opts \\ []) do
+    Cratis.Chronicle.EventSequences.EventLog.append_many_for_event_sources(
+      events,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Serializes `event` once and returns a `Cratis.Chronicle.EventSequences.PreparedEvent` bound to this
+  event sequence. See `Cratis.Chronicle.EventSequences.EventLog.prepare/2`.
+  """
+  @spec prepare(t(), struct(), keyword()) ::
+          {:ok, Cratis.Chronicle.EventSequences.PreparedEvent.t()} | {:error, term()}
+  def prepare(%__MODULE__{} = event_sequence, event, opts \\ []) do
+    Cratis.Chronicle.EventSequences.EventLog.prepare(event, merge_opts(event_sequence, opts))
+  end
+
+  @doc """
+  Appends a `prepare/3`d event. See `Cratis.Chronicle.EventSequences.EventLog.append_prepared/3`.
+  """
+  @spec append_prepared(
+          t(),
+          String.t(),
+          Cratis.Chronicle.EventSequences.PreparedEvent.t(),
+          keyword()
+        ) ::
+          :ok | {:error, term()}
+  def append_prepared(%__MODULE__{} = event_sequence, event_source_id, prepared_event, opts \\ []) do
+    Cratis.Chronicle.EventSequences.EventLog.append_prepared(
+      event_source_id,
+      prepared_event,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Reads the metadata of events by sequence number. See `Cratis.Chronicle.EventSequences.Streams.get_metadata/2`.
+  """
+  @spec get_metadata(t(), [non_neg_integer()], keyword()) :: {:ok, [map()]} | {:error, term()}
+  def get_metadata(%__MODULE__{} = event_sequence, sequence_numbers, opts \\ []) do
+    Cratis.Chronicle.EventSequences.Streams.get_metadata(
+      sequence_numbers,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Reads the metadata of a single event by sequence number. See
+  `Cratis.Chronicle.EventSequences.Streams.get_metadata_at/2`.
+  """
+  @spec get_metadata_at(t(), non_neg_integer(), keyword()) :: {:ok, map()} | {:error, term()}
+  def get_metadata_at(%__MODULE__{} = event_sequence, sequence_number, opts \\ []) do
+    Cratis.Chronicle.EventSequences.Streams.get_metadata_at(
+      sequence_number,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Verifies that `event` is what was stored at `sequence_number`. See
+  `Cratis.Chronicle.EventSequences.Streams.verify_content/3`.
+  """
+  @spec verify_content(
+          t(),
+          non_neg_integer(),
+          struct() | Cratis.Chronicle.EventSequences.PreparedEvent.t(),
+          keyword()
+        ) ::
+          {:ok, :equal | :different | :unavailable} | {:error, term()}
+  def verify_content(
+        %__MODULE__{} = event_sequence,
+        sequence_number,
+        event_or_prepared,
+        opts \\ []
+      ) do
+    Cratis.Chronicle.EventSequences.Streams.verify_content(
+      sequence_number,
+      event_or_prepared,
+      merge_opts(event_sequence, opts)
+    )
+  end
+
+  @doc """
+  Gets a transactional view of the event sequence that buffers appends in the current unit of work.
+  """
+  @spec transactional(t()) :: TransactionalEventSequence.t()
+  def transactional(%__MODULE__{} = event_sequence) do
+    TransactionalEventSequence.new(event_sequence)
+  end
+
+  @doc """
+  Imports events into the event sequence. See `Cratis.Chronicle.Imports.import/2`.
+  """
+  @spec import(t(), Enumerable.t(), keyword()) ::
+          {:ok, Cratis.Chronicle.Imports.ImportResult.t()} | {:error, term()}
+  def import(%__MODULE__{} = event_sequence, events, opts \\ []),
+    do: Cratis.Chronicle.Imports.import(events, merge_opts(event_sequence, opts))
+
+  @doc """
+  Imports events into the event sequence under a `Task`. See `Cratis.Chronicle.Imports.import_async/2`.
+  """
+  @spec import_async(t(), Enumerable.t(), keyword()) :: Task.t()
+  def import_async(%__MODULE__{} = event_sequence, events, opts \\ []),
+    do: Cratis.Chronicle.Imports.import_async(events, merge_opts(event_sequence, opts))
+
+  @doc """
+  Begins an import into the event sequence. See `Cratis.Chronicle.Imports.begin/1`.
+  """
+  @spec begin_import(t(), keyword()) ::
+          {:ok, Cratis.Chronicle.Imports.Session.t()} | {:error, term()}
+  def begin_import(%__MODULE__{} = event_sequence, opts \\ []),
+    do: Cratis.Chronicle.Imports.begin(merge_opts(event_sequence, opts))
+
+  defp merge_opts(%__MODULE__{} = event_sequence, opts) do
+    event_sequence.opts
+    |> Keyword.put(:event_sequence_id, event_sequence.id)
+    |> Keyword.merge(opts)
+  end
+end

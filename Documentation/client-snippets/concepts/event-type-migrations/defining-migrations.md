@@ -1,22 +1,22 @@
 ```elixir
 defmodule MyApp.Events.MigrationsAuthorRegisteredV1 do
-  use Chronicle.Events.EventType, id: "author-registered", generation: 1
+  use Cratis.Chronicle.Events.EventType, id: "author-registered", generation: 1
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.MigrationsAuthorRegistered do
-  use Chronicle.Events.EventType, id: "author-registered", generation: 2
+  use Cratis.Chronicle.Events.EventType, id: "author-registered", generation: 2
 
   defstruct [:first_name, :last_name]
 end
 
 defmodule MyApp.Migrations.MigrationsAuthorRegisteredMigration do
-  use Chronicle.Events.Migration,
+  use Cratis.Chronicle.Events.Migration,
     from: {MyApp.Events.MigrationsAuthorRegisteredV1, generation: 1},
     to: {MyApp.Events.MigrationsAuthorRegistered, generation: 2}
 
-  alias Chronicle.Events.MigrationBuilder
+  alias Cratis.Chronicle.Events.MigrationBuilder
 
   @impl true
   def upcast(builder) do

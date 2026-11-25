@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.TestingReactorScenarioServicesBookingCancelled do
-  use Chronicle.Events.EventType, id: "testing-reactor-scenario-services-booking-cancelled"
+  use Cratis.Chronicle.Events.EventType, id: "testing-reactor-scenario-services-booking-cancelled"
 
   defstruct [:booking_id]
 end
@@ -10,7 +10,7 @@ defmodule MyApp.TestingReactorScenarioServicesNotifications do
 end
 
 defmodule MyApp.Reactors.TestingReactorScenarioServicesCancellationReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.TestingReactorScenarioServicesBookingCancelled
 
@@ -34,7 +34,7 @@ defmodule MyApp.TestingReactorScenarioServicesRecordingNotifications do
 end
 
 defmodule MyApp.TestingReactorScenarioServicesTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [MyApp.Events.TestingReactorScenarioServicesBookingCancelled],
     reactors: [MyApp.Reactors.TestingReactorScenarioServicesCancellationReactor]
 
@@ -50,13 +50,13 @@ defmodule MyApp.TestingReactorScenarioServicesTest do
 
   test "a cancelled booking sends a notification", %{chronicle: client} do
     :ok =
-      Chronicle.EventSequences.EventLog.append(
+      Cratis.Chronicle.EventSequences.EventLog.append(
         "booking-123",
         %TestingReactorScenarioServicesBookingCancelled{booking_id: "booking-123"},
         client: client
       )
 
-    :ok = Chronicle.Testing.wait_for_observers(client)
+    :ok = Cratis.Chronicle.Testing.wait_for_observers(client)
 
     assert Notifications.messages() == ["Booking booking-123 was cancelled."]
   end

@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.ReadModels.DecFromEventSequenceOrder do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   # status is one of "Created", "Processing", "Shipped", "Delivered", "Canceled"
   defstruct order_number: "",

@@ -1,12 +1,12 @@
 ```elixir title="Explicit parent key from context"
 defmodule MyApp.Events.GroupCreatedWithContextParentKey do
-  use Chronicle.Events.EventType, id: "group-created-with-context-parent-key"
+  use Cratis.Chronicle.Events.EventType, id: "group-created-with-context-parent-key"
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.UserAddedWithContextParentKey do
-  use Chronicle.Events.EventType, id: "user-added-with-context-parent-key"
+  use Cratis.Chronicle.Events.EventType, id: "user-added-with-context-parent-key"
 
   defstruct [:user_id, :role]
 end
@@ -16,14 +16,14 @@ defmodule MyApp.ReadModels.GroupMemberWithContextParentKey do
 end
 
 defmodule MyApp.ReadModels.GroupWithContextParentKey do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [members: {:list, MyApp.ReadModels.GroupMemberWithContextParentKey}]
 
   defstruct name: nil, members: []
 end
 
 defmodule MyApp.Projections.GroupWithContextParentKeyProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.GroupWithContextParentKey
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.GroupWithContextParentKey
 
   alias MyApp.Events.{GroupCreatedWithContextParentKey, UserAddedWithContextParentKey}
 

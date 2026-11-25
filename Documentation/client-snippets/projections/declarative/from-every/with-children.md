@@ -1,12 +1,12 @@
 ```elixir title="Include child events in from_every"
 defmodule MyApp.Events.OrderCreatedDeclarativeEveryWithChildren do
-  use Chronicle.Events.EventType, id: "order-created-declarative-every-with-children-v1"
+  use Cratis.Chronicle.Events.EventType, id: "order-created-declarative-every-with-children-v1"
 
   defstruct [:order_number]
 end
 
 defmodule MyApp.Events.OrderLineAddedDeclarativeEveryWithChildren do
-  use Chronicle.Events.EventType, id: "order-line-added-declarative-every-with-children-v1"
+  use Cratis.Chronicle.Events.EventType, id: "order-line-added-declarative-every-with-children-v1"
 
   defstruct [:line_id, :product_name]
 end
@@ -16,14 +16,14 @@ defmodule MyApp.ReadModels.OrderLineDeclarativeEveryWithChildren do
 end
 
 defmodule MyApp.ReadModels.OrderDeclarativeEveryWithChildren do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [lines: {:list, MyApp.ReadModels.OrderLineDeclarativeEveryWithChildren}]
 
   defstruct [:order_number, :last_updated, lines: []]
 end
 
 defmodule MyApp.Projections.OrderDeclarativeEveryWithChildrenProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.OrderDeclarativeEveryWithChildren
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.OrderDeclarativeEveryWithChildren
 
   alias MyApp.Events.{
     OrderCreatedDeclarativeEveryWithChildren,

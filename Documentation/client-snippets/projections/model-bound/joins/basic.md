@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.JoinsOrderPlaced do
-  use Chronicle.Events.EventType, id: "joins-order-placed-v1"
+  use Cratis.Chronicle.Events.EventType, id: "joins-order-placed-v1"
 
   defstruct [:customer_id, :amount]
 end
 
 defmodule MyApp.Events.JoinsCustomerCreated do
-  use Chronicle.Events.EventType, id: "joins-customer-created-v1"
+  use Cratis.Chronicle.Events.EventType, id: "joins-customer-created-v1"
 
   defstruct [:name]
 end
 
 defmodule MyApp.ReadModels.JoinsOrderSummary do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.{JoinsOrderPlaced, JoinsCustomerCreated}
 

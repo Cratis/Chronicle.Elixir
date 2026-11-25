@@ -1,5 +1,5 @@
 ```elixir
-case Chronicle.Projections.query("""
+case Cratis.Chronicle.Projections.query("""
      projection Orders
        from OrderPlaced
      """) do

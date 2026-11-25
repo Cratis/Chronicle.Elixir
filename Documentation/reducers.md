@@ -21,12 +21,12 @@ sources of a page are reduced at the same time, up to the number of schedulers o
 
 A reducer can instead fold with one **batch function**, declared with one `@observes` attribute
 per event type. It is called once per event source, with that event source's events as a
-`Chronicle.Observers.EventBatch`, its stored read model (`nil` when there is none) and a
-`Chronicle.Observers.BatchContext`, and returns the next read model:
+`Cratis.Chronicle.Observers.EventBatch`, its stored read model (`nil` when there is none) and a
+`Cratis.Chronicle.Observers.BatchContext`, and returns the next read model:
 
 ```elixir
 defmodule MyApp.Reducers.Accounts do
-  use Chronicle.Reducers.Reducer, model: MyApp.ReadModels.Account
+  use Cratis.Chronicle.Reducers.Reducer, model: MyApp.ReadModels.Account
 
   @observes MyApp.Events.AccountOpened
   @observes MyApp.Events.MoneyDeposited
@@ -46,20 +46,20 @@ have the event source delivered again after the delay, or `{:error, reason}` (or
 it. A failed or deferred event source writes no state. A reducer either has `reduce/3` with
 `@handles` or one batch function, never both, and the reducer refuses to start otherwise. A
 Chronicle server before 19.122 cannot defer: the event source fails with
-`Chronicle.Observers.DeferralNotSupportedByKernel` instead.
+`Cratis.Chronicle.Observers.DeferralNotSupportedByKernel` instead.
 
 ## Passive reducers
 
-`use Chronicle.Reducers.Reducer` accepts an `:active` option, defaulting to `true`. Set it
+`use Cratis.Chronicle.Reducers.Reducer` accepts an `:active` option, defaulting to `true`. Set it
 to `false` for a **passive** reducer: its read model is only computed on demand (e.g. via
-`Chronicle.ReadModels.get_instance_by_id/3`) instead of being kept warm in the background as
+`Cratis.Chronicle.ReadModels.get_instance_by_id/3`) instead of being kept warm in the background as
 events are appended — useful for a reducer whose read model backs a command-side decision
 that's read rarely, where continuous observation would be wasted work. Mirrors C#'s
 `ReducerAttribute.IsActive`.
 
 ```elixir
 defmodule MyApp.Reducers.AccountReducer do
-  use Chronicle.Reducers.Reducer, model: MyApp.ReadModels.AccountInfo, active: false
+  use Cratis.Chronicle.Reducers.Reducer, model: MyApp.ReadModels.AccountInfo, active: false
 
   alias MyApp.Events.OrderPlaced
 
@@ -72,13 +72,13 @@ end
 
 ## Pinning the id
 
-`use Chronicle.Reducers.Reducer` defaults the reducer's id to its full module name. Renaming
+`use Cratis.Chronicle.Reducers.Reducer` defaults the reducer's id to its full module name. Renaming
 or moving the module then changes that id, and Chronicle treats it as a *different* reducer —
 its read model observation position resets. Pin the id explicitly so the module can be renamed
 or moved freely:
 
 ```elixir
-use Chronicle.Reducers.Reducer, id: "account-reducer", model: MyApp.ReadModels.AccountInfo
+use Cratis.Chronicle.Reducers.Reducer, id: "account-reducer", model: MyApp.ReadModels.AccountInfo
 ```
 
 A reducer relying on the module-name default gets a one-time warning (per module, for the life
@@ -103,7 +103,7 @@ Set `generation_delivery: :pinned` when the reducer is written against an **olde
 must see events exactly as that generation was appended, instead of upgraded to the current one:
 
 ```elixir
-use Chronicle.Reducers.Reducer, model: MyApp.ReadModels.AccountInfo, generation_delivery: :pinned
+use Cratis.Chronicle.Reducers.Reducer, model: MyApp.ReadModels.AccountInfo, generation_delivery: :pinned
 ```
 
 `context.appended_generation` then tells you which generation was actually appended (`0` means
@@ -112,11 +112,11 @@ unknown — an older kernel, or an event appended outside a registered event sou
 A client-wide default applies to every reducer that doesn't set its own `:generation_delivery`:
 
 ```elixir
-{Chronicle.Client,
+{Cratis.Chronicle.Client,
   ...
   event_generation_delivery: :pinned}
 ```
 
 A reducer's own option always wins over the client default. With `:pinned`, a reducer handling two
 generations of the same event type id has no single generation to pin to and raises
-`Chronicle.Observers.MultipleGenerationsOfEventTypeInObserver` on start.
+`Cratis.Chronicle.Observers.MultipleGenerationsOfEventTypeInObserver` on start.

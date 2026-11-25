@@ -1,22 +1,22 @@
 ```elixir
 defmodule MyApp.Events.TestingScenarioSourcesAuthorRegistered do
-  use Chronicle.Events.EventType, id: "testing-scenario-sources-author-registered"
+  use Cratis.Chronicle.Events.EventType, id: "testing-scenario-sources-author-registered"
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.TestingScenarioSourcesBookAdded do
-  use Chronicle.Events.EventType, id: "testing-scenario-sources-book-added"
+  use Cratis.Chronicle.Events.EventType, id: "testing-scenario-sources-book-added"
 
   defstruct [:title]
 end
 
 defmodule MyApp.TestingScenarioGivenMultipleSourcesTest do
-  use Chronicle.Testing.Case, event_types: [MyApp.Events.TestingScenarioSourcesAuthorRegistered]
+  use Cratis.Chronicle.Testing.Case, event_types: [MyApp.Events.TestingScenarioSourcesAuthorRegistered]
 
-  import Chronicle.Testing.Assertions
+  import Cratis.Chronicle.Testing.Assertions
 
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.TestingScenarioSourcesAuthorRegistered
 
   test "events can be given for several event sources", %{chronicle: client} do

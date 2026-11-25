@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Projections.CamelCasingUserProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.CamelCasingUser
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.CamelCasingUser
 
   from MyApp.Events.CamelCasingUserRegistered,
     set: [

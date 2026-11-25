@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.NoAutoMapWorkArrangementSet do
-  use Chronicle.Events.EventType, id: "no-auto-map-work-arrangement-set"
+  use Cratis.Chronicle.Events.EventType, id: "no-auto-map-work-arrangement-set"
 
   defstruct location: "", work_mode: 0
 end
 
 defmodule MyApp.Events.NoAutoMapCandidateSubmitted do
-  use Chronicle.Events.EventType, id: "no-auto-map-candidate-submitted"
+  use Cratis.Chronicle.Events.EventType, id: "no-auto-map-candidate-submitted"
 
   defstruct name: "", location: ""
 end
 
 defmodule MyApp.ReadModels.NoAutoMapAssignmentSummary do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: nil, location: nil, candidate_name: nil
 

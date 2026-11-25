@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.ClosingEventsVersionReinstated do
-  use Chronicle.Events.EventType, id: "closing-events-version-reinstated"
+  use Cratis.Chronicle.Events.EventType, id: "closing-events-version-reinstated"
 
   defstruct [:version]
 end
@@ -8,7 +8,7 @@ end
 # The Elixir client declares a closing event on the event type itself. Declarations
 # that share a name merge into one constraint.
 defmodule MyApp.Events.ClosingEventsVersionSuperseded do
-  use Chronicle.Events.EventType, id: "closing-events-version-superseded"
+  use Cratis.Chronicle.Events.EventType, id: "closing-events-version-superseded"
 
   defstruct [:version]
 

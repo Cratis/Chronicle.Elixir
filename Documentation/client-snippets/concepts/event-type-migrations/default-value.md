@@ -1,22 +1,22 @@
 ```elixir
 defmodule MyApp.Events.MigrationsDefaultValueOrderShippedV1 do
-  use Chronicle.Events.EventType, id: "order-shipped", generation: 1
+  use Cratis.Chronicle.Events.EventType, id: "order-shipped", generation: 1
 
   defstruct [:tracking_number]
 end
 
 defmodule MyApp.Events.MigrationsDefaultValueOrderShipped do
-  use Chronicle.Events.EventType, id: "order-shipped", generation: 2
+  use Cratis.Chronicle.Events.EventType, id: "order-shipped", generation: 2
 
   defstruct [:tracking_number, :retry_count, :description]
 end
 
 defmodule MyApp.Migrations.MigrationsDefaultValueOrderShippedMigration do
-  use Chronicle.Events.Migration,
+  use Cratis.Chronicle.Events.Migration,
     from: {MyApp.Events.MigrationsDefaultValueOrderShippedV1, generation: 1},
     to: {MyApp.Events.MigrationsDefaultValueOrderShipped, generation: 2}
 
-  alias Chronicle.Events.MigrationBuilder
+  alias Cratis.Chronicle.Events.MigrationBuilder
 
   @impl true
   def upcast(builder) do

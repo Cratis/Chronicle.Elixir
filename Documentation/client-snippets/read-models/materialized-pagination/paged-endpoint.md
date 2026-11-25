@@ -4,7 +4,7 @@ defmodule MyApp.MaterializedPaginationOrdersController do
 
   def get_orders(page \\ 0, page_size \\ 20) do
     with {:ok, result} <-
-           Chronicle.ReadModels.query(MaterializedPaginationOrder,
+           Cratis.Chronicle.ReadModels.query(MaterializedPaginationOrder,
              page: page,
              page_size: page_size
            ) do

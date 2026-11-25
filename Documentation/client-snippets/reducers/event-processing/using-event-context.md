@@ -1,6 +1,6 @@
 ```elixir
 defmodule EventProcessingContextOrderPlaced do
-  use Chronicle.Events.EventType, id: "event-processing-context-order-placed"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-context-order-placed"
 
   defstruct [:order_id, :amount]
 end
@@ -10,7 +10,7 @@ defmodule EventProcessingOrderSummaryWithContext do
 end
 
 defmodule EventProcessingOrderSummaryWithContextReducer do
-  use Chronicle.Reducers.Reducer, model: EventProcessingOrderSummaryWithContext
+  use Cratis.Chronicle.Reducers.Reducer, model: EventProcessingOrderSummaryWithContext
 
   alias EventProcessingContextOrderPlaced
 

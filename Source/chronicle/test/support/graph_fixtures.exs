@@ -5,65 +5,65 @@
 # Source/Clients/DotNET.Specs/Projections/Graphs/for_GraphDefinitionBuilder/given (events,
 # Person/Group/Place nodes, the MEMBER_OF edge and the VISITED edge identified by its visit).
 
-defmodule Chronicle.GraphFixtures.PersonRegistered do
-  use Chronicle.Events.EventType, id: "person-registered"
+defmodule Cratis.Chronicle.GraphFixtures.PersonRegistered do
+  use Cratis.Chronicle.Events.EventType, id: "person-registered"
   defstruct person_id: "", name: ""
 end
 
-defmodule Chronicle.GraphFixtures.PersonRemoved do
-  use Chronicle.Events.EventType, id: "person-removed"
+defmodule Cratis.Chronicle.GraphFixtures.PersonRemoved do
+  use Cratis.Chronicle.Events.EventType, id: "person-removed"
   defstruct person_id: ""
 end
 
-defmodule Chronicle.GraphFixtures.GroupCreated do
-  use Chronicle.Events.EventType, id: "group-created"
+defmodule Cratis.Chronicle.GraphFixtures.GroupCreated do
+  use Cratis.Chronicle.Events.EventType, id: "group-created"
   defstruct group_id: "", name: ""
 end
 
-defmodule Chronicle.GraphFixtures.MemberAdded do
-  use Chronicle.Events.EventType, id: "member-added"
+defmodule Cratis.Chronicle.GraphFixtures.MemberAdded do
+  use Cratis.Chronicle.Events.EventType, id: "member-added"
   defstruct person_id: "", group_id: ""
 end
 
-defmodule Chronicle.GraphFixtures.MemberRemoved do
-  use Chronicle.Events.EventType, id: "member-removed"
+defmodule Cratis.Chronicle.GraphFixtures.MemberRemoved do
+  use Cratis.Chronicle.Events.EventType, id: "member-removed"
   defstruct person_id: "", group_id: ""
 end
 
-defmodule Chronicle.GraphFixtures.PlaceVisited do
-  use Chronicle.Events.EventType, id: "place-visited"
+defmodule Cratis.Chronicle.GraphFixtures.PlaceVisited do
+  use Cratis.Chronicle.Events.EventType, id: "place-visited"
   defstruct person_id: "", place_id: "", visit_id: ""
 end
 
-defmodule Chronicle.GraphFixtures.Person do
-  use Chronicle.Graphs.Node
+defmodule Cratis.Chronicle.GraphFixtures.Person do
+  use Cratis.Chronicle.Graphs.Node
   defstruct person_id: "", name: ""
 end
 
-defmodule Chronicle.GraphFixtures.Group do
-  use Chronicle.Graphs.Node
+defmodule Cratis.Chronicle.GraphFixtures.Group do
+  use Cratis.Chronicle.Graphs.Node
   defstruct group_id: "", name: "", member_count: 0
 end
 
-defmodule Chronicle.GraphFixtures.Place do
-  use Chronicle.Graphs.Node
+defmodule Cratis.Chronicle.GraphFixtures.Place do
+  use Cratis.Chronicle.Graphs.Node
   defstruct place_id: ""
 end
 
-defmodule Chronicle.GraphFixtures.MemberOf do
-  use Chronicle.Graphs.Edge, type: "MEMBER_OF"
+defmodule Cratis.Chronicle.GraphFixtures.MemberOf do
+  use Cratis.Chronicle.Graphs.Edge, type: "MEMBER_OF"
   defstruct since: ""
 end
 
-defmodule Chronicle.GraphFixtures.Visited do
-  use Chronicle.Graphs.Edge, type: "VISITED"
+defmodule Cratis.Chronicle.GraphFixtures.Visited do
+  use Cratis.Chronicle.Graphs.Edge, type: "VISITED"
   defstruct visit_id: "", times: 0
 end
 
-defmodule Chronicle.GraphFixtures.Organization do
-  use Chronicle.Graphs.Graph, id: "Organization"
+defmodule Cratis.Chronicle.GraphFixtures.Organization do
+  use Cratis.Chronicle.Graphs.Graph, id: "Organization"
 
-  alias Chronicle.GraphFixtures.{
+  alias Cratis.Chronicle.GraphFixtures.{
     Group,
     GroupCreated,
     MemberAdded,

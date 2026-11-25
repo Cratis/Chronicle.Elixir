@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.ConstantKeyOrderPlaced do
-  use Chronicle.Events.EventType, id: "constant-key-order-placed-v1"
+  use Cratis.Chronicle.Events.EventType, id: "constant-key-order-placed-v1"
 
   defstruct [:customer_name, :placed_at]
 end
 
 defmodule MyApp.ReadModels.GlobalOrderSummary do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   alias MyApp.Events.ConstantKeyOrderPlaced
 

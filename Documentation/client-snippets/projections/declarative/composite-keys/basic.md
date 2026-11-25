@@ -1,6 +1,6 @@
 ```elixir title="Composite key projection"
 defmodule MyApp.Projections.CompositeOrderProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.CompositeOrder
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.CompositeOrder
 
   alias MyApp.Events.{CompositeOrderCreated, CompositeOrderShipped}
 

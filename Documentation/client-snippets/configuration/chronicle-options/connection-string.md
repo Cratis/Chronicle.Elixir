@@ -4,7 +4,7 @@ defmodule MyApp.ChronicleOptionsConnectionStringRegistration do
 
   def start_link do
     children = [
-      {Chronicle.Client, connection_string: "chronicle://myserver:35000"}
+      {Cratis.Chronicle.Client, connection_string: "chronicle://myserver:35000"}
     ]
 
     Supervisor.start_link(children, strategy: :one_for_one)

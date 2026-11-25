@@ -5,26 +5,26 @@ description: Project events onto a property graph with the Elixir client's node 
 
 See [Graph projections](/chronicle/projections/graph-projections/) for what a graph projection is: how nodes, edges and their properties are projected, the five idempotent operations a graph sink applies, redelivery and replay, and the sinks. This page covers the Elixir client: the `node` and `edge` DSL, what the compiler checks, and how a graph is registered.
 
-A graph is a module that `use Chronicle.Graphs.Graph`. Its nodes and edges are structs that `use Chronicle.Graphs.Node` and `use Chronicle.Graphs.Edge`, and the graph says which events create, change and remove each of them.
+A graph is a module that `use Cratis.Chronicle.Graphs.Graph`. Its nodes and edges are structs that `use Cratis.Chronicle.Graphs.Node` and `use Cratis.Chronicle.Graphs.Edge`, and the graph says which events create, change and remove each of them.
 
 ```elixir
 defmodule MyApp.Graphs.Person do
-  use Chronicle.Graphs.Node
+  use Cratis.Chronicle.Graphs.Node
   defstruct person_id: "", name: ""
 end
 
 defmodule MyApp.Graphs.Group do
-  use Chronicle.Graphs.Node
+  use Cratis.Chronicle.Graphs.Node
   defstruct group_id: "", name: ""
 end
 
 defmodule MyApp.Graphs.MemberOf do
-  use Chronicle.Graphs.Edge, type: "MEMBER_OF"
+  use Cratis.Chronicle.Graphs.Edge, type: "MEMBER_OF"
   defstruct since: ""
 end
 
 defmodule MyApp.Graphs.Organization do
-  use Chronicle.Graphs.Graph, id: "Organization"
+  use Cratis.Chronicle.Graphs.Graph, id: "Organization"
 
   node MyApp.Graphs.Person, key: :person_id do
     from MyApp.Events.PersonRegistered, key: :person_id, set: [name: :name]
@@ -50,7 +50,7 @@ The graph is what the events leave behind. Nothing writes to it directly.
 
 ## Nodes and edges
 
-The struct fields are the properties, typed by their `defstruct` defaults. A property is a primitive or a list of primitives. The label of a node and the type of an edge default to the last segment of the module name; `use Chronicle.Graphs.Node, label: "Employee"` and `use Chronicle.Graphs.Edge, type: "MEMBER_OF"` choose another one. Property names are the `camelCase` of the field names, the way the .NET client names them, so the same graph registers the same definition from either client.
+The struct fields are the properties, typed by their `defstruct` defaults. A property is a primitive or a list of primitives. The label of a node and the type of an edge default to the last segment of the module name; `use Cratis.Chronicle.Graphs.Node, label: "Employee"` and `use Cratis.Chronicle.Graphs.Edge, type: "MEMBER_OF"` choose another one. Property names are the `camelCase` of the field names, the way the .NET client names them, so the same graph registers the same definition from either client.
 
 `node/3` names the field that holds the unique key with `key:`. `edge/3` names the two nodes it connects with `source:` and `target:`; both must be declared with `node` in the same graph. The two end nodes are not properties of the edge.
 
@@ -112,7 +112,7 @@ A graph that cannot work does not compile. The `CompileError` names the line of 
 Add the graph module to `:graphs`, or let `otp_app:` discovery find it:
 
 ```elixir
-{Chronicle.Client,
+{Cratis.Chronicle.Client,
   connection_string: "chronicle://localhost:35000",
   event_store: "my-store",
   graphs: [MyApp.Graphs.Organization]}
@@ -125,7 +125,7 @@ The client registers the graph as a read model stored by the graph sink, and as 
 A graph is stored by a graph sink. Set the sink per client with `:default_graph_sink_type_id`, which defaults to `:neo4j`. Use `:in_memory_graph` for development and tests.
 
 ```elixir
-{Chronicle.Client,
+{Cratis.Chronicle.Client,
   connection_string: "chronicle://localhost:35000",
   event_store: "my-store",
   default_graph_sink_type_id: :in_memory_graph,
@@ -138,11 +138,11 @@ A graph is stored by a graph sink. Set the sink per client with `:default_graph_
 
 A graph view is a read model over the graph: it is anchored at one node, and its members are properties of that node, relations along declared edges to other views, or properties of the edge that was followed. See [Graph projections](/chronicle/projections/graph-projections/) for the shared description of views and their rules.
 
-Elixir structs carry no field types, so a view is a module that `use Chronicle.Graphs.View` with the node it is anchored at, and declares its members with `property`, `relation` and `edge_property`. The graph lists its views with `view`:
+Elixir structs carry no field types, so a view is a module that `use Cratis.Chronicle.Graphs.View` with the node it is anchored at, and declares its members with `property`, `relation` and `edge_property`. The graph lists its views with `view`:
 
 ```elixir
 defmodule MyApp.Directory.GroupMembership do
-  use Chronicle.Graphs.View, root: MyApp.Directory.Group
+  use Cratis.Chronicle.Graphs.View, root: MyApp.Directory.Group
 
   property :id, source: :group_id
   property :name
@@ -150,7 +150,7 @@ defmodule MyApp.Directory.GroupMembership do
 end
 
 defmodule MyApp.Directory.PersonWithGroups do
-  use Chronicle.Graphs.View, root: MyApp.Directory.Person
+  use Cratis.Chronicle.Graphs.View, root: MyApp.Directory.Person
 
   property :id, source: :person_id
   property :name
@@ -161,7 +161,7 @@ defmodule MyApp.Directory.PersonWithGroups do
 end
 
 defmodule MyApp.Directory.Graph do
-  use Chronicle.Graphs.Graph, id: "Directory"
+  use Cratis.Chronicle.Graphs.Graph, id: "Directory"
 
   # nodes and edges ...
 
@@ -174,13 +174,13 @@ end
 - `relation` takes the edge module (or its type string), the target `view:` and a required `cardinality:` of `:many` or `:one`. The direction is derived from the root for an edge between two different nodes; a self edge needs `direction: :outgoing` or `direction: :incoming`.
 - A view takes its name from the last segment of its module name. `name:` chooses another one; names are unique in a graph.
 
-A view that cannot work does not compile. The `CompileError` of the graph starts its description with one of the reasons `ViewRootNotANode`, `ViewIsAlsoSchema`, `DuplicateViewName`, `UnknownNodeProperty`, `UnknownEdge`, `UnknownEdgeProperty`, `EdgeNotIncidentOnRoot`, `AmbiguousDirection`, `TargetLabelMismatch`, `RelationTargetNotAView`, `RecursiveView`, `EdgePropertyViewNotUsedAsTarget` or `EdgePropertyViewSharedAcrossEdges`, for example `UnknownEdge: relation :groups of view PersonWithGroups ...`. `Chronicle.Graphs.View` lists what each one means.
+A view that cannot work does not compile. The `CompileError` of the graph starts its description with one of the reasons `ViewRootNotANode`, `ViewIsAlsoSchema`, `DuplicateViewName`, `UnknownNodeProperty`, `UnknownEdge`, `UnknownEdgeProperty`, `EdgeNotIncidentOnRoot`, `AmbiguousDirection`, `TargetLabelMismatch`, `RelationTargetNotAView`, `RecursiveView`, `EdgePropertyViewNotUsedAsTarget` or `EdgePropertyViewSharedAcrossEdges`, for example `UnknownEdge: relation :groups of view PersonWithGroups ...`. `Cratis.Chronicle.Graphs.View` lists what each one means.
 
 The views of a graph are available as the `GraphViewDefinition` every Chronicle client emits for its views:
 
 ```elixir
-Chronicle.Graphs.ViewDefinition.build(MyApp.Directory.Graph)
-Chronicle.Graphs.ViewDefinition.encode(MyApp.Directory.Graph)
+Cratis.Chronicle.Graphs.ViewDefinition.build(MyApp.Directory.Graph)
+Cratis.Chronicle.Graphs.ViewDefinition.encode(MyApp.Directory.Graph)
 ```
 
 `build/1` returns the definition as plain data and `encode/1` the canonical JSON. A graph without views has an empty definition.
@@ -190,4 +190,4 @@ Views change nothing about what the graph registers: the definition is not sent 
 ## What the Elixir client does not do yet
 
 - Reading the graph, with or without views. Applications read it with the engine driver, as the shared page describes; a view is validated and emitted as a definition, not executed.
-- A test harness. `Chronicle.Testing` has no graph scenario yet, so a graph is tested by asserting the definition it registers.
+- A test harness. `Cratis.Chronicle.Testing` has no graph scenario yet, so a graph is tested by asserting the definition it registers.

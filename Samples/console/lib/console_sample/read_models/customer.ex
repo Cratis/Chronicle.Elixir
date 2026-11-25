@@ -4,7 +4,7 @@
 defmodule ConsoleSample.ReadModels.Customer do
   @moduledoc "Customer read model used for the compliance and PII demonstration."
 
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: "",
             full_name: "",

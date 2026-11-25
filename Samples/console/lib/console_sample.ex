@@ -19,14 +19,14 @@ defmodule ConsoleSample do
 
   alias ConsoleSample.Projections.EmployeeDetails
   alias ConsoleSample.ReadModels.{Customer, EmployeeList, EmployeeState}
-  alias Chronicle.ReadModels
-  alias Chronicle.Transactions.UnitOfWork
-  alias Chronicle.Auditing.CausationManager
-  alias Chronicle.Identity
-  alias Chronicle.Identities
-  alias Chronicle.ExternalServices
-  alias Chronicle.ExternalServices.DefinitionBuilder
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.ReadModels
+  alias Cratis.Chronicle.Transactions.UnitOfWork
+  alias Cratis.Chronicle.Auditing.CausationManager
+  alias Cratis.Chronicle.Identity
+  alias Cratis.Chronicle.Identities
+  alias Cratis.Chronicle.ExternalServices
+  alias Cratis.Chronicle.ExternalServices.DefinitionBuilder
+  alias Cratis.Chronicle.EventSequences.EventLog
 
   @titles [
     "Software Engineer",
@@ -69,9 +69,9 @@ defmodule ConsoleSample do
 
   @spec run() :: no_return()
   def run do
-    config = Chronicle.Client.config()
+    config = Cratis.Chronicle.Client.config()
 
-    case Chronicle.Connections.Lifecycle.wait_until(config.lifecycle, :registered, 30_000) do
+    case Cratis.Chronicle.Connections.Lifecycle.wait_until(config.lifecycle, :registered, 30_000) do
       :ok -> :ok
       {:error, :timeout} -> IO.puts("[warn] Chronicle not yet registered — proceeding anyway")
     end
@@ -202,7 +202,7 @@ defmodule ConsoleSample do
     title = random_from(@titles)
     setup_causation(user, "ConsoleSample.Commands.Promote", %{employee_id: person.id})
 
-    case Chronicle.append(person.id, %EmployeePromoted{new_title: title}) do
+    case Cratis.Chronicle.append(person.id, %EmployeePromoted{new_title: title}) do
       :ok ->
         IO.puts(
           "\n[#{person.id}] Promoted #{full_name(person)} to '#{title}' at sequence #{tail_sequence(person.id)}  [caused-by: #{user.user_name}]"
@@ -219,7 +219,7 @@ defmodule ConsoleSample do
     address = random_from(@addresses)
     setup_causation(user, "ConsoleSample.Commands.Move", %{employee_id: person.id})
 
-    case Chronicle.append(person.id, %EmployeeMoved{
+    case Cratis.Chronicle.append(person.id, %EmployeeMoved{
            address: address.address,
            city: address.city,
            zip_code: address.zip_code,
@@ -239,7 +239,7 @@ defmodule ConsoleSample do
     email = Employees.email_for(person)
     setup_causation(user, "ConsoleSample.Commands.SetEmail", %{employee_id: person.id})
 
-    case Chronicle.append(person.id, %EmployeeEmailSet{email: email}) do
+    case Cratis.Chronicle.append(person.id, %EmployeeEmailSet{email: email}) do
       :ok ->
         IO.puts(
           "\n[#{person.id}] Set #{full_name(person)}'s email to #{email} at sequence #{tail_sequence(person.id)}  [caused-by: #{user.user_name}]"
@@ -256,7 +256,7 @@ defmodule ConsoleSample do
     email = Employees.email_for(victim)
     setup_causation(user, "ConsoleSample.Commands.SetEmail", %{employee_id: person.id})
 
-    case Chronicle.append(person.id, %EmployeeEmailSet{email: email}) do
+    case Cratis.Chronicle.append(person.id, %EmployeeEmailSet{email: email}) do
       :ok ->
         IO.puts(
           "\n[#{person.id}] Unexpectedly took #{email} at sequence #{tail_sequence(person.id)}  [caused-by: #{user.user_name}]"
@@ -281,13 +281,13 @@ defmodule ConsoleSample do
       employees: [selected.id, also_update.id]
     })
 
-    unit_of_work = Chronicle.begin_unit_of_work()
+    unit_of_work = Cratis.Chronicle.begin_unit_of_work()
 
     try do
-      :ok = Chronicle.append(selected.id, %EmployeePromoted{new_title: selected_title})
+      :ok = Cratis.Chronicle.append(selected.id, %EmployeePromoted{new_title: selected_title})
 
       :ok =
-        Chronicle.append_many(selected.id, [
+        Cratis.Chronicle.append_many(selected.id, [
           %EmployeeMoved{
             address: selected_address.address,
             city: selected_address.city,
@@ -296,7 +296,7 @@ defmodule ConsoleSample do
           }
         ])
 
-      :ok = Chronicle.append(also_update.id, %EmployeePromoted{new_title: second_title})
+      :ok = Cratis.Chronicle.append(also_update.id, %EmployeePromoted{new_title: second_title})
 
       case UnitOfWork.commit(unit_of_work) do
         :ok ->
@@ -315,7 +315,7 @@ defmodule ConsoleSample do
   end
 
   defp register_customer_with_pii(%Identity{} = user) do
-    case Chronicle.has_events_for?(@sample_customer.id) do
+    case Cratis.Chronicle.has_events_for?(@sample_customer.id) do
       {:ok, true} ->
         IO.puts("\n[pii] #{@sample_customer.full_name} is already registered.")
 
@@ -342,7 +342,7 @@ defmodule ConsoleSample do
 
         # The subject identifies the encryption key the Chronicle kernel uses for
         # PII-adorned fields. Without a subject, compliance (PII) encryption is skipped.
-        case Chronicle.append_many(@sample_customer.id, events, subject: @sample_customer.id) do
+        case Cratis.Chronicle.append_many(@sample_customer.id, events, subject: @sample_customer.id) do
           :ok ->
             IO.puts(
               "\n[pii] Registered #{@sample_customer.full_name} (#{@sample_customer.id}) with customer data events up to sequence #{tail_sequence(@sample_customer.id)}  [caused-by: #{user.user_name}]"
@@ -393,7 +393,7 @@ defmodule ConsoleSample do
   # recorded" cases (e.g. a GDPR Article 17 request against a single fact). Mirrors
   # the C# and TypeScript clients' IEventSequence.Redact().
   defp redact_last_event_for_employee(%Person{} = person) do
-    case Chronicle.get_tail_sequence_number(person.id) do
+    case Cratis.Chronicle.get_tail_sequence_number(person.id) do
       {:ok, 0} ->
         IO.puts("\n[redact] #{full_name(person)} has no events yet.")
 
@@ -561,7 +561,7 @@ defmodule ConsoleSample do
   # Identity and causation are stored with every event written to the Chronicle event log,
   # enabling full auditability of who triggered each state change and what command caused it.
   defp setup_causation(%Identity{} = user, command, properties) do
-    Chronicle.set_identity(user)
+    Cratis.Chronicle.set_identity(user)
     CausationManager.clear()
     CausationManager.define_root(%{source: "console-sample"})
     CausationManager.add(command, properties)
@@ -570,7 +570,7 @@ defmodule ConsoleSample do
   defp print_seeded_employee_status do
     Enum.each(Employees.all(), fn employee ->
       status =
-        case Chronicle.has_events_for?(employee.id) do
+        case Cratis.Chronicle.has_events_for?(employee.id) do
           {:ok, true} -> "seeded"
           {:ok, false} -> "missing"
           {:error, reason} -> "error: #{format_reason(reason)}"
@@ -592,7 +592,7 @@ defmodule ConsoleSample do
   end
 
   defp employee_seeded?(%Person{id: id}) do
-    match?({:ok, true}, Chronicle.has_events_for?(id))
+    match?({:ok, true}, Cratis.Chronicle.has_events_for?(id))
   rescue
     _ -> false
   end
@@ -710,7 +710,7 @@ defmodule ConsoleSample do
   defp random_from(items), do: Enum.at(items, :rand.uniform(length(items)) - 1)
 
   defp tail_sequence(event_source_id) do
-    case Chronicle.get_tail_sequence_number(event_source_id) do
+    case Cratis.Chronicle.get_tail_sequence_number(event_source_id) do
       {:ok, sequence_number} -> sequence_number
       _ -> 0
     end

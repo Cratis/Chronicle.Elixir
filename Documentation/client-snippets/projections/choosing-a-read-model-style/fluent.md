@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.ReadModels.ChoosingStyleBookStatusFluent do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: nil, title: nil, isbn: nil, is_borrowed: false, borrowed_by: nil
 
@@ -8,7 +8,7 @@ defmodule MyApp.ReadModels.ChoosingStyleBookStatusFluent do
 end
 
 defmodule MyApp.Projections.ChoosingStyleBookStatusProjection do
-  use Chronicle.Projections.Projection, model: MyApp.ReadModels.ChoosingStyleBookStatusFluent
+  use Cratis.Chronicle.Projections.Projection, model: MyApp.ReadModels.ChoosingStyleBookStatusFluent
 
   from MyApp.Events.ChoosingStyleBookRegistered,
     set: [id: :event_source_id, title: :title, isbn: :isbn, is_borrowed: false],

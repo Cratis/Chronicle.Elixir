@@ -1,18 +1,18 @@
 ```elixir
 defmodule MyApp.Events.MbChildrenSectionAdded do
-  use Chronicle.Events.EventType, id: "mb-children-section-added"
+  use Cratis.Chronicle.Events.EventType, id: "mb-children-section-added"
 
   defstruct [:section_id, :section_name]
 end
 
 defmodule MyApp.Events.MbChildrenTaskAddedToSection do
-  use Chronicle.Events.EventType, id: "mb-children-task-added-to-section"
+  use Cratis.Chronicle.Events.EventType, id: "mb-children-task-added-to-section"
 
   defstruct [:section_id, :task_id, :task_name]
 end
 
 defmodule MyApp.Events.MbChildrenTaskCompleted do
-  use Chronicle.Events.EventType, id: "mb-children-task-completed"
+  use Cratis.Chronicle.Events.EventType, id: "mb-children-task-completed"
 
   defstruct [:task_id]
 end
@@ -26,7 +26,7 @@ defmodule MyApp.ReadModels.MbChildrenSection do
 end
 
 defmodule MyApp.ReadModels.MbChildrenBoard do
-  use Chronicle.ReadModels.ReadModel,
+  use Cratis.Chronicle.ReadModels.ReadModel,
     types: [
       sections: {:list, MyApp.ReadModels.MbChildrenSection},
       tasks: {:list, MyApp.ReadModels.MbChildrenTask}

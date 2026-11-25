@@ -66,12 +66,12 @@ The client requires Elixir 1.18 or later and uses `grpc ~> 1.0`, Mint 1.11 or la
 
 ## Define an event
 
-An event is a struct that uses `Chronicle.Events.EventType`. The `id:` option is required and is the event type's stable identity, so pick it once and never change it.
+An event is a struct that uses `Cratis.Chronicle.Events.EventType`. The `id:` option is required and is the event type's stable identity, so pick it once and never change it.
 
 ```elixir
 # lib/my_app/events/account_opened.ex
 defmodule MyApp.Events.AccountOpened do
-  use Chronicle.Events.EventType, id: "account-opened"
+  use Cratis.Chronicle.Events.EventType, id: "account-opened"
 
   defstruct owner: "", balance: 0
 end
@@ -81,12 +81,12 @@ Give every field a default of the type it holds. The client generates the JSON s
 
 ## Define a read model
 
-A read model is a struct that uses `Chronicle.ReadModels.ReadModel`. Its `from/2` declarations become a projection that runs inside Chronicle, so you don't write any update code yourself.
+A read model is a struct that uses `Cratis.Chronicle.ReadModels.ReadModel`. Its `from/2` declarations become a projection that runs inside Chronicle, so you don't write any update code yourself.
 
 ```elixir
 # lib/my_app/read_models/account.ex
 defmodule MyApp.ReadModels.Account do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: "", owner: "", balance: 0
 
@@ -99,7 +99,7 @@ end
 
 ## Start the client
 
-Add `Chronicle.Client` to your application's supervision tree in `lib/my_app/application.ex`:
+Add `Cratis.Chronicle.Client` to your application's supervision tree in `lib/my_app/application.ex`:
 
 ```elixir
 defmodule MyApp.Application do
@@ -110,7 +110,7 @@ defmodule MyApp.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      {Chronicle.Client,
+      {Cratis.Chronicle.Client,
        connection_string: connection_string(),
        event_store: "my-app",
        otp_app: :my_app}
@@ -145,9 +145,9 @@ The client connects in the background. It first opens a session, then registers 
 Wait for the `:registered` phase before your first call:
 
 ```elixir
-alias Chronicle.Connections.Lifecycle
+alias Cratis.Chronicle.Connections.Lifecycle
 
-:ok = Lifecycle.wait_until(Lifecycle.name_for(Chronicle.Client), :registered)
+:ok = Lifecycle.wait_until(Lifecycle.name_for(Cratis.Chronicle.Client), :registered)
 ```
 
 `wait_until/3` returns `{:error, :timeout}` if registration doesn't finish within 30 seconds, which is the default. Pass a timeout in milliseconds as the third argument to change it. In a real application, gate the work that needs Chronicle on this call rather than sleeping.
@@ -163,14 +163,14 @@ iex -S mix
 Wait for registration, then append:
 
 ```elixir
-iex> alias Chronicle.Connections.Lifecycle
-iex> Lifecycle.wait_until(Lifecycle.name_for(Chronicle.Client), :registered)
+iex> alias Cratis.Chronicle.Connections.Lifecycle
+iex> Lifecycle.wait_until(Lifecycle.name_for(Cratis.Chronicle.Client), :registered)
 :ok
-iex> Chronicle.append("account-1", %MyApp.Events.AccountOpened{owner: "Alice", balance: 500})
+iex> Cratis.Chronicle.append("account-1", %MyApp.Events.AccountOpened{owner: "Alice", balance: 500})
 :ok
 ```
 
-`"account-1"` is the event source id: the account this fact belongs to. `Chronicle.append/3` returns `:ok` once Chronicle has stored the event, or `{:error, reason}`. The common reasons are:
+`"account-1"` is the event source id: the account this fact belongs to. `Cratis.Chronicle.append/3` returns `:ok` once Chronicle has stored the event, or `{:error, reason}`. The common reasons are:
 
 | Result | Meaning |
 |--------|---------|
@@ -186,21 +186,21 @@ Match on these instead of asserting `:ok` in production code.
 Read the account back by its key:
 
 ```elixir
-iex> Chronicle.read_model(MyApp.ReadModels.Account, "account-1")
+iex> Cratis.Chronicle.read_model(MyApp.ReadModels.Account, "account-1")
 {:ok, %MyApp.ReadModels.Account{id: "account-1", owner: "Alice", balance: 500}}
 ```
 
 Chronicle projects events into read models asynchronously. `:ok` from `append/3` means the event is stored, not that the projection has run, so a read immediately afterwards can still return `{:ok, nil}`. The same `{:ok, nil}` comes back for a key that has no events at all.
 
-When the next step needs the updated read model, you can append with `Chronicle.EventSequences.EventLog.append_and_wait_for_completion/3` instead. It waits, five seconds by default, for every affected observer to catch up:
+When the next step needs the updated read model, you can append with `Cratis.Chronicle.EventSequences.EventLog.append_and_wait_for_completion/3` instead. It waits, five seconds by default, for every affected observer to catch up:
 
 ```elixir
-iex> Chronicle.EventSequences.EventLog.append_and_wait_for_completion(
+iex> Cratis.Chronicle.EventSequences.EventLog.append_and_wait_for_completion(
 ...>   "account-2",
 ...>   %MyApp.Events.AccountOpened{owner: "Bob", balance: 250}
 ...> )
 {:ok, %{success: true, failed_partitions: []}}
-iex> Chronicle.read_model(MyApp.ReadModels.Account, "account-2")
+iex> Cratis.Chronicle.read_model(MyApp.ReadModels.Account, "account-2")
 {:ok, %MyApp.ReadModels.Account{id: "account-2", owner: "Bob", balance: 250}}
 ```
 
@@ -218,7 +218,7 @@ You now have a supervised client appending events and reading a projected read m
 
 **The read model is `{:ok, nil}` or has empty fields.** Check, in order: the projection hasn't caught up yet (use `append_and_wait_for_completion/3`); the key you read with is the event source id you appended to; a field whose name differs between event and read model needs an explicit `set:` mapping, as described in [Define a read model](#define-a-read-model).
 
-**A call raises `ArgumentError` with `no persistent term stored with this key`.** No client with that name is running. Functions that take a `:client` option look it up by the `name:` the client was started with, which defaults to `Chronicle.Client`.
+**A call raises `ArgumentError` with `no persistent term stored with this key`.** No client with that name is running. Functions that take a `:client` option look it up by the `name:` the client was started with, which defaults to `Cratis.Chronicle.Client`.
 
 ## Where to next
 

@@ -1,6 +1,6 @@
 ```elixir
 defmodule EventProcessingPatternWithContextMetricRecorded do
-  use Chronicle.Events.EventType, id: "event-processing-pattern-with-context-metric-recorded"
+  use Cratis.Chronicle.Events.EventType, id: "event-processing-pattern-with-context-metric-recorded"
 
   defstruct [:value]
 end
@@ -10,7 +10,7 @@ defmodule EventProcessingPatternWithContextStats do
 end
 
 defmodule EventProcessingPatternWithContextReducer do
-  use Chronicle.Reducers.Reducer, model: EventProcessingPatternWithContextStats
+  use Cratis.Chronicle.Reducers.Reducer, model: EventProcessingPatternWithContextStats
 
   alias EventProcessingPatternWithContextMetricRecorded
 

@@ -1,6 +1,6 @@
 ---
 title: Connection strings
-description: The chronicle:// and chronicle+srv:// URL formats, authentication modes, TLS options, and Chronicle.Client overrides for the Elixir client.
+description: The chronicle:// and chronicle+srv:// URL formats, authentication modes, TLS options, and Cratis.Chronicle.Client overrides for the Elixir client.
 ---
 
 Use a connection string to choose the kernel, authentication and TLS settings for your client. The URL holds the host, port, credentials and options in one value you can keep in an environment variable. Choose credentials for the target kernel and configure server trust before using it outside development.
@@ -10,7 +10,7 @@ chronicle://[client-id:client-secret@]host[:port][,host[:port]...][?option=value
 chronicle+srv://service-name[?option=value&...]
 ```
 
-Pass it to `Chronicle.Client` as `connection_string:`, either as a string or as a `Chronicle.Connections.ConnectionString` struct. When you pass none, the client uses `chronicle://localhost:35000`, which has no credentials.
+Pass it to `Cratis.Chronicle.Client` as `connection_string:`, either as a string or as a `Cratis.Chronicle.Connections.ConnectionString` struct. When you pass none, the client uses `chronicle://localhost:35000`, which has no credentials.
 
 ## Authentication
 
@@ -36,7 +36,7 @@ The Elixir client does **not** substitute Chronicle's development credentials th
 chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35000
 ```
 
-`Chronicle.Connections.ConnectionString.development/0` returns the same value as a struct. These credentials are well known and only meaningful to a kernel configured to accept them; never configure a shared or production kernel with them.
+`Cratis.Chronicle.Connections.ConnectionString.development/0` returns the same value as a struct. These credentials are well known and only meaningful to a kernel configured to accept them; never configure a shared or production kernel with them.
 
 URL-encode reserved characters in a client id or secret, such as `@`, `:` and `/`. The client decodes both as form-encoded values, so a literal `+` must be written as `%2B`, or it becomes a space.
 
@@ -104,9 +104,9 @@ chronicle+srv://chronicle.example.com
 
 Client-credential tokens are always requested from the first configured host. Least-connections HTTP probes do not present a client certificate; if your kernel requires mutual TLS on `/connections/count` or `/connections/reserve`, use `loadBalancer=round-robin` or `loadBalancer=random` for multiple hosts.
 
-## Chronicle.Client overrides
+## Cratis.Chronicle.Client overrides
 
-Some settings can also be passed straight to `Chronicle.Client`, where they win over the connection string:
+Some settings can also be passed straight to `Cratis.Chronicle.Client`, where they win over the connection string:
 
 | Client option | Overrides |
 |---------------|-----------|
@@ -128,7 +128,7 @@ config :my_app, :chronicle_connection_string, System.fetch_env!("CHRONICLE_CONNE
 Then read it when you start the client:
 
 ```elixir
-{Chronicle.Client,
+{Cratis.Chronicle.Client,
  connection_string: Application.fetch_env!(:my_app, :chronicle_connection_string),
  event_store: "my-app",
  otp_app: :my_app}
@@ -147,4 +147,4 @@ chronicle://my-service:client-secret@chronicle.example.com:35000?skipTlsValidati
 chronicle://chronicle.example.com:35000?apiKey=your-api-key&skipTlsValidation=false
 ```
 
-`Chronicle.Connections.ConnectionString.parse/1` raises `ArgumentError` for a malformed string, so a bad value fails when the client starts rather than on the first call. Don't log a connection string as-is, because it can contain a secret. Crash reports from the gRPC libraries can also print credentials; see [Keep credentials out of crash reports](crash-reports.md).
+`Cratis.Chronicle.Connections.ConnectionString.parse/1` raises `ArgumentError` for a malformed string, so a bad value fails when the client starts rather than on the first call. Don't log a connection string as-is, because it can contain a secret. Crash reports from the gRPC libraries can also print credentials; see [Keep credentials out of crash reports](crash-reports.md).

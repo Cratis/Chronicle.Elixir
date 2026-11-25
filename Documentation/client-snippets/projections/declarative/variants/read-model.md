@@ -5,13 +5,13 @@ defmodule MyApp.ReadModels.DecVariantWorkItem do
 end
 
 defmodule MyApp.ReadModels.DecVariantBacklogItem do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct [:id, :title]
 end
 
 defmodule MyApp.ReadModels.DecVariantPullRequestItem do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct [:id, :pull_request_url]
 end

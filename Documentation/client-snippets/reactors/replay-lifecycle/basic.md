@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.ReplayLifecycleOrderPlaced do
-  use Chronicle.Events.EventType, id: "replay-lifecycle-order-placed"
+  use Cratis.Chronicle.Events.EventType, id: "replay-lifecycle-order-placed"
 
   defstruct [:order_id]
 end
 
 defmodule MyApp.Reactors.ReplayAwareNotifier do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   require Logger
 

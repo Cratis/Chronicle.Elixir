@@ -1,11 +1,11 @@
 ```elixir
 defmodule MyApp.Events.ConstraintsUniqueMessageProjectCreated do
-  use Chronicle.Events.EventType, id: "constraints-unique-message-project-created"
+  use Cratis.Chronicle.Events.EventType, id: "constraints-unique-message-project-created"
   defstruct name: ""
 end
 
 defmodule MyApp.Constraints.ConstraintsUniqueMessageProjectName do
-  use Chronicle.Events.Constraint
+  use Cratis.Chronicle.Events.Constraint
 
   unique name: "ConstraintsUniqueMessageProjectName",
     message: "A project with this name already exists." do

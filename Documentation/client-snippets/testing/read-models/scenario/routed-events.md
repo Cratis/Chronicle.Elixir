@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.TestingReadModelScenarioPaymentReceived do
-  use Chronicle.Events.EventType, id: "testing-read-model-scenario-payment-received"
+  use Cratis.Chronicle.Events.EventType, id: "testing-read-model-scenario-payment-received"
 
   defstruct [:amount]
 end
@@ -10,7 +10,7 @@ defmodule MyApp.ReadModels.TestingReadModelScenarioPaymentRoute do
 end
 
 defmodule MyApp.Reducers.TestingReadModelScenarioPaymentRouteReducer do
-  use Chronicle.Reducers.Reducer, model: MyApp.ReadModels.TestingReadModelScenarioPaymentRoute
+  use Cratis.Chronicle.Reducers.Reducer, model: MyApp.ReadModels.TestingReadModelScenarioPaymentRoute
 
   alias MyApp.Events.TestingReadModelScenarioPaymentReceived
   alias MyApp.ReadModels.TestingReadModelScenarioPaymentRoute
@@ -29,7 +29,7 @@ defmodule MyApp.Reducers.TestingReadModelScenarioPaymentRouteReducer do
 end
 
 defmodule MyApp.TestingReadModelScenarioRoutedEventsTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [MyApp.Events.TestingReadModelScenarioPaymentReceived],
     reducers: [MyApp.Reducers.TestingReadModelScenarioPaymentRouteReducer]
 
@@ -38,7 +38,7 @@ defmodule MyApp.TestingReadModelScenarioRoutedEventsTest do
 
   setup %{chronicle: client} do
     :ok =
-      Chronicle.EventSequences.EventLog.append(
+      Cratis.Chronicle.EventSequences.EventLog.append(
         "order-1",
         %TestingReadModelScenarioPaymentReceived{amount: 42},
         client: client,
@@ -47,10 +47,10 @@ defmodule MyApp.TestingReadModelScenarioRoutedEventsTest do
         event_stream_id: "2026-10"
       )
 
-    :ok = Chronicle.Testing.wait_for_observers(client)
+    :ok = Cratis.Chronicle.Testing.wait_for_observers(client)
 
     {:ok, route} =
-      Chronicle.Testing.read_model(client, TestingReadModelScenarioPaymentRouteReducer, "order-1")
+      Cratis.Chronicle.Testing.read_model(client, TestingReadModelScenarioPaymentRouteReducer, "order-1")
 
     %{route: route}
   end

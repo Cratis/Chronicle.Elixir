@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.ConcurrencyAccountSettingsUpdated do
-  use Chronicle.Events.EventType, id: "concurrency-account-settings-updated"
+  use Cratis.Chronicle.Events.EventType, id: "concurrency-account-settings-updated"
 
   defstruct [:settings]
 end
 
 defmodule MyApp.ConcurrencyAccountManagementService do
-  alias Chronicle.Events.ConcurrencyScope
+  alias Cratis.Chronicle.Events.ConcurrencyScope
   alias MyApp.Events.ConcurrencyAccountSettingsUpdated
 
   def update_account_settings(account_id, settings) do
@@ -16,7 +16,7 @@ defmodule MyApp.ConcurrencyAccountManagementService do
         event_stream_type: "AccountManagement"
       )
 
-    Chronicle.append(
+    Cratis.Chronicle.append(
       account_id,
       %ConcurrencyAccountSettingsUpdated{settings: settings},
       event_source_type: "BankAccount",

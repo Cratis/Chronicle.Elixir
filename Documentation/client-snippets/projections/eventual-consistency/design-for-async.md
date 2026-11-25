@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.EcBookCreated do
-  use Chronicle.Events.EventType, id: "ec-book-created"
+  use Cratis.Chronicle.Events.EventType, id: "ec-book-created"
 
   defstruct [:title, :author]
 end
 
 defmodule MyApp.ReadModels.EcBookInventory do
-  use Chronicle.ReadModels.ReadModel
+  use Cratis.Chronicle.ReadModels.ReadModel
 
   defstruct id: "", title: "", author: ""
 end
@@ -17,7 +17,7 @@ defmodule MyApp.EcBookService do
 
   # Good — fire and forget: don't wait for the projection before returning
   def create_book(book_id, title, author) do
-    Chronicle.append(book_id, %EcBookCreated{title: title, author: author})
+    Cratis.Chronicle.append(book_id, %EcBookCreated{title: title, author: author})
     :ok
   end
 
@@ -26,7 +26,7 @@ defmodule MyApp.EcBookService do
     create_book(book_id, title, author)
 
     # The projection may not have run yet — this can return nil or a stale instance
-    Chronicle.read_model(EcBookInventory, book_id)
+    Cratis.Chronicle.read_model(EcBookInventory, book_id)
   end
 end
 ```

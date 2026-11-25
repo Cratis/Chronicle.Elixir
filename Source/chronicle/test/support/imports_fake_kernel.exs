@@ -1,7 +1,7 @@
 # Copyright (c) Cratis. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-defmodule Chronicle.ImportsFakeKernel do
+defmodule Cratis.Chronicle.ImportsFakeKernel do
   @moduledoc false
 
   # A deterministic, in-process stand-in for the kernel's Imports service. Requests go
@@ -17,22 +17,22 @@ defmodule Chronicle.ImportsFakeKernel do
   @import_id "0f8fad5b-d9cb-469f-a165-70867728950e"
 
   defmodule Event do
-    use Chronicle.Events.EventType, id: "imported-event"
+    use Cratis.Chronicle.Events.EventType, id: "imported-event"
     defstruct n: 0, payload: ""
   end
 
   defmodule Interceptor do
     def call(stream, request, _next, opts),
-      do: Chronicle.ImportsFakeKernel.respond(stream, request, opts)
+      do: Cratis.Chronicle.ImportsFakeKernel.respond(stream, request, opts)
   end
 
   using do
     quote do
-      alias Chronicle.EventSequences.EventForEventSourceId
-      alias Chronicle.Imports
-      alias Chronicle.Imports.{ImportProgress, ImportRejection, ImportResult}
-      alias Chronicle.ImportsFakeKernel, as: Kernel
-      alias Chronicle.ImportsFakeKernel.Event
+      alias Cratis.Chronicle.EventSequences.EventForEventSourceId
+      alias Cratis.Chronicle.Imports
+      alias Cratis.Chronicle.Imports.{ImportProgress, ImportRejection, ImportResult}
+      alias Cratis.Chronicle.ImportsFakeKernel, as: Kernel
+      alias Cratis.Chronicle.ImportsFakeKernel.Event
       alias Cratis.Chronicle.Contracts.Imports, as: Wire
     end
   end
@@ -49,20 +49,20 @@ defmodule Chronicle.ImportsFakeKernel do
 
     connection =
       start_supervised!(
-        {Chronicle.Connections.Connection,
+        {Cratis.Chronicle.Connections.Connection,
          connect_fun: fn _, _ -> {:ok, channel} end, disconnect_fun: fn _ -> :ok end}
       )
 
-    :ok = Chronicle.Connections.Connection.connect(connection)
+    :ok = Cratis.Chronicle.Connections.Connection.connect(connection)
     client = self()
 
-    :persistent_term.put({Chronicle.Client, client}, %{
+    :persistent_term.put({Cratis.Chronicle.Client, client}, %{
       connection: connection,
       event_store: "store",
       namespace: "namespace"
     })
 
-    on_exit(fn -> :persistent_term.erase({Chronicle.Client, client}) end)
+    on_exit(fn -> :persistent_term.erase({Cratis.Chronicle.Client, client}) end)
     %{opts: [client: client, retry_delay: fn _ -> 1 end, poll_interval: 1], kernel: kernel}
   end
 
@@ -72,7 +72,7 @@ defmodule Chronicle.ImportsFakeKernel do
     payload = Keyword.get(opts, :payload, "")
 
     Stream.map(0..(count - 1)//1, fn n ->
-      %Chronicle.EventSequences.EventForEventSourceId{
+      %Cratis.Chronicle.EventSequences.EventForEventSourceId{
         event_source_id: "source-#{n}",
         event: %Event{n: n, payload: payload}
       }
@@ -156,7 +156,7 @@ defmodule Chronicle.ImportsFakeKernel do
       end)
 
     %Wire.BeginImportResponse{
-      ImportId: request."ImportId" || Chronicle.Imports.Wire.guid(@import_id),
+      ImportId: request."ImportId" || Cratis.Chronicle.Imports.Wire.guid(@import_id),
       State: :Open,
       MaxChunkEvents: state.max_chunk_events,
       MaxChunkBytes: state.max_chunk_bytes
@@ -306,7 +306,7 @@ defmodule Chronicle.ImportsFakeKernel do
       end
 
     %Wire.ImportProgressResponse{
-      ImportId: Chronicle.Imports.Wire.guid(@import_id),
+      ImportId: Cratis.Chronicle.Imports.Wire.guid(@import_id),
       EventSequenceId: s.sequence,
       State: state,
       OnInvalid: s.on_invalid,

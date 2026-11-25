@@ -1,7 +1,7 @@
 ```elixir
 defmodule MyApp.LoanRaceCheck do
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.ReadModels.{DecisionConflict, DecisionReads}
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.ReadModels.{DecisionConflict, DecisionReads}
   alias MyApp.Events.MemberLoansLoanTaken
   alias MyApp.ReadModels.MemberLoans
 
@@ -9,7 +9,7 @@ defmodule MyApp.LoanRaceCheck do
   # that already holds a registered member.
   def second_writer_rejected?(member_id) do
     result =
-      Chronicle.decide(fn _unit_of_work ->
+      Cratis.Chronicle.decide(fn _unit_of_work ->
         {:ok, _member} = DecisionReads.get(MemberLoans, member_id)
 
         # A competing writer appends after the read and before the commit. It runs in its own

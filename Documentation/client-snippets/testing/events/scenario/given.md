@@ -1,21 +1,21 @@
 ```elixir
 defmodule MyApp.Events.TestingScenarioGivenAuthorRegistered do
-  use Chronicle.Events.EventType, id: "testing-scenario-given-author-registered"
+  use Cratis.Chronicle.Events.EventType, id: "testing-scenario-given-author-registered"
 
   defstruct [:name]
 end
 
 defmodule MyApp.Events.TestingScenarioGivenBookAdded do
-  use Chronicle.Events.EventType, id: "testing-scenario-given-book-added"
+  use Cratis.Chronicle.Events.EventType, id: "testing-scenario-given-book-added"
 
   defstruct [:title]
 end
 
 defmodule MyApp.TestingScenarioGivenTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [MyApp.Events.TestingScenarioGivenAuthorRegistered, MyApp.Events.TestingScenarioGivenBookAdded]
 
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.{TestingScenarioGivenAuthorRegistered, TestingScenarioGivenBookAdded}
 
   test "appending after the given events succeeds", %{chronicle: client} do

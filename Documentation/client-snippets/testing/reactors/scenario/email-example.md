@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.Events.TestingReactorScenarioEmailOrderShipped do
-  use Chronicle.Events.EventType, id: "email-testing-order-shipped"
+  use Cratis.Chronicle.Events.EventType, id: "email-testing-order-shipped"
 
   defstruct [:order_id, :carrier]
 end
@@ -10,7 +10,7 @@ defmodule MyApp.TestingReactorScenarioEmailService do
 end
 
 defmodule MyApp.Reactors.TestingReactorScenarioOrderNotificationReactor do
-  use Chronicle.Reactors.Reactor
+  use Cratis.Chronicle.Reactors.Reactor
 
   alias MyApp.Events.TestingReactorScenarioEmailOrderShipped
 
@@ -35,7 +35,7 @@ defmodule MyApp.TestingReactorScenarioRecordingEmailService do
 end
 
 defmodule MyApp.TestingReactorScenarioEmailExampleTest do
-  use Chronicle.Testing.Case,
+  use Cratis.Chronicle.Testing.Case,
     event_types: [MyApp.Events.TestingReactorScenarioEmailOrderShipped],
     reactors: [MyApp.Reactors.TestingReactorScenarioOrderNotificationReactor]
 
@@ -50,13 +50,13 @@ defmodule MyApp.TestingReactorScenarioEmailExampleTest do
 
   test "when an order is shipped a shipping confirmation is sent", %{chronicle: client} do
     :ok =
-      Chronicle.EventSequences.EventLog.append(
+      Cratis.Chronicle.EventSequences.EventLog.append(
         "order-123",
         %TestingReactorScenarioEmailOrderShipped{order_id: "order-123", carrier: "DHL"},
         client: client
       )
 
-    :ok = Chronicle.Testing.wait_for_observers(client)
+    :ok = Cratis.Chronicle.Testing.wait_for_observers(client)
 
     assert EmailService.sent() == [{"order-123", "DHL"}]
   end

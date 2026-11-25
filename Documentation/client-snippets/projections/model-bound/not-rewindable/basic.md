@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.MbNotRewindableAuditEvent do
-  use Chronicle.Events.EventType, id: "mb-not-rewindable-audit-event"
+  use Cratis.Chronicle.Events.EventType, id: "mb-not-rewindable-audit-event"
 
   defstruct message: "", occurred_at: ""
 end
 
 defmodule MyApp.ReadModels.MbNotRewindableAuditLog do
-  use Chronicle.ReadModels.ReadModel, not_rewindable: true
+  use Cratis.Chronicle.ReadModels.ReadModel, not_rewindable: true
 
   defstruct id: "", message: "", timestamp: ""
 

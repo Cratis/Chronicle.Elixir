@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.MetadataAtReader do
-  alias Chronicle.EventSequences.Streams
+  alias Cratis.Chronicle.EventSequences.Streams
 
   # Call only after your application authorizes access to these events.
   def read do

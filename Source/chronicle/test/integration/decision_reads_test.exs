@@ -5,23 +5,23 @@
 # (issue #140). Opt in like the other integration tests: point
 # CHRONICLE_INTEGRATION_CONNECTION_STRING at a development kernel and run
 # `mix test --include integration`.
-defmodule Chronicle.Integration.DecisionReadsTest do
+defmodule Cratis.Chronicle.Integration.DecisionReadsTest do
   use ExUnit.Case, async: false
 
   @moduletag :integration
 
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.ReadModels.{DecisionConflict, DecisionReadRefused, DecisionReads}
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.ReadModels.{DecisionConflict, DecisionReadRefused, DecisionReads}
 
   defmodule SeatBooked do
-    use Chronicle.Events.EventType, id: "dr-seat-booked"
+    use Cratis.Chronicle.Events.EventType, id: "dr-seat-booked"
     defstruct by: ""
   end
 
   # A unique-seat-booking model: a decision read on it guards "is this seat still free" the way
   # the DCB docs' two-key course-subscription example guards one side of a rule.
   defmodule Seat do
-    use Chronicle.ReadModels.ReadModel, id: "drSeat"
+    use Cratis.Chronicle.ReadModels.ReadModel, id: "drSeat"
 
     defstruct id: "", booked_by: ""
 
@@ -30,12 +30,12 @@ defmodule Chronicle.Integration.DecisionReadsTest do
 
   # Refused: `join/2` means a match can come from outside the guarded event source.
   defmodule JoinSource do
-    use Chronicle.Events.EventType, id: "dr-join-source"
+    use Cratis.Chronicle.Events.EventType, id: "dr-join-source"
     defstruct matching_id: ""
   end
 
   defmodule Joined do
-    use Chronicle.ReadModels.ReadModel, id: "drJoined"
+    use Cratis.Chronicle.ReadModels.ReadModel, id: "drJoined"
 
     defstruct id: "", matching_id: ""
 
@@ -44,13 +44,13 @@ defmodule Chronicle.Integration.DecisionReadsTest do
   end
 
   defmodule WithdrawalsSeat do
-    use Chronicle.ReadModels.ReadModel, id: "drWithdrawalsSeat"
+    use Cratis.Chronicle.ReadModels.ReadModel, id: "drWithdrawalsSeat"
 
     defstruct id: "", booked_by: ""
   end
 
   defmodule PassiveSeatReducer do
-    use Chronicle.Reducers.Reducer, model: WithdrawalsSeat, active: false
+    use Cratis.Chronicle.Reducers.Reducer, model: WithdrawalsSeat, active: false
 
     @handles SeatBooked
 
@@ -64,7 +64,7 @@ defmodule Chronicle.Integration.DecisionReadsTest do
     prefix = System.get_env("CHRONICLE_INTEGRATION_EVENT_STORE_PREFIX", "decision-reads-elixir")
 
     {:ok, _} =
-      Chronicle.Client.start_link(
+      Cratis.Chronicle.Client.start_link(
         name: :decision_reads_it_client,
         connection_string: System.fetch_env!("CHRONICLE_INTEGRATION_CONNECTION_STRING"),
         event_store:
@@ -75,7 +75,7 @@ defmodule Chronicle.Integration.DecisionReadsTest do
         reducers: [PassiveSeatReducer]
       )
 
-    :ok = Chronicle.Client.await_registration(:decision_reads_it_client, 60_000)
+    :ok = Cratis.Chronicle.Client.await_registration(:decision_reads_it_client, 60_000)
     :ok
   end
 
@@ -121,7 +121,7 @@ defmodule Chronicle.Integration.DecisionReadsTest do
     seat_id = unique_seat_id()
 
     result =
-      Chronicle.decide(
+      Cratis.Chronicle.decide(
         fn _unit_of_work ->
           {:ok, read} = DecisionReads.get(Seat, seat_id, @opts)
           assert read.instance == nil
@@ -140,7 +140,7 @@ defmodule Chronicle.Integration.DecisionReadsTest do
     seat_id = unique_seat_id()
 
     result =
-      Chronicle.decide(
+      Cratis.Chronicle.decide(
         fn _unit_of_work ->
           {:ok, _read} = DecisionReads.get(Seat, seat_id, @opts)
 

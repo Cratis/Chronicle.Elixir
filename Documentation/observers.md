@@ -4,7 +4,7 @@ description: List the reactors, reducers and projections Chronicle has registere
 
 # Observers
 
-`Chronicle.Observers` provides an idiomatic Elixir API for working with Chronicle observers.
+`Cratis.Chronicle.Observers` provides an idiomatic Elixir API for working with Chronicle observers.
 
 An observer is a reactor, reducer, or projection registered against an event sequence to be told
 about the events it cares about. This module is how an application finds out what the event
@@ -13,11 +13,11 @@ Mirrors the C#, Kotlin, and TypeScript clients' `IObservers`.
 
 ## Starting point
 
-Start `Chronicle.Client` first:
+Start `Cratis.Chronicle.Client` first:
 
 ```elixir
 children = [
-  {Chronicle.Client,
+  {Cratis.Chronicle.Client,
     connection_string: "chronicle://localhost:35000",
     event_store: "banking",
     otp_app: :my_app}
@@ -29,12 +29,12 @@ children = [
 Get every observer registered in the event store's current namespace:
 
 ```elixir
-{:ok, observers} = Chronicle.Observers.get_all()
+{:ok, observers} = Cratis.Chronicle.Observers.get_all()
 ```
 
 ## The `ObserverInformation` struct
 
-Each observer is returned as `%Chronicle.Observers.ObserverInformation{}` with:
+Each observer is returned as `%Cratis.Chronicle.Observers.ObserverInformation{}` with:
 
 - `:id`
 - `:event_sequence_id` — the event sequence the observer observes
@@ -58,9 +58,9 @@ state, handled counts, and failed partitions in the event store forever — unti
 removes them.
 
 ```elixir
-{:ok, result} = Chronicle.Observers.remove("MyApp.Reactors.OrderNotifier")
+{:ok, result} = Cratis.Chronicle.Observers.remove("MyApp.Reactors.OrderNotifier")
 
-if Chronicle.Observers.RemovalResult.removed?(result) do
+if Cratis.Chronicle.Observers.RemovalResult.removed?(result) do
   IO.puts("Removed.")
 else
   IO.puts("Refused: #{result.outcome} (#{result.blocking_namespace})")
@@ -78,17 +78,17 @@ observer's own bookkeeping goes.
 ## Using a named client
 
 ```elixir
-{:ok, observers} = Chronicle.Observers.get_all(client: :bank_chronicle)
-{:ok, result} = Chronicle.Observers.remove("MyApp.Reactors.OrderNotifier", client: :bank_chronicle)
+{:ok, observers} = Cratis.Chronicle.Observers.get_all(client: :bank_chronicle)
+{:ok, result} = Cratis.Chronicle.Observers.remove("MyApp.Reactors.OrderNotifier", client: :bank_chronicle)
 ```
 
 ## Recovering a partition
 
 ```elixir
-{:ok, :started} = Chronicle.Observers.retry_partition(MyApp.Reactors.OrderNotifier, "order-1")
+{:ok, :started} = Cratis.Chronicle.Observers.retry_partition(MyApp.Reactors.OrderNotifier, "order-1")
 {:ok, %{outcome: :cleared, retry_outcome: :started}} =
-  Chronicle.Observers.clear_partition_quarantine(MyApp.Reactors.OrderNotifier, "order-1")
-:ok = Chronicle.Observers.clear_observer_quarantine(MyApp.Reactors.OrderNotifier)
+  Cratis.Chronicle.Observers.clear_partition_quarantine(MyApp.Reactors.OrderNotifier, "order-1")
+:ok = Cratis.Chronicle.Observers.clear_observer_quarantine(MyApp.Reactors.OrderNotifier)
 ```
 
 The first argument is an observer id or a reactor, reducer or projection module. `retry_partition/3`
@@ -104,12 +104,12 @@ result of the job. An outcome this client does not know is reported as `:unknown
 
 ## Lag
 
-An observer that was evicted or stalled is invisible from the append side. `Chronicle.Observers.Lag.measure/1`
+An observer that was evicted or stalled is invisible from the append side. `Cratis.Chronicle.Observers.Lag.measure/1`
 returns, per observer, the distance between the tail of the event sequence and the last event it
 handled. Start the reporter to publish it as telemetry:
 
 ```elixir
-{Chronicle.Client, observer_lag: [interval: 15_000], ...}
+{Cratis.Chronicle.Client, observer_lag: [interval: 15_000], ...}
 
 :telemetry.attach("lag", [:chronicle, :observer, :lag], fn _, %{lag: lag}, %{observer_id: id}, _ ->
   if lag > 1_000, do: Logger.warning("#{id} is #{lag} events behind")

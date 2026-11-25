@@ -1,11 +1,11 @@
 ```elixir
 defmodule MyApp.Events.ConstraintsUniqueEventTypeScopedLoanCheckedOut do
-  use Chronicle.Events.EventType, id: "constraints-unique-event-type-scoped-loan-checked-out"
+  use Cratis.Chronicle.Events.EventType, id: "constraints-unique-event-type-scoped-loan-checked-out"
   defstruct title: ""
 end
 
 defmodule MyApp.Events.ConstraintsUniqueEventTypeScopedLoanReturned do
-  use Chronicle.Events.EventType, id: "constraints-unique-event-type-scoped-loan-returned"
+  use Cratis.Chronicle.Events.EventType, id: "constraints-unique-event-type-scoped-loan-returned"
   defstruct []
 end
 
@@ -13,7 +13,7 @@ end
 # cycle it belongs to, so the same borrower can hold one open loan at every branch, and
 # returning at one branch opens the next cycle only there.
 defmodule MyApp.Constraints.ConstraintsUniqueEventTypeOneOpenLoanPerBranch do
-  use Chronicle.Events.Constraint
+  use Cratis.Chronicle.Events.Constraint
 
   unique_event_type MyApp.Events.ConstraintsUniqueEventTypeScopedLoanCheckedOut,
     name: "ConstraintsUniqueEventTypeOneOpenLoanPerBranch",

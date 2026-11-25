@@ -1,21 +1,21 @@
 ```elixir
 defmodule MyApp.Directory.Person do
-  use Chronicle.Graphs.Node
+  use Cratis.Chronicle.Graphs.Node
   defstruct person_id: "", name: ""
 end
 
 defmodule MyApp.Directory.Group do
-  use Chronicle.Graphs.Node
+  use Cratis.Chronicle.Graphs.Node
   defstruct group_id: "", name: ""
 end
 
 defmodule MyApp.Directory.MemberOf do
-  use Chronicle.Graphs.Edge, type: "MEMBER_OF"
+  use Cratis.Chronicle.Graphs.Edge, type: "MEMBER_OF"
   defstruct since: ""
 end
 
 defmodule MyApp.Directory.GroupMembership do
-  use Chronicle.Graphs.View, root: MyApp.Directory.Group
+  use Cratis.Chronicle.Graphs.View, root: MyApp.Directory.Group
 
   property :id, source: :group_id
   property :name
@@ -23,7 +23,7 @@ defmodule MyApp.Directory.GroupMembership do
 end
 
 defmodule MyApp.Directory.PersonWithGroups do
-  use Chronicle.Graphs.View, root: MyApp.Directory.Person
+  use Cratis.Chronicle.Graphs.View, root: MyApp.Directory.Person
 
   property :id, source: :person_id
   property :name
@@ -34,7 +34,7 @@ defmodule MyApp.Directory.PersonWithGroups do
 end
 
 defmodule MyApp.Directory.Graph do
-  use Chronicle.Graphs.Graph, id: "Directory"
+  use Cratis.Chronicle.Graphs.Graph, id: "Directory"
 
   alias MyApp.Directory.{Group, MemberOf, Person, GroupMembership, PersonWithGroups}
 

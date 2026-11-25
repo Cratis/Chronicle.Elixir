@@ -1,6 +1,6 @@
 ```elixir
 defmodule MyApp.MaterializedPaginationObserving do
-  alias Chronicle.ReadModels
+  alias Cratis.Chronicle.ReadModels
   alias MyApp.ReadModels.MaterializedPaginationOrder
 
   def run do

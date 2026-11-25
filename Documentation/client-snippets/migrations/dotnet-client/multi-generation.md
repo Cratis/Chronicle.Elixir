@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.MigrationsDotnetClientMultiGenPersonRegistered do
-  use Chronicle.Events.EventType, id: "dotnet-client-multi-gen-person-registered", generation: 3
+  use Cratis.Chronicle.Events.EventType, id: "dotnet-client-multi-gen-person-registered", generation: 3
 
   defstruct [:email, :first_name, :last_name]
 end
 
 defmodule MyApp.Events.MigrationsDotnetClientMultiGenPersonRegisteredV2 do
-  use Chronicle.Events.EventType,
+  use Cratis.Chronicle.Events.EventType,
     generation_for: MyApp.Events.MigrationsDotnetClientMultiGenPersonRegistered,
     generation: 2
 
@@ -14,7 +14,7 @@ defmodule MyApp.Events.MigrationsDotnetClientMultiGenPersonRegisteredV2 do
 end
 
 defmodule MyApp.Events.MigrationsDotnetClientMultiGenPersonRegisteredV1 do
-  use Chronicle.Events.EventType,
+  use Cratis.Chronicle.Events.EventType,
     generation_for: MyApp.Events.MigrationsDotnetClientMultiGenPersonRegistered,
     generation: 1
 
@@ -23,11 +23,11 @@ end
 
 # Generation 1 -> 2: rename email_address to email
 defmodule MyApp.Migrations.MigrationsDotnetClientMultiGenPersonRegisteredV1ToV2 do
-  use Chronicle.Events.Migration,
+  use Cratis.Chronicle.Events.Migration,
     from: {MyApp.Events.MigrationsDotnetClientMultiGenPersonRegisteredV1, generation: 1},
     to: {MyApp.Events.MigrationsDotnetClientMultiGenPersonRegisteredV2, generation: 2}
 
-  alias Chronicle.Events.MigrationBuilder
+  alias Cratis.Chronicle.Events.MigrationBuilder
 
   @impl true
   def upcast(builder), do: MigrationBuilder.renamed_from(builder, :email, :email_address)
@@ -38,11 +38,11 @@ end
 
 # Generation 2 -> 3: split name into first_name / last_name
 defmodule MyApp.Migrations.MigrationsDotnetClientMultiGenPersonRegisteredV2ToV3 do
-  use Chronicle.Events.Migration,
+  use Cratis.Chronicle.Events.Migration,
     from: {MyApp.Events.MigrationsDotnetClientMultiGenPersonRegisteredV2, generation: 2},
     to: {MyApp.Events.MigrationsDotnetClientMultiGenPersonRegistered, generation: 3}
 
-  alias Chronicle.Events.MigrationBuilder
+  alias Cratis.Chronicle.Events.MigrationBuilder
 
   @impl true
   def upcast(builder) do

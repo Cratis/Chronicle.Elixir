@@ -1,12 +1,12 @@
 ```elixir
 defmodule MyApp.Events.TestingScenarioBooksReopened do
-  use Chronicle.Events.EventType, id: "testing-scenario-books-reopened"
+  use Cratis.Chronicle.Events.EventType, id: "testing-scenario-books-reopened"
 
   defstruct [:period]
 end
 
 defmodule MyApp.Events.TestingScenarioBooksClosed do
-  use Chronicle.Events.EventType, id: "testing-scenario-books-closed"
+  use Cratis.Chronicle.Events.EventType, id: "testing-scenario-books-closed"
 
   defstruct [:period]
 
@@ -17,7 +17,7 @@ defmodule MyApp.Events.TestingScenarioBooksClosed do
 end
 
 defmodule MyApp.Events.TestingScenarioEntryPosted do
-  use Chronicle.Events.EventType, id: "testing-scenario-entry-posted"
+  use Cratis.Chronicle.Events.EventType, id: "testing-scenario-entry-posted"
 
   defstruct [:description]
 end
@@ -28,16 +28,16 @@ defmodule MyApp.TestingScenarioClosingEventTest do
 
   @moduletag :integration
 
-  import Chronicle.Testing.Assertions
+  import Cratis.Chronicle.Testing.Assertions
 
-  alias Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.EventSequences.EventLog
   alias MyApp.Events.{TestingScenarioBooksClosed, TestingScenarioEntryPosted}
 
   setup do
     name = :"closing_event_#{System.unique_integer([:positive])}"
 
     {:ok, client} =
-      Chronicle.Testing.Integration.setup_isolated_client(
+      Cratis.Chronicle.Testing.Integration.setup_isolated_client(
         [
           event_types: [
             MyApp.Events.TestingScenarioBooksClosed,

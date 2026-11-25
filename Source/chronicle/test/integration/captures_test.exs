@@ -5,20 +5,20 @@
 # CHRONICLE_INTEGRATION_CONNECTION_STRING at a development kernel, for example
 # chronicle://chronicle-dev-client:chronicle-dev-secret@localhost:35006
 # and run `mix test --include integration`.
-defmodule Chronicle.Integration.CapturesTest do
+defmodule Cratis.Chronicle.Integration.CapturesTest do
   use ExUnit.Case, async: false
 
   @moduletag :integration
 
-  alias Chronicle.Captures
+  alias Cratis.Chronicle.Captures
 
   defmodule ItemStatusChanged do
-    use Chronicle.Events.EventType, id: "ItCaptureItemStatusChanged"
+    use Cratis.Chronicle.Events.EventType, id: "ItCaptureItemStatusChanged"
     defstruct status: ""
   end
 
   defmodule InvoiceCapture do
-    use Chronicle.Captures.Capture, name: "ItCaptureInvoice", start: true
+    use Cratis.Chronicle.Captures.Capture, name: "ItCaptureInvoice", start: true
 
     api_source("InvoicingApi", route: "/invoices", poll: "10m")
     key("id")
@@ -32,7 +32,7 @@ defmodule Chronicle.Integration.CapturesTest do
     prefix = System.get_env("CHRONICLE_INTEGRATION_EVENT_STORE_PREFIX", "captures-elixir")
 
     {:ok, _} =
-      Chronicle.Client.start_link(
+      Cratis.Chronicle.Client.start_link(
         name: :captures_it_client,
         connection_string: System.fetch_env!("CHRONICLE_INTEGRATION_CONNECTION_STRING"),
         event_store:
@@ -41,14 +41,14 @@ defmodule Chronicle.Integration.CapturesTest do
         event_types: [ItemStatusChanged]
       )
 
-    lifecycle = Chronicle.Connections.Lifecycle.name_for(:captures_it_client)
-    :ok = Chronicle.Connections.Lifecycle.wait_until(lifecycle, :registered, 60_000)
+    lifecycle = Cratis.Chronicle.Connections.Lifecycle.name_for(:captures_it_client)
+    :ok = Cratis.Chronicle.Connections.Lifecycle.wait_until(lifecycle, :registered, 60_000)
 
     :ok =
-      Chronicle.ExternalServices.register(
+      Cratis.Chronicle.ExternalServices.register(
         "InvoicingApi",
         fn builder ->
-          Chronicle.ExternalServices.DefinitionBuilder.http(
+          Cratis.Chronicle.ExternalServices.DefinitionBuilder.http(
             builder,
             "https://invoices.example.com"
           )

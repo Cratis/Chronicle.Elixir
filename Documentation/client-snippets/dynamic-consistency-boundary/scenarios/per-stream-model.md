@@ -1,19 +1,19 @@
 ```elixir
 defmodule MyApp.Events.PerStreamSavingsWithdrawn do
-  use Chronicle.Events.EventType, id: "per-stream-savings-withdrawn"
+  use Cratis.Chronicle.Events.EventType, id: "per-stream-savings-withdrawn"
 
   defstruct amount: 0
 end
 
 defmodule MyApp.PerStreamSavingsAccountEventSource do
-  use Chronicle.EventSources.EventSource, name: "SavingsAccount"
+  use Cratis.Chronicle.EventSources.EventSource, name: "SavingsAccount"
 
   stream "Transactions", description: "Withdrawals, one stream per month"
 end
 
 # Passive and keyed by the account; the decision read selects the month's stream.
 defmodule MyApp.ReadModels.PerStreamWithdrawnInMonth do
-  use Chronicle.ReadModels.ReadModel, passive: true
+  use Cratis.Chronicle.ReadModels.ReadModel, passive: true
 
   defstruct id: nil, total: 0
 
@@ -21,8 +21,8 @@ defmodule MyApp.ReadModels.PerStreamWithdrawnInMonth do
 end
 
 defmodule MyApp.PerStreamWithdrawSavings do
-  alias Chronicle.EventSequences.EventLog
-  alias Chronicle.ReadModels.{DecisionConflict, DecisionReads}
+  alias Cratis.Chronicle.EventSequences.EventLog
+  alias Cratis.Chronicle.ReadModels.{DecisionConflict, DecisionReads}
   alias MyApp.Events.PerStreamSavingsWithdrawn
   alias MyApp.PerStreamSavingsAccountEventSource
   alias MyApp.ReadModels.PerStreamWithdrawnInMonth
@@ -32,7 +32,7 @@ defmodule MyApp.PerStreamWithdrawSavings do
   # month is the stream id, for example "2026-10".
   def handle(account_id, month, amount) do
     result =
-      Chronicle.decide(fn _unit_of_work ->
+      Cratis.Chronicle.decide(fn _unit_of_work ->
         {:ok, read} =
           DecisionReads.get(
             PerStreamWithdrawnInMonth,
