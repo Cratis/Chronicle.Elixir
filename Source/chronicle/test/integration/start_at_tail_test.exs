@@ -62,7 +62,9 @@ defmodule Cratis.Chronicle.Integration.StartAtTailTest do
       :ok =
         Cratis.Chronicle.EventSequences.EventLog.append(
           "sat-#{name}",
-          %SomethingHappened{name: name}, client: :start_at_tail_writer)
+          %SomethingHappened{name: name},
+          client: :start_at_tail_writer
+        )
     end
 
     {:ok, _} =
