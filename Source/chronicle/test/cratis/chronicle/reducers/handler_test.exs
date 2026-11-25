@@ -464,4 +464,18 @@ defmodule Cratis.Chronicle.Reducers.HandlerTest do
       assert Process.alive?(handler)
     end
   end
+
+  test "the handler keeps its client, which names the multiplexed observation channel" do
+    {:ok, handler} =
+      Handler.start_link(
+        module: TestReducer,
+        client: :my_client,
+        connection: :unused,
+        event_store: "test",
+        namespace: "Default",
+        establish_fun: fn _state, _connection_id -> {:ok, :fake_stream, nil} end
+      )
+
+    assert :sys.get_state(handler).client == :my_client
+  end
 end
