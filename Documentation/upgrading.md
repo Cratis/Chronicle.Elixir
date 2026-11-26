@@ -1,6 +1,6 @@
 ---
 title: Upgrading to 4.0
-description: Chronicle for Elixir 4.0 puts every module under Cratis.Chronicle. What to rename and what stays the same.
+description: Upgrade the Chronicle Elixir client to 4.0 by renaming module references to Cratis.Chronicle. The Hex package and stored events are unchanged.
 ---
 
 Version 4.0 moves every module from `Chronicle` to `Cratis.Chronicle`, so the client sits in the same vendor namespace as the other Cratis packages and cannot collide with another library that defines a top-level `Chronicle` module.

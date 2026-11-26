@@ -1,6 +1,6 @@
 ---
 title: External services
-description: Register HTTP and database external service definitions with Chronicle from Elixir using the Cratis.Chronicle.ExternalServices API and inspect what is registered.
+description: Register HTTP or database services with Chronicle from Elixir so kernel features such as captures can reference those services by name.
 ---
 
 `Cratis.Chronicle.ExternalServices` provides an idiomatic Elixir API for registering external service definitions with Chronicle.
