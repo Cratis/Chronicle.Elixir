@@ -433,12 +433,10 @@ defmodule Cratis.Chronicle.Events.Constraint do
     Code.ensure_compiled!(event_type)
 
     if function_exported?(event_type, :__struct__, 0) do
-      struct_keys = event_type.__struct__() |> Map.keys()
+      struct_keys = event_type.__struct__() |> Map.keys() |> Enum.map(&Atom.to_string/1)
 
       Enum.each(properties, fn property ->
-        key = property |> to_string() |> String.to_atom()
-
-        unless key in struct_keys do
+        unless to_string(property) in struct_keys do
           raise ArgumentError,
                 "#{inspect(module)}: #{inspect(property)} does not exist on #{inspect(event_type)}"
         end
