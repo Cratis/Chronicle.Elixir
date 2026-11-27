@@ -27,6 +27,55 @@ A reactor's own side-effect append runs through the real client again, in this
 dispatcher process — never inside the kernel's own process, so it can never
 deadlock it.
 
+## Scenarios
+
+A **scenario** states one behavior in the shape of a Specification: facts are given, the behavior happens **once**, and each `test` is one `should_*` expectation. `Cratis.Chronicle.Testing.EventScenario` (events and their constraints), `Cratis.Chronicle.Testing.ReadModelScenario` (projections and reducers) and `Cratis.Chronicle.Testing.ReactorScenario` (reactors) run against the in-memory kernel.
+
+```elixir
+defmodule MyApp.Accounts.ForAccountOpened.WhenOpeningTwice do
+  use Cratis.Chronicle.Testing.EventScenario,
+    event_types: [MyApp.Accounts.AccountOpened]
+
+  alias MyApp.Accounts.AccountOpened
+
+  setup_all %{scenario: scenario} do
+    scenario =
+      scenario
+      |> given_events("account-1", %AccountOpened{owner: "Ada"})
+      |> append("account-1", %AccountOpened{owner: "Ada"})
+
+    %{scenario: scenario}
+  end
+
+  test "should be refused by the constraint", %{scenario: scenario} do
+    should_have_constraint_violation(scenario, "account-opened-once")
+  end
+
+  test "should keep only the first event", %{scenario: scenario} do
+    should_have_tail_sequence_number(scenario, 0)
+  end
+end
+```
+
+`use` starts the kernel once for the module (`lifecycle: :shared`, the default) and puts the scenario in the context as `:scenario`; `lifecycle: :per_test` starts one per test, and you write `setup` instead of `setup_all`. Every option of `start_supervised_client/1` is accepted. A scenario is an immutable value: **given** and **because** functions return the next scenario, and **should** functions return the scenario they checked, so they chain.
+
+| Scenario | Given and because | Should |
+| --- | --- | --- |
+| `EventScenario` | `given_events/3`, `append/3,4` | `should_be_successful/1`, `should_have_constraint_violation/1,2`, `should_have_concurrency_violation/1`, `should_have_appended/2,3`, `should_not_have_appended/2,3`, `should_have_appended_exactly/2`, `should_not_have_appended_any_events/1`, `should_have_tail_sequence_number/2`, `should_not_have_observer_failures/1` |
+| `ReadModelScenario` | `given_events/3` | `should_have_read_model/4` (a struct, a sub-map or a predicate), `should_not_have_read_model/3`; `read_model/3` returns it |
+| `ReactorScenario` | `given_events/3`, `append/3,4` | the appended `should_*` of `EventScenario`, and `should_have_observer_failures/1,2` |
+
+Only the events appended by `append/3,4`, and by the reactors it triggered, count for the `should_have_appended` family; the given events do not. A read model built by a projection is evaluated in memory (the subset in [Evaluating a projection read model in memory](#evaluating-a-projection-read-model-in-memory)); one built by a reducer is the one the kernel's observers keep. Both are asked for by module and key.
+
+Name a spec for what it specifies, not with a `_test` suffix: `for_<unit>/when_<behavior>/<and|with|without>_<condition>.exs`, beside the code, as in the C# and TypeScript specs. They are scripts, so a release never contains them. Point `mix test` at the folders:
+
+```elixir
+test_paths: ["lib"],
+test_load_filters: [&(String.contains?(&1, "/for_") and not String.contains?(&1, "/given/"))],
+```
+
+For commands and queries, [Arc for Elixir](https://github.com/Cratis/Arc.Elixir) has `CommandScenario` and `QueryScenario`, and `Cratis.Arc.Test.Should` for the `should_*` assertions on any value.
+
 ## Assertions
 
 Prefer `Cratis.Chronicle.Testing.Case` in ExUnit, which handles client setup and teardown for
