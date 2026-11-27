@@ -76,6 +76,24 @@ test_load_filters: [&(String.contains?(&1, "/for_") and not String.contains?(&1,
 
 For commands and queries, [Arc for Elixir](https://github.com/Cratis/Arc.Elixir) has `CommandScenario` and `QueryScenario`, and `Cratis.Arc.Test.Should` for the `should_*` assertions on any value.
 
+### Reusable given contexts
+
+Facts several specs start from are a **given context**, named for the situation, in a `given/` folder beside the specs, like the `given` classes of the C# specs. A context is a module with `given/1` that returns the next scenario (`given/2` takes an argument).
+
+```elixir
+# for_account/given/an_open_account.exs
+defmodule MyApp.Accounts.ForAccount.Given.AnOpenAccount do
+  use Cratis.Chronicle.Testing.Given
+
+  @impl true
+  def given(scenario), do: given_events(scenario, "account-1", %AccountOpened{owner_name: "Ada"})
+end
+```
+
+The `given:` option of a scenario applies contexts, in order, before the spec's own `setup_all`; `given/2` applies one in a pipeline (a module, `{module, argument}` or a 1-arity function), and a context composes others by calling `given/2`. `setup: {module, function}` runs `module.function(client)` first, in the process of the setup, to start fakes with `start_supervised!/1`; it returns a map that joins the test context.
+
+Contexts are scripts, so a release never contains them. Load them once in `test/test_helper.exs` with `for file <- Path.wildcard("lib/**/given/*.exs") |> Enum.sort(), do: Code.require_file(file)` and keep `mix test` from running them with `test_ignore_filters: [&String.contains?(&1, "/given/")]`.
+
 ## Assertions
 
 Prefer `Cratis.Chronicle.Testing.Case` in ExUnit, which handles client setup and teardown for
