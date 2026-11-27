@@ -22,5 +22,6 @@ defmodule Cratis.Chronicle.Testing.ForGiven.Given.AFundedAccount do
   alias Cratis.Chronicle.Testing.ForGiven.Given.AnOpenAccount
 
   @impl true
-  def given(scenario), do: scenario |> given(AnOpenAccount) |> given({AnOpenAccount, 5})
+  def given(scenario),
+    do: scenario |> given_context(AnOpenAccount) |> given_context({AnOpenAccount, 5})
 end
