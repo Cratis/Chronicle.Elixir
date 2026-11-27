@@ -35,6 +35,7 @@ defmodule Cratis.Chronicle.Testing.ReactorScenario do
   defmacro __using__(opts), do: Scenarios.using(__MODULE__, opts)
 
   defdelegate new(client), to: EventScenario
+  defdelegate given(scenario, context), to: EventScenario
   defdelegate given_events(scenario, event_source_id, events), to: EventScenario
   defdelegate append(scenario, event_source_id, events), to: EventScenario
   defdelegate append(scenario, event_source_id, events, opts), to: EventScenario

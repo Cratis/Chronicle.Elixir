@@ -29,6 +29,7 @@ defmodule Cratis.Chronicle.MixProject do
         &String.ends_with?(&1, "_test.exs"),
         &(String.contains?(&1, "/for_") and not String.contains?(&1, "/given/"))
       ],
+      test_ignore_filters: [&String.contains?(&1, "/given/")],
       deps: deps(),
       description:
         "Idiomatic Elixir client for Cratis Chronicle, the open-source event-sourcing database and runtime",
