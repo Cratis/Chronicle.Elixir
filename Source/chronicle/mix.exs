@@ -23,6 +23,12 @@ defmodule Cratis.Chronicle.MixProject do
       # consolidation must be skipped in :test — otherwise a fixture's implementation
       # is silently ignored and encoding raises Protocol.UndefinedError.
       consolidate_protocols: Mix.env() != :test,
+      # Specs are `*_test.exs` (the older ones) or any script in a `for_*` folder (the BDD layout, with no
+      # `_test` suffix); `given/` holds shared contexts the specs load themselves.
+      test_load_filters: [
+        &String.ends_with?(&1, "_test.exs"),
+        &(String.contains?(&1, "/for_") and not String.contains?(&1, "/given/"))
+      ],
       deps: deps(),
       description:
         "Idiomatic Elixir client for Cratis Chronicle, the open-source event-sourcing database and runtime",

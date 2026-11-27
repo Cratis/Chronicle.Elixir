@@ -192,7 +192,7 @@ defmodule Cratis.Chronicle.Testing.InMemoryKernel do
           )}, state}
 
       {:error, response} ->
-        {:reply, {:ok, response}, state}
+        {:reply, {:ok, many_response(response)}, state}
     end
   end
 
@@ -549,6 +549,14 @@ defmodule Cratis.Chronicle.Testing.InMemoryKernel do
       if ignore_casing?, do: String.downcase(value), else: value
     end)
   end
+
+  # A refusal is built as the response of a single append; appending many events answers with its own
+  # response type, which carries the same fields.
+  defp many_response(%Wire.AppendResponse{} = response) do
+    struct(Wire.AppendManyResponse, response |> Map.from_struct() |> Map.delete(:SequenceNumber))
+  end
+
+  defp many_response(response), do: response
 
   defp constraint_violation_response(constraint, event_type_id, on) do
     details =
