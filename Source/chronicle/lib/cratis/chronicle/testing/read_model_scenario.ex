@@ -43,7 +43,7 @@ defmodule Cratis.Chronicle.Testing.ReadModelScenario do
     * `should_have_read_model/4`, `should_not_have_read_model/3`
   """
 
-  import Cratis.Chronicle.Testing.Scenarios, only: [fail: 1, fail: 3]
+  import Cratis.Chronicle.Testing.Scenarios, only: [fail: 3]
 
   alias Cratis.Chronicle.Testing
   alias Cratis.Chronicle.Testing.{Projections, Scenarios}
